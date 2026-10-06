@@ -1,0 +1,105 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-canvas: #ffffff;
+  --color-section: #f8f7ff;
+  --color-line: #e5e7eb;
+  --color-heading: #1e1b4b;
+  --color-body: #475569;
+  --color-muted: #64748b;
+  --color-primary: #4338ca;
+  --color-primary-hover: #3730a3;
+  --color-primary-ring: #c7d2fe;
+  --color-accent: #f59e0b;
+  --color-success: #16a34a;
+  --color-danger: #dc2626;
+  --color-preview: #f1f5f9;
+
+  /* Channel form of the same colors: Tailwind needs it to build the /40 and /10 tints. */
+  --color-canvas-rgb: 255 255 255;
+  --color-section-rgb: 248 247 255;
+  --color-line-rgb: 229 231 235;
+  --color-heading-rgb: 30 27 75;
+  --color-body-rgb: 71 85 105;
+  --color-muted-rgb: 100 116 139;
+  --color-primary-rgb: 67 56 202;
+  --color-accent-rgb: 245 158 11;
+  --color-success-rgb: 22 163 74;
+  --color-danger-rgb: 220 38 38;
+  --color-preview-rgb: 241 245 249;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-canvas text-body min-h-screen font-sans antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-semibold text-heading;
+    letter-spacing: -0.02em;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .container-page {
+    @apply mx-auto w-full max-w-page px-4 sm:px-6;
+  }
+
+  .section-pad {
+    padding-block: 48px;
+  }
+
+  @media (min-width: 768px) {
+    .section-pad {
+      padding-block: 80px;
+    }
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-btn bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-soft transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-btn px-3 py-2 text-sm font-medium text-body transition-colors hover:bg-section hover:text-heading;
+  }
+
+  .input-field {
+    @apply w-full rounded-btn border border-line bg-canvas px-3.5 py-2.5 text-sm text-heading placeholder:text-muted transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary-ring;
+  }
+
+  .card-surface {
+    @apply rounded-card border border-line bg-canvas shadow-soft;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-section);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted);
+}
