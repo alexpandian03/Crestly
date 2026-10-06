@@ -8,8 +8,7 @@ import {
   Power,
   Trash2,
 } from "lucide-react";
-import TemplateThumb from "./TemplateThumb";
-import { TEMPLATE_SAMPLE_CONTENT } from "../data/demoPosters";
+import TemplatePreview from "./TemplatePreview";
 import { timeAgo } from "../utils/timeAgo";
 
 const GAP = 6;
@@ -128,11 +127,10 @@ export default function TemplateCard({
   return (
     <article className="card-surface flex flex-col overflow-hidden">
       <div className="bg-preview p-3 flex justify-center pointer-events-none select-none">
-        <TemplateThumb
+        <TemplatePreview
           brandKit={brandKit}
           template={template}
-          content={TEMPLATE_SAMPLE_CONTENT}
-          width={132}
+          size={132}
         />
       </div>
 

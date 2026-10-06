@@ -6,6 +6,7 @@ import {
   toHex,
   wcagLevel,
 } from "../../utils/contrast";
+import { resolveColorToken } from "../../../../shared/templateElements.js";
 import BrandImageField from "./BrandImageField";
 
 /* Same bounds the server accepts, so the form can't offer a value it would reject. */
@@ -268,13 +269,15 @@ export function Segmented({ label, value, onChange, options, hint }) {
   );
 }
 
-function ContrastNote({ foreground, background, large }) {
-  if (!background || !parseColor(foreground)) return null;
-  const level = wcagLevel(foreground, background, { large });
+function ContrastNote({ foreground, background, large, brandKit }) {
+  const fg = resolveColorToken(foreground, brandKit);
+  const bg = resolveColorToken(background, brandKit);
+  if (!bg || !parseColor(fg)) return null;
+  const level = wcagLevel(fg, bg, { large });
   if (level === "AAA" || level === "AA") {
     return (
       <p className="text-[11px] text-success leading-snug">
-        {contrastLabel(foreground, background, { large })}
+        {contrastLabel(fg, bg, { large })}
       </p>
     );
   }
@@ -282,7 +285,7 @@ function ContrastNote({ foreground, background, large }) {
     <p className="flex items-start gap-1.5 text-[11px] text-danger leading-snug">
       <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
       <span>
-        {contrastLabel(foreground, background, { large })}. The preview lifts or
+        {contrastLabel(fg, bg, { large })}. The preview lifts or
         darkens this text so it stays readable.
       </span>
     </p>
@@ -297,15 +300,17 @@ export function ColorInput({
   onSurface,
   large = false,
   hint,
+  brandKit = null,
 }) {
   const [draft, setDraft] = useState(null);
   useEffect(() => setDraft(null), [value]);
   const text = draft === null ? String(value ?? "") : draft;
-  const invalid = draft !== null && !parseColor(draft);
+  const resolvedText = resolveColorToken(text, brandKit);
+  const invalid = draft !== null && !parseColor(resolvedText);
 
   const commit = (raw) => {
     const next = raw.trim();
-    if (parseColor(next)) onChange(next);
+    if (parseColor(resolveColorToken(next, brandKit))) onChange(next);
   };
 
   const named = String(label || "")
@@ -323,7 +328,7 @@ export function ColorInput({
         <input
           type="color"
           aria-label={`${group} picker`}
-          value={toHex(value, "#ffffff")}
+          value={toHex(resolveColorToken(value, brandKit), "#ffffff")}
           onChange={(event) => {
             setDraft(null);
             onChange(event.target.value);
@@ -337,21 +342,21 @@ export function ColorInput({
           spellCheck={false}
           onChange={(event) => {
             setDraft(event.target.value);
-            if (parseColor(event.target.value))
+            if (parseColor(resolveColorToken(event.target.value, brandKit)))
               onChange(event.target.value.trim());
           }}
           onBlur={() => {
-            if (draft !== null && !parseColor(draft)) setDraft(null);
+            if (draft !== null && !parseColor(resolveColorToken(draft, brandKit))) setDraft(null);
             else commit(draft ?? "");
           }}
           className="w-full min-w-0 bg-transparent text-sm text-heading uppercase tracking-wide focus:outline-none"
         />
       </div>
       {invalid && (
-        <p className="text-[11px] text-danger">Use a color like #4338CA.</p>
+        <p className="text-[11px] text-danger">Use a color like #4338CA or a brand color.</p>
       )}
       {!invalid && (
-        <ContrastNote foreground={text} background={onSurface} large={large} />
+        <ContrastNote foreground={text} background={onSurface} large={large} brandKit={brandKit} />
       )}
     </Field>
   );

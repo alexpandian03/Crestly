@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Loader2, RotateCcw, X } from "lucide-react";
-import PosterPreview from "../PosterPreview";
-import { TEMPLATE_SAMPLE_CONTENT } from "../../data/demoPosters";
+import TemplatePreview from "../TemplatePreview";
 import { fullDateTime, timeAgo } from "../../utils/timeAgo";
 
 /**
@@ -151,15 +150,20 @@ export default function VersionDrawer({
 
                 {previewing && !item.current ? (
                   <div className="mt-3 rounded-card border border-line bg-preview p-2">
-                    <PosterPreview
+                    <TemplatePreview
+                      eager
                       brandKit={brandKit}
                       template={{
                         name: item.name || "",
                         size: item.size,
                         zones: item.zones,
                         layout: item.layout,
+                        page: item.page,
+                        elements: item.elements,
+                        editorVersion: item.editorVersion,
+                        version: item.version,
+                        createdAt: item.createdAt,
                       }}
-                      content={TEMPLATE_SAMPLE_CONTENT}
                     />
                   </div>
                 ) : null}

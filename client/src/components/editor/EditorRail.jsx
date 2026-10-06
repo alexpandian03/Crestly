@@ -2,8 +2,10 @@ import React, { useEffect, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
+  Check,
   Circle,
   Copy,
+  ExternalLink,
   Eye,
   EyeOff,
   GripVertical,
@@ -13,7 +15,10 @@ import {
   ListChecks,
   Lock,
   LockOpen,
+  Palette,
+  RotateCcw,
   Shapes,
+  Sliders,
   Sparkles,
   Square,
   Trash2,
@@ -21,7 +26,26 @@ import {
   X,
 } from "lucide-react";
 import BrandImageField from "../brand/BrandImageField";
-import { ELEMENT_LIMITS } from "../../../../shared/templateElements.js";
+import {
+  BackgroundEditor,
+  ColorInput,
+  LIMITS,
+  Segmented,
+  SliderNumber,
+  Toggle,
+} from "../brand/controls";
+import {
+  BRAND_COLOR_TOKENS,
+  CONTENT_DECORATIONS,
+  DEFAULT_PAGE_BACKGROUND,
+  DEFAULT_PAGE_DECORATION,
+  DEFAULT_PAGE_INFO_CARD,
+  DEFAULT_PAGE_WATERMARK,
+  ELEMENT_LIMITS,
+  isBrandColorToken,
+  resolveColorToken,
+} from "../../../../shared/templateElements.js";
+import { toHex } from "../../utils/contrast.js";
 import {
   FIELD_LABELS,
   FIELD_ORDER,
@@ -38,9 +62,10 @@ import {
 /* ------------------------------------------------------------------ *
  * The narrow strip down the left, and the panel it slides open.
  *
- * Five doors: the poster's own parts, words of your own, photos, plain shapes and
- * the order things sit in. Each one opens over the canvas and shuts again as soon
- * as you click the poster, so the canvas is never squeezed by a permanent panel.
+ * Seven doors: the poster's own parts, words of your own, photos, plain shapes,
+ * the order things sit in, the poster's page overrides and the organization's brand.
+ * Each one opens over the canvas and shuts again as soon as you click the poster,
+ * so the canvas is never squeezed by a permanent panel.
  * ------------------------------------------------------------------ */
 
 export const RAIL_TABS = [
@@ -54,6 +79,8 @@ export const RAIL_TABS = [
   { key: "images", label: "Images", title: "Photos", Icon: ImageIcon },
   { key: "shapes", label: "Shapes", title: "Shapes", Icon: Shapes },
   { key: "layers", label: "Layers", title: "Layers", Icon: Layers },
+  { key: "page", label: "Page", title: "Page settings", Icon: Sliders },
+  { key: "brand", label: "Brand", title: "Brand style", Icon: Palette },
 ];
 
 export default function EditorRail({ tab, onTab }) {
@@ -238,8 +265,10 @@ function opacityOf(style) {
 }
 
 /** A colour you can pick or type, with a way back to "no colour at all". */
-function ColourRow({ label, value, fallback = "#0f172a", onPick, onCommit }) {
-  const shown = hexOf(value);
+function ColourRow({ label, value, fallback = "#0f172a", brandKit = null, onPick, onCommit }) {
+  const isToken = isBrandColorToken(value);
+  const resolved = resolveColorToken(value, brandKit);
+  const shown = hexOf(resolved);
   /* What is typed stays on screen while it is being typed, even when it is not a colour yet. */
   const [draft, setDraft] = useState(value || "");
   useEffect(() => {
@@ -247,39 +276,68 @@ function ColourRow({ label, value, fallback = "#0f172a", onPick, onCommit }) {
   }, [value]);
   const finish = () => {
     const raw = draft.trim();
-    const next = raw === "" || /^#[0-9a-f]{6}$/i.test(raw) ? raw : value || "";
+    const next = raw === "" || /^#[0-9a-f]{6}$/i.test(raw) || isBrandColorToken(raw) ? raw : value || "";
     setDraft(next);
     onCommit?.(next);
   };
 
   return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="text-xs text-body">{label}</span>
-      <span className="flex items-center gap-1">
-        <input
-          type="color"
-          aria-label={label}
-          value={shown || fallback}
-          onChange={(event) => onPick?.(event.target.value)}
-          className="h-7 w-9 cursor-pointer rounded border border-line bg-canvas p-0.5"
-        />
-        <input
-          type="text"
-          aria-label={`${label} code`}
-          value={draft}
-          placeholder="none"
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={finish}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") event.currentTarget.blur();
-            if (event.key === "Escape") {
-              setDraft(value || "");
-              event.currentTarget.blur();
-            }
-          }}
-          className="w-[74px] rounded border border-line px-1.5 py-1 text-[11px] font-mono"
-        />
-      </span>
+    <div className="space-y-1">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs text-body">{label}</span>
+        {isToken ? (
+          <span className="text-[10px] font-semibold text-primary capitalize">
+            {value.replace("brand:", "")}
+          </span>
+        ) : null}
+        <span className="flex items-center gap-1">
+          <input
+            type="color"
+            aria-label={label}
+            value={shown || fallback}
+            onChange={(event) => onPick?.(event.target.value)}
+            className="h-7 w-9 cursor-pointer rounded border border-line bg-canvas p-0.5"
+          />
+          <input
+            type="text"
+            aria-label={`${label} code`}
+            value={draft}
+            placeholder="none"
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={finish}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
+              if (event.key === "Escape") {
+                setDraft(value || "");
+                event.currentTarget.blur();
+              }
+            }}
+            className="w-[74px] rounded border border-line px-1.5 py-1 text-[11px] font-mono"
+          />
+        </span>
+      </div>
+      {brandKit ? (
+        <div className="flex items-center gap-1.5 justify-end">
+          {["brand:primary", "brand:secondary", "brand:accent", "brand:text"].map((tok) => {
+            const swatchHex = toHex(resolveColorToken(tok, brandKit), "#ffffff");
+            return (
+              <button
+                key={tok}
+                type="button"
+                title={`Brand ${tok.replace("brand:", "")}`}
+                onClick={() => {
+                  setDraft(tok);
+                  onCommit?.(tok);
+                }}
+                className={`h-4 w-4 rounded-full border border-slate-300 hover:scale-110 transition-transform ${
+                  value === tok ? "ring-2 ring-primary ring-offset-1" : ""
+                }`}
+                style={{ backgroundColor: swatchHex }}
+              />
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -615,7 +673,7 @@ function ImagesPanel({ items, selectedId, actions, brandKit }) {
   );
 }
 
-function ShapesPanel({ items, selectedId, actions }) {
+function ShapesPanel({ items, selectedId, actions, brandKit = null }) {
   const shapes = items.filter((item) => item.kind === "shape");
   const chosen = shapes.find((item) => item.id === selectedId) || null;
   const shape = chosen?.shape || {};
@@ -697,6 +755,7 @@ function ShapesPanel({ items, selectedId, actions }) {
                 label="Line colour"
                 value={shape.stroke || shape.fill || ""}
                 fallback="#334155"
+                brandKit={brandKit}
                 onPick={(color) =>
                   actions.setShape(chosen.id, { stroke: color, fill: "" })
                 }
@@ -723,6 +782,7 @@ function ShapesPanel({ items, selectedId, actions }) {
                 label="Fill colour"
                 value={shape.fill || ""}
                 fallback="#059669"
+                brandKit={brandKit}
                 onPick={(fill) => actions.setShape(chosen.id, { fill })}
                 onCommit={(fill) => actions.setShape(chosen.id, { fill })}
               />
@@ -730,6 +790,7 @@ function ShapesPanel({ items, selectedId, actions }) {
                 label="Border colour"
                 value={shape.stroke || ""}
                 fallback="#0f172a"
+                brandKit={brandKit}
                 onPick={(stroke) => actions.setShape(chosen.id, { stroke })}
                 onCommit={(stroke) => actions.setShape(chosen.id, { stroke })}
               />
@@ -903,12 +964,353 @@ function LayersPanel({ items, selectedId, hiddenIds, actions }) {
   );
 }
 
+function PageSection({
+  title,
+  isCustom,
+  onToggleMode,
+  onReset,
+  children,
+}) {
+  return (
+    <div className="space-y-3 rounded-btn border border-line bg-section/50 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-semibold text-heading">{title}</span>
+        {isCustom ? (
+          <div className="flex items-center gap-1.5">
+            <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 border border-amber-200">
+              Customized
+            </span>
+            <button
+              type="button"
+              onClick={onReset}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 hover:text-slate-900"
+              title="Reset to brand setting"
+            >
+              <RotateCcw className="h-3 w-3" />
+              <span>Reset to brand</span>
+            </button>
+          </div>
+        ) : null}
+      </div>
+
+      <Segmented
+        value={isCustom ? "custom" : "brand"}
+        onChange={(val) => onToggleMode(val === "custom")}
+        options={[
+          { value: "brand", label: "Use brand setting" },
+          { value: "custom", label: "Customize" },
+        ]}
+      />
+
+      {isCustom ? (
+        <div className="space-y-3 pt-2 border-t border-line">
+          {children}
+        </div>
+      ) : (
+        <p className="text-[11px] text-muted-foreground leading-snug">
+          Using your organization&rsquo;s brand setting.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function PagePanel({ page, brandKit, onPageChange, onResetSection }) {
+  const bg = page?.background || { mode: "brand" };
+  const dec = page?.decoration || { mode: "brand" };
+  const wm = page?.watermark || { mode: "brand" };
+  const card = page?.infoCard || { mode: "brand" };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">
+        Customize the poster&rsquo;s backdrop, decorations and info cards. Anything you don&rsquo;t customize will follow your brand kit.
+      </p>
+
+      {/* 1. Background */}
+      <PageSection
+        title="Background"
+        isCustom={bg.mode === "custom"}
+        onToggleMode={(custom) => {
+          if (custom) {
+            onPageChange("background", {
+              ...DEFAULT_PAGE_BACKGROUND,
+              ...bg,
+              mode: "custom",
+            });
+          } else {
+            onResetSection("background");
+          }
+        }}
+        onReset={() => onResetSection("background")}
+      >
+        <BackgroundEditor
+          label="Poster background"
+          value={bg}
+          onChange={(patch) =>
+            onPageChange("background", { ...bg, ...patch, mode: "custom" })
+          }
+          types={["color", "gradient", "image", "pattern"]}
+          uploadKind="content"
+          uploadLabel="Upload background photo"
+        />
+      </PageSection>
+
+      {/* 2. Decoration */}
+      <PageSection
+        title="Decoration"
+        isCustom={dec.mode === "custom"}
+        onToggleMode={(custom) => {
+          if (custom) {
+            onPageChange("decoration", {
+              ...DEFAULT_PAGE_DECORATION,
+              ...dec,
+              mode: "custom",
+            });
+          } else {
+            onResetSection("decoration");
+          }
+        }}
+        onReset={() => onResetSection("decoration")}
+      >
+        <Segmented
+          label="Pattern or shape"
+          value={dec.decoration || "none"}
+          onChange={(decoration) =>
+            onPageChange("decoration", { ...dec, mode: "custom", decoration })
+          }
+          options={[
+            { value: "none", label: "None" },
+            { value: "band", label: "Band" },
+            { value: "circle", label: "Circle" },
+            { value: "corners", label: "Corners" },
+          ]}
+        />
+        {(dec.decoration || "none") !== "none" ? (
+          <ColorInput
+            label="Decoration color"
+            value={dec.decorationColor || "brand:primary"}
+            brandKit={brandKit}
+            onChange={(decorationColor) =>
+              onPageChange("decoration", {
+                ...dec,
+                mode: "custom",
+                decorationColor,
+              })
+            }
+          />
+        ) : null}
+      </PageSection>
+
+      {/* 3. Watermark */}
+      <PageSection
+        title="Watermark"
+        isCustom={wm.mode === "custom"}
+        onToggleMode={(custom) => {
+          if (custom) {
+            onPageChange("watermark", {
+              ...DEFAULT_PAGE_WATERMARK,
+              ...wm,
+              mode: "custom",
+            });
+          } else {
+            onResetSection("watermark");
+          }
+        }}
+        onReset={() => onResetSection("watermark")}
+      >
+        <Toggle
+          label="Show logo watermark"
+          checked={Boolean(wm.show)}
+          onChange={(show) =>
+            onPageChange("watermark", { ...wm, mode: "custom", show })
+          }
+          hint="Faint brand logo placed in the center of the poster"
+        />
+        {wm.show ? (
+          <SliderNumber
+            label="Watermark opacity"
+            value={wm.opacity ?? 0.08}
+            min={LIMITS.watermarkOpacity.min}
+            max={LIMITS.watermarkOpacity.max}
+            step={LIMITS.watermarkOpacity.step}
+            onChange={(opacity) =>
+              onPageChange("watermark", { ...wm, mode: "custom", opacity })
+            }
+          />
+        ) : null}
+      </PageSection>
+
+      {/* 4. Cards for date, time and place */}
+      <PageSection
+        title="Cards for date, time and place"
+        isCustom={card.mode === "custom"}
+        onToggleMode={(custom) => {
+          if (custom) {
+            onPageChange("infoCard", {
+              ...DEFAULT_PAGE_INFO_CARD,
+              ...card,
+              mode: "custom",
+            });
+          } else {
+            onResetSection("infoCard");
+          }
+        }}
+        onReset={() => onResetSection("infoCard")}
+      >
+        <ColorInput
+          label="Card background"
+          value={card.background || "#f8fafc"}
+          brandKit={brandKit}
+          onChange={(background) =>
+            onPageChange("infoCard", { ...card, mode: "custom", background })
+          }
+        />
+        <ColorInput
+          label="Card border color"
+          value={card.border || "#e2e8f0"}
+          brandKit={brandKit}
+          onChange={(border) =>
+            onPageChange("infoCard", { ...card, mode: "custom", border })
+          }
+        />
+        <ColorInput
+          label="Icon color"
+          value={card.iconColor || "brand:primary"}
+          brandKit={brandKit}
+          onChange={(iconColor) =>
+            onPageChange("infoCard", { ...card, mode: "custom", iconColor })
+          }
+        />
+        <SliderNumber
+          label="Card rounded corners"
+          value={card.radius ?? 16}
+          min={LIMITS.cardRadius.min}
+          max={LIMITS.cardRadius.max}
+          step={LIMITS.cardRadius.step}
+          unit="px"
+          onChange={(radius) =>
+            onPageChange("infoCard", { ...card, mode: "custom", radius })
+          }
+        />
+      </PageSection>
+    </div>
+  );
+}
+
+const BRAND_RAIL_SWATCHES = [
+  { token: "brand:primary", label: "Primary" },
+  { token: "brand:secondary", label: "Secondary" },
+  { token: "brand:accent", label: "Accent" },
+  { token: "brand:text", label: "Text" },
+  { token: "brand:background", label: "Background" },
+];
+
+function BrandPanel({
+  selectedItem,
+  brandKit,
+  onApplyColorToken,
+  onApplyFontToken,
+}) {
+  const headingFont = brandKit?.fonts?.heading || "Cinzel";
+  const bodyFont = brandKit?.fonts?.body || "Inter";
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-btn border border-line bg-section p-3 space-y-2">
+        <p className="text-xs text-muted-foreground leading-snug">
+          Header and footer are set in the Brand Kit.
+        </p>
+        <a
+          href="/brand-kit"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+        >
+          <span>Edit in Brand Kit</span>
+          <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+      </div>
+
+      <div className="space-y-2">
+        <span className="text-xs font-semibold text-heading">Brand colours</span>
+        <p className="text-[11px] text-muted-foreground">
+          {selectedItem
+            ? "Click a colour to apply it to the selected item."
+            : "Select an item on the poster to apply a brand colour."}
+        </p>
+        <div className="grid grid-cols-1 gap-1.5">
+          {BRAND_RAIL_SWATCHES.map((swatch) => {
+            const hex = toHex(resolveColorToken(swatch.token, brandKit), "#ffffff");
+            return (
+              <button
+                key={swatch.token}
+                type="button"
+                onClick={() => onApplyColorToken?.(swatch.token)}
+                disabled={!selectedItem}
+                className="flex items-center gap-2.5 rounded-btn border border-line bg-canvas px-2.5 py-2 text-left hover:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <span
+                  className="h-6 w-6 rounded-full border border-slate-300 shrink-0 shadow-inner"
+                  style={{ backgroundColor: hex }}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-heading">{swatch.label}</p>
+                  <p className="font-mono text-[10px] text-muted-foreground uppercase">{hex}</p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="space-y-2 border-t border-line pt-3">
+        <span className="text-xs font-semibold text-heading">Brand fonts</span>
+        <p className="text-[11px] text-muted-foreground">
+          {selectedItem?.kind === "text"
+            ? "Click a font to apply it to the selected text."
+            : "Select a text item on the poster to apply a brand font."}
+        </p>
+        <div className="space-y-1.5">
+          <button
+            type="button"
+            onClick={() => onApplyFontToken?.("brand:heading")}
+            disabled={selectedItem?.kind !== "text"}
+            className="w-full rounded-btn border border-line bg-canvas p-2.5 text-left hover:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span className="text-xs font-semibold text-heading">Brand heading</span>
+            <p className="text-sm text-heading mt-0.5 truncate" style={{ fontFamily: `'${headingFont}', sans-serif` }}>
+              {headingFont}
+            </p>
+          </button>
+          <button
+            type="button"
+            onClick={() => onApplyFontToken?.("brand:body")}
+            disabled={selectedItem?.kind !== "text"}
+            className="w-full rounded-btn border border-line bg-canvas p-2.5 text-left hover:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span className="text-xs font-semibold text-heading">Brand body</span>
+            <p className="text-sm text-heading mt-0.5 truncate" style={{ fontFamily: `'${bodyFont}', sans-serif` }}>
+              {bodyFont}
+            </p>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function EditorPanel({
   tab,
   items,
   selectedId,
   hiddenIds,
   brandKit,
+  page,
+  onPageChange,
+  onResetPageSection,
+  onApplyColorToken,
+  onApplyFontToken,
   actions,
   onClose,
 }) {
@@ -959,7 +1361,12 @@ export function EditorPanel({
         />
       ) : null}
       {tab === "shapes" ? (
-        <ShapesPanel items={items} selectedId={selectedId} actions={actions} />
+        <ShapesPanel
+          items={items}
+          selectedId={selectedId}
+          actions={actions}
+          brandKit={brandKit}
+        />
       ) : null}
       {tab === "layers" ? (
         <LayersPanel
@@ -967,6 +1374,22 @@ export function EditorPanel({
           selectedId={selectedId}
           hiddenIds={hiddenIds}
           actions={actions}
+        />
+      ) : null}
+      {tab === "page" ? (
+        <PagePanel
+          page={page}
+          brandKit={brandKit}
+          onPageChange={onPageChange}
+          onResetSection={onResetPageSection}
+        />
+      ) : null}
+      {tab === "brand" ? (
+        <BrandPanel
+          selectedItem={items.find((item) => item.id === selectedId) || null}
+          brandKit={brandKit}
+          onApplyColorToken={onApplyColorToken}
+          onApplyFontToken={onApplyFontToken}
         />
       ) : null}
     </div>

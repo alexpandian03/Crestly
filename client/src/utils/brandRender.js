@@ -281,6 +281,12 @@ export function resolvePosterBrand(brandKit, template) {
 
   const logoUrl = plain(kit?.logos?.find((l) => l?.isPrimary)?.url || kit?.logos?.[0]?.url, 600);
 
+  const page = effectivePage(kit, template);
+  const customBg = template?.page?.background?.mode === 'custom';
+  const customDec = template?.page?.decoration?.mode === 'custom';
+  const customWatermark = template?.page?.watermark?.mode === 'custom';
+  const customCard = template?.page?.infoCard?.mode === 'custom';
+
   // ---------- surfaces ----------
   const canvasBgUntouched = isAtDefault(kit?.background, D.background);
   const canvasBg = normalizeBackground(canvasBgUntouched ? canvasColor : kit.background, canvasColor);
@@ -291,8 +297,10 @@ export function resolvePosterBrand(brandKit, template) {
       ? canvasBg.color
       : canvasColor;
 
-  const contentBgUntouched = isAtDefault(kit?.content?.background, D.content.background);
-  const contentBg = normalizeBackground(contentBgUntouched ? canvasPlate : kit.content.background, canvasPlate);
+  const contentBgUntouched = customBg ? false : isAtDefault(kit?.content?.background, D.content.background);
+  const contentBg = customBg
+    ? normalizeBackground(page.background, canvasPlate)
+    : normalizeBackground(contentBgUntouched ? canvasPlate : kit.content.background, canvasPlate);
   const headerBg = normalizeBackground(pick('header', 'background', LEGACY.headerBg), LEGACY.headerBg);
   const footerBg = normalizeBackground(pick('footer', 'background', LEGACY.footerBg), LEGACY.footerBg);
 
@@ -310,14 +318,30 @@ export function resolvePosterBrand(brandKit, template) {
   const accentColor = readable(colorPick('content', 'accentColor', accent), contentSurface, [accent, primary, '#ffffff', '#0b0f17'], 2);
 
   const cardDefaults = D.content.infoCard;
-  const cardStyled = !isAtDefault(kit?.content?.infoCard, cardDefaults);
-  const cardBackground = cardStyled ? colorOr(kit?.content?.infoCard?.background, cardDefaults.background) : LEGACY.cardBg;
-  const cardIconColor = cardStyled ? colorOr(kit?.content?.infoCard?.iconColor, cardDefaults.iconColor) : accentColor;
+  const cardStyled = customCard ? true : !isAtDefault(kit?.content?.infoCard, cardDefaults);
+  const cardBackground = customCard
+    ? colorOr(page.infoCard?.background, cardDefaults.background)
+    : cardStyled
+      ? colorOr(kit?.content?.infoCard?.background, cardDefaults.background)
+      : LEGACY.cardBg;
+  const cardIconColor = customCard
+    ? colorOr(page.infoCard?.iconColor, cardDefaults.iconColor)
+    : cardStyled
+      ? colorOr(kit?.content?.infoCard?.iconColor, cardDefaults.iconColor)
+      : accentColor;
   const card = {
     styled: cardStyled,
     background: cardBackground,
-    border: cardStyled ? colorOr(kit?.content?.infoCard?.border, cardDefaults.border) : LEGACY.cardBorder,
-    radius: cardStyled ? numberOr(kit?.content?.infoCard?.radius, cardDefaults.radius, 0, 32) : null,
+    border: customCard
+      ? colorOr(page.infoCard?.border, cardDefaults.border)
+      : cardStyled
+        ? colorOr(kit?.content?.infoCard?.border, cardDefaults.border)
+        : LEGACY.cardBorder,
+    radius: customCard
+      ? numberOr(page.infoCard?.radius, cardDefaults.radius, 0, 32)
+      : cardStyled
+        ? numberOr(kit?.content?.infoCard?.radius, cardDefaults.radius, 0, 32)
+        : null,
     iconColor: cardIconColor,
     iconBg: alpha(cardIconColor, 0.16),
     textColor: cardStyled
@@ -331,8 +355,12 @@ export function resolvePosterBrand(brandKit, template) {
   };
 
   const watermark = {
-    show: Boolean(kit?.content?.watermark?.show) && Boolean(logoUrl),
-    opacity: numberOr(kit?.content?.watermark?.opacity, D.content.watermark.opacity, 0, 0.3),
+    show: customWatermark
+      ? Boolean(page.watermark?.show) && Boolean(logoUrl)
+      : Boolean(kit?.content?.watermark?.show) && Boolean(logoUrl),
+    opacity: customWatermark
+      ? numberOr(page.watermark?.opacity, D.content.watermark.opacity, 0, 0.3)
+      : numberOr(kit?.content?.watermark?.opacity, D.content.watermark.opacity, 0, 0.3),
     url: logoUrl,
   };
 
@@ -342,6 +370,17 @@ export function resolvePosterBrand(brandKit, template) {
   const declaredContent = rendered.zones.content;
   const declaresContent = Boolean(contentZone);
   const patternSpansPoster = !contentBgUntouched && contentBg.type === 'pattern';
+  const decoration = customDec
+    ? page.decoration
+    : contentUntouched
+      ? 'legacy'
+      : ['none', 'band', 'circle', 'corners'].includes(kit?.content?.decoration)
+        ? kit.content.decoration
+        : 'none';
+  const decorationColor = customDec
+    ? colorOr(page.decorationColor, accent)
+    : colorPick('content', 'decorationColor', accent);
+
   const content = {
     /* A template's content rectangle is the text box; a design with no areas of its own
      * spans the whole poster between the bands, and only the old symmetric inset is used
@@ -361,7 +400,7 @@ export function resolvePosterBrand(brandKit, template) {
      * edge-to-edge layer behind everything, so it never crosses an item or the text. */
     bg: { ...contentBg, pattern: 'none' },
     pattern: contentBgUntouched ? 'none' : contentBg.pattern,
-    patternColor: colorPick('content', 'decorationColor', accent),
+    patternColor: decorationColor,
     bgUntouched: contentBgUntouched,
     /* A background photo is the poster's backdrop, so it is painted across the
      * whole canvas instead of only the inset area behind the text. A pattern's own
@@ -374,12 +413,8 @@ export function resolvePosterBrand(brandKit, template) {
     bodyColor,
     accentColor,
     fonts: contentFonts,
-    decoration: contentUntouched
-      ? 'legacy'
-      : ['none', 'band', 'circle', 'corners'].includes(kit?.content?.decoration)
-        ? kit.content.decoration
-        : 'none',
-    decorationColor: colorPick('content', 'decorationColor', accent),
+    decoration,
+    decorationColor,
     watermark,
     card,
     defaultImageUrl: plain(kit?.content?.defaultImageUrl, 600),
@@ -567,6 +602,6 @@ export function resolvePosterBrand(brandKit, template) {
 }
 
 /** Base fill the exporters use so JPG/PDF match the canvas. */
-export function canvasBaseColor(brandKit) {
-  return resolvePosterBrand(brandKit, { size: { width: 1080, height: 1350 }, zones: [] }).canvas.color;
+export function canvasBaseColor(brandKit, template) {
+  return resolvePosterBrand(brandKit, template || { size: { width: 1080, height: 1350 }, zones: [] }).canvas.color;
 }

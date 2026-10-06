@@ -8,9 +8,8 @@ import {
   MoveRight,
 } from "lucide-react";
 import api from "../services/api";
-import PosterPreview from "../components/PosterPreview";
+import TemplatePreview from "../components/TemplatePreview";
 import { useAuth } from "../context/AuthContext";
-import { TEMPLATE_SAMPLE_CONTENT } from "../data/demoPosters";
 import { LAYOUT_BASE, resolveTemplateRender } from "../utils/templateRender";
 import { LAYOUT_LABELS } from "../utils/templateBuilderRules";
 
@@ -117,12 +116,7 @@ export default function TemplateBuilder() {
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="card-surface p-4">
             <div className="mx-auto w-full max-w-[360px]">
-              <PosterPreview
-                brandKit={brandKit}
-                template={template}
-                content={TEMPLATE_SAMPLE_CONTENT}
-                showZoneBorders
-              />
+              <TemplatePreview eager brandKit={brandKit} template={template} showZoneBorders />
             </div>
             <p className="mt-3 text-xs text-muted-foreground">
               The top and bottom bands always come from your brand kit. Colours,

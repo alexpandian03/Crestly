@@ -1,10 +1,10 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/inter";
-
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 :root {
   --color-canvas: #ffffff;
   --color-section: #fafafa;

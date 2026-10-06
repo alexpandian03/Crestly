@@ -12,7 +12,7 @@ export default defineConfig({
     alias: { '@': path.resolve(clientRoot, './src') },
   },
   server: {
-    port: 5175,
+    port: 5173,
     
     /* /shared holds the item rules the API and this app must agree on, so the dev
        server may serve files from the repository root, not only from /client. */

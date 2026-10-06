@@ -1,8 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Layout, Sparkles } from "lucide-react";
-import TemplateThumb from "../TemplateThumb";
+import TemplatePreview from "../TemplatePreview";
 import { MODE_CARDS, BRAND_LINE } from "../../utils/posterAiDesign";
-import { TEMPLATE_SAMPLE_CONTENT } from "../../data/demoPosters";
 
 const templateId = (template) => template?.id || template?._id;
 
@@ -132,11 +131,10 @@ export default function DesignChooser({
                     }`}
                   >
                     <div className="bg-preview p-1.5 flex justify-center pointer-events-none select-none">
-                      <TemplateThumb
+                      <TemplatePreview
                         brandKit={brandKit}
                         template={t}
-                        content={TEMPLATE_SAMPLE_CONTENT}
-                        width={64}
+                        size={64}
                       />
                     </div>
                     <div className="px-2 py-1.5">

@@ -88,6 +88,20 @@ export default function Templates() {
     load();
   }, [load]);
 
+  /* Coming back to the tab has to show the newest look, so the list is re-read quietly
+     whenever the page becomes visible or regains focus — including after the editor saved. */
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState !== "hidden") load({ quiet: true });
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [load]);
+
   const defaultTemplate = useMemo(
     () =>
       templates.find((t) => t.isDefault) ||

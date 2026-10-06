@@ -21,7 +21,7 @@ import {
   Undo2,
 } from "lucide-react";
 import api from "../services/api";
-import PosterPreview from "../components/PosterPreview";
+import TemplatePreview from "../components/TemplatePreview";
 import EditorStage from "../components/editor/EditorStage";
 import EditorRail, { EditorPanel } from "../components/editor/EditorRail";
 import ItemToolbar from "../components/editor/ItemToolbar";
@@ -32,6 +32,7 @@ import {
   EDITOR_VERSION,
   ELEMENT_LIMITS,
   VARIABLE_LIMITS,
+  defaultPage,
 } from "../../../shared/templateElements.js";
 import {
   TEMPLATE_CATEGORIES,
@@ -175,15 +176,19 @@ export default function TemplateEdit() {
 
   const [hist, dispatch] = useReducer(historyReducer, {
     past: [],
-    present: [],
+    present: { items: [], page: defaultPage() },
     future: [],
   });
-  const itemsRef = useRef([]);
+  const stateRef = useRef({ items: [], page: defaultPage() });
   useEffect(() => {
-    itemsRef.current = hist.present;
+    stateRef.current = hist.present || { items: [], page: defaultPage() };
   }, [hist.present]);
   const txRef = useRef(null);
-  const readItems = useCallback(() => itemsRef.current || [], []);
+  const readState = useCallback(
+    () => stateRef.current || { items: [], page: defaultPage() },
+    [],
+  );
+  const readItems = useCallback(() => readState().items || [], [readState]);
 
   const [selectedId, setSelectedId] = useState("");
   const [editingId, setEditingId] = useState("");
@@ -203,9 +208,10 @@ export default function TemplateEdit() {
   const size = useMemo(() => resolveTemplateSize(saved), [saved]);
   const area = useMemo(() => itemsArea(brandKit, { size }), [brandKit, size]);
   const items = useMemo(
-    () => cleanItems(hist.present, area),
-    [hist.present, area],
+    () => cleanItems(hist.present?.items || [], area),
+    [hist.present?.items, area],
   );
+  const page = hist.present?.page || defaultPage();
 
   const draftTemplate = useMemo(
     () => ({
@@ -215,17 +221,18 @@ export default function TemplateEdit() {
       size,
       zones: saved?.zones || [],
       layout: saved?.layout || {},
+      page,
       editorVersion: EDITOR_VERSION,
       elements: items,
     }),
-    [id, name, category, size, saved, items],
+    [id, name, category, size, saved, page, items],
   );
 
   const dirty =
     Boolean(saved) &&
     (name.trim() !== (saved.name || "") ||
       category !== (saved.category || "Event") ||
-      itemsSignature(items) !== baseline);
+      itemsSignature(items) + "::" + JSON.stringify(page) !== baseline);
 
   const selected = useMemo(
     () => items.find((item) => item.id === selectedId) || null,
@@ -248,12 +255,13 @@ export default function TemplateEdit() {
       itemsOf(template),
       itemsArea(kit, { size: resolveTemplateSize(template) }),
     );
+    const loadedPage = template.page ? { ...defaultPage(), ...template.page } : defaultPage();
     setSaved(template);
     setName(template.name || "");
     setCategory(template.category || "Event");
     if (kit) setBrandKit(kit);
-    setBaseline(itemsSignature(clean));
-    dispatch({ type: "reset", present: clean });
+    setBaseline(itemsSignature(clean) + "::" + JSON.stringify(loadedPage));
+    dispatch({ type: "reset", present: { items: clean, page: loadedPage } });
     txRef.current = null;
     setHiddenIds(new Set());
   }, []);
@@ -308,9 +316,10 @@ export default function TemplateEdit() {
    */
   const edit = useCallback(
     (mutate, { live = false } = {}) => {
-      const current = readItems();
-      const next = mutate(current);
-      if (!Array.isArray(next) || next === current) return;
+      const current = readState();
+      const nextItems = mutate(current.items || []);
+      if (!Array.isArray(nextItems) || nextItems === current.items) return;
+      const next = { ...current, items: nextItems };
       if (live) {
         if (txRef.current === null) txRef.current = current;
         dispatch({ type: "live", present: next });
@@ -320,7 +329,121 @@ export default function TemplateEdit() {
       txRef.current = null;
       dispatch({ type: "commit", from, present: next });
     },
-    [readItems],
+    [readState],
+  );
+
+  const editPage = useCallback(
+    (section, patch) => {
+      const current = readState();
+      const currentSection = current.page?.[section] || {};
+      const nextPage = {
+        ...(current.page || defaultPage()),
+        [section]: { ...currentSection, ...patch },
+      };
+      const next = { ...current, page: nextPage };
+      dispatch({ type: "commit", from: current, present: next });
+    },
+    [readState],
+  );
+
+  const resetPageSection = useCallback(
+    (section) => {
+      const current = readState();
+      const nextPage = {
+        ...(current.page || defaultPage()),
+        [section]: { mode: "brand" },
+      };
+      const next = { ...current, page: nextPage };
+      dispatch({ type: "commit", from: current, present: next });
+    },
+    [readState],
+  );
+
+  const resetItemToBrand = useCallback(
+    (itemId) => {
+      edit((itemsList) => {
+        return itemsList.map((item) => {
+          if (item.id !== itemId) return item;
+          const isHead =
+            isHeadlineItem(item) || item.field === "title" || item.field === "tagline";
+          if (item.kind === "text") {
+            return {
+              ...item,
+              style: {
+                ...item.style,
+                fontFamily: isHead ? "brand:heading" : "brand:body",
+                color: isHead ? "brand:heading" : "brand:text",
+              },
+            };
+          }
+          if (item.kind === "shape") {
+            const isLine = item.shape?.type === "line";
+            return {
+              ...item,
+              shape: {
+                ...item.shape,
+                fill: isLine ? "" : "brand:primary",
+                stroke: isLine ? "brand:primary" : (item.shape?.stroke ? "brand:primary" : ""),
+              },
+            };
+          }
+          return item;
+        });
+      });
+    },
+    [edit],
+  );
+
+  const applyColorToken = useCallback(
+    (token) => {
+      if (!selectedId) return;
+      edit((itemsList) => {
+        return itemsList.map((item) => {
+          if (item.id !== selectedId) return item;
+          if (item.kind === "text") {
+            return {
+              ...item,
+              style: {
+                ...item.style,
+                color: token,
+              },
+            };
+          }
+          if (item.kind === "shape") {
+            const isLine = item.shape?.type === "line";
+            return {
+              ...item,
+              shape: {
+                ...item.shape,
+                fill: isLine ? "" : token,
+                stroke: isLine ? token : item.shape?.stroke,
+              },
+            };
+          }
+          return item;
+        });
+      });
+    },
+    [edit, selectedId],
+  );
+
+  const applyFontToken = useCallback(
+    (token) => {
+      if (!selectedId) return;
+      edit((itemsList) => {
+        return itemsList.map((item) => {
+          if (item.id !== selectedId || item.kind !== "text") return item;
+          return {
+            ...item,
+            style: {
+              ...item.style,
+              fontFamily: token,
+            },
+          };
+        });
+      });
+    },
+    [edit, selectedId],
   );
 
   const mapOne = useCallback(
@@ -642,10 +765,11 @@ export default function TemplateEdit() {
     if (!saved) return;
     if (!window.confirm("Undo everything back to the last save?")) return;
     const clean = cleanItems(itemsOf(saved), area);
+    const savedPage = saved.page ? { ...defaultPage(), ...saved.page } : defaultPage();
     setName(saved.name || "");
     setCategory(saved.category || "Event");
-    setBaseline(itemsSignature(clean));
-    dispatch({ type: "reset", present: clean });
+    setBaseline(itemsSignature(clean) + "::" + JSON.stringify(savedPage));
+    dispatch({ type: "reset", present: { items: clean, page: savedPage } });
     txRef.current = null;
     setBanner(null);
   };
@@ -785,6 +909,7 @@ export default function TemplateEdit() {
         name: name.trim(),
         category,
         elements: items,
+        page,
         note: note.trim() || undefined,
         expectedVersion: saved?.version,
       });
@@ -792,7 +917,12 @@ export default function TemplateEdit() {
       if (!updated) throw new Error("missing template");
       applyLoaded(updated, brandKit);
       setNote("");
-      setBanner({ tone: "ok", text: `Saved as version ${updated.version}.` });
+      setBanner({
+        tone: "ok",
+        text: `Saved as version ${updated.version}.`,
+        /* Going back re-reads the list, so the cards show this save straight away. */
+        action: { label: "Back to templates", run: goBack },
+      });
       toast.success(`Saved as version ${updated.version}`);
     } catch (err) {
       const status = err?.response?.status;
@@ -1139,11 +1269,7 @@ export default function TemplateEdit() {
             </div>
             <div className="card-surface p-4">
               <div className="mx-auto w-full max-w-[360px]">
-                <PosterPreview
-                  brandKit={brandKit}
-                  template={draftTemplate}
-                  content={TEMPLATE_SAMPLE_CONTENT}
-                />
+                <TemplatePreview eager brandKit={brandKit} template={draftTemplate} />
               </div>
             </div>
           </div>
@@ -1162,10 +1288,11 @@ export default function TemplateEdit() {
                   {item.label}
                 </p>
                 <div className="rounded-card border border-line bg-canvas p-2">
-                  <PosterPreview
+                  <TemplatePreview
+                    eager
                     brandKit={item.kit}
                     template={draftTemplate}
-                    content={item.content}
+                    sample={item.content}
                   />
                 </div>
               </div>
@@ -1211,10 +1338,13 @@ export default function TemplateEdit() {
                   <ItemToolbar
                     item={selected}
                     items={items}
+                    brandKit={brandKit}
+                    page={page}
                     onStyle={patchStyle}
                     onStyleLive={liveStyle}
                     onMode={changeMode}
                     onMeta={changeMeta}
+                    onResetToBrand={resetItemToBrand}
                   />
                 </div>
               </div>
@@ -1226,6 +1356,11 @@ export default function TemplateEdit() {
               selectedId={selectedId}
               hiddenIds={hiddenIds}
               brandKit={brandKit}
+              page={page}
+              onPageChange={editPage}
+              onResetPageSection={resetPageSection}
+              onApplyColorToken={applyColorToken}
+              onApplyFontToken={applyFontToken}
               actions={panelActions}
               onClose={() => setTab("")}
             />
