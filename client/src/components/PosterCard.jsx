@@ -1,23 +1,23 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Copy, ImageIcon, MoreVertical, PenLine, Trash2 } from 'lucide-react';
-import { timeAgo } from '../utils/timeAgo';
+import React, { useEffect, useRef, useState } from "react";
+import { Copy, ImageIcon, MoreVertical, PenLine, Trash2 } from "lucide-react";
+import { timeAgo } from "../utils/timeAgo";
 
 const STATUS_STYLES = {
-  draft: 'bg-section text-muted border border-line',
-  pending: 'bg-amber-500/10 text-amber-600 border border-amber-500/30',
-  approved: 'bg-success/10 text-success border border-success/30',
+  draft: "bg-section text-muted-foreground border border-line",
+  pending: "bg-amber-500/10 text-amber-600 border border-amber-500/30",
+  approved: "bg-success/10 text-success border border-success/30",
 };
 
 const STATUS_LABELS = {
-  draft: 'Draft',
-  pending: 'Waiting for review',
-  approved: 'Approved',
+  draft: "Draft",
+  pending: "Waiting for review",
+  approved: "Approved",
 };
 
 export default function PosterCard({
   poster,
-  category = '',
-  createdByName = '',
+  category = "",
+  createdByName = "",
   aspectRatio = 0.8,
   busy = false,
   onOpenDetail,
@@ -34,16 +34,17 @@ export default function PosterCard({
   useEffect(() => {
     if (!menuOpen) return undefined;
     const handlePointerDown = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) setMenuOpen(false);
+      if (menuRef.current && !menuRef.current.contains(event.target))
+        setMenuOpen(false);
     };
     const handleKeyDown = (event) => {
-      if (event.key === 'Escape') setMenuOpen(false);
+      if (event.key === "Escape") setMenuOpen(false);
     };
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
     return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [menuOpen]);
 
@@ -54,7 +55,7 @@ export default function PosterCard({
     if (node?.complete && node.naturalWidth > 0) setImageReady(true);
   }, [poster.thumbnailUrl]);
 
-  const status = poster.status || 'draft';
+  const status = poster.status || "draft";
   const showImage = poster.thumbnailUrl && !imageFailed;
 
   const stop = (event) => event.stopPropagation();
@@ -71,12 +72,12 @@ export default function PosterCard({
       role="button"
       tabIndex={0}
       onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
+        if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           onOpenDetail(poster);
         }
       }}
-      aria-label={`Open details for ${poster.title || 'poster'}`}
+      aria-label={`Open details for ${poster.title || "poster"}`}
     >
       <div
         className="relative w-full bg-preview overflow-hidden"
@@ -92,14 +93,20 @@ export default function PosterCard({
             onLoad={() => setImageReady(true)}
             onError={() => setImageFailed(true)}
             className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${
-              imageReady ? 'opacity-100' : 'opacity-0'
+              imageReady ? "opacity-100" : "opacity-0"
             }`}
           />
         )}
         {(!showImage || !imageReady) && (
           <div className="absolute inset-0 flex items-center justify-center">
-            <div className="absolute inset-0 animate-pulse bg-section/60" aria-hidden="true" />
-            <ImageIcon className="relative w-8 h-8 text-muted/60" aria-hidden="true" />
+            <div
+              className="absolute inset-0 animate-pulse bg-section/60"
+              aria-hidden="true"
+            />
+            <ImageIcon
+              className="relative w-8 h-8 text-muted-foreground/60"
+              aria-hidden="true"
+            />
           </div>
         )}
 
@@ -159,16 +166,23 @@ export default function PosterCard({
 
       <div className="p-4 flex-1 flex flex-col gap-1.5">
         <h2 className="text-sm font-semibold text-heading leading-snug line-clamp-2">
-          {poster.title || 'Untitled poster'}
+          {poster.title || "Untitled poster"}
         </h2>
-        {category && <p className="text-xs text-muted">{category}</p>}
+        {category && (
+          <p className="text-xs text-muted-foreground">{category}</p>
+        )}
         <div className="mt-auto pt-2 flex items-end justify-between gap-2">
-          <p className="text-xs text-muted flex items-center gap-1">
-            {busy && <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />}
+          <p className="text-xs text-muted-foreground flex items-center gap-1">
+            {busy && (
+              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+            )}
             <span>Updated {timeAgo(poster.updatedAt || poster.createdAt)}</span>
           </p>
           {createdByName && (
-            <p className="text-[11px] text-muted truncate max-w-[45%]" title={createdByName}>
+            <p
+              className="text-[11px] text-muted-foreground truncate max-w-[45%]"
+              title={createdByName}
+            >
               Created by {createdByName}
             </p>
           )}
@@ -181,7 +195,10 @@ export default function PosterCard({
 export function PosterCardSkeleton() {
   return (
     <div className="card-surface overflow-hidden">
-      <div className="w-full bg-preview animate-pulse" style={{ aspectRatio: '0.8' }} />
+      <div
+        className="w-full bg-preview animate-pulse"
+        style={{ aspectRatio: "0.8" }}
+      />
       <div className="p-4 space-y-2">
         <div className="h-3.5 w-3/4 rounded bg-section animate-pulse" />
         <div className="h-2.5 w-1/3 rounded bg-section animate-pulse" />

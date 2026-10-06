@@ -15,6 +15,7 @@ import {
   contentArea,
   legacyToElements,
   normalizeElements,
+  resolveStyleTokens,
 } from '../../../shared/templateElements.js';
 import { blendOver, contrastRatio, parseColor, pickReadableColor } from './contrast.js';
 
@@ -199,7 +200,8 @@ export function usesTemplateElements(template) {
  */
 export function templateElements(template, brandKit) {
   const stored = Array.isArray(template?.elements) ? template.elements : [];
-  const items = stored.length > 0 ? normalizeElements(stored) : legacyToElements(template, brandKit);
+  const items = (stored.length > 0 ? normalizeElements(stored) : legacyToElements(template, brandKit))
+    .map((item) => resolveStyleTokens(item, brandKit));
   return items.map((item) => clampItemToArea(item, contentArea(brandKit, template)));
 }
 

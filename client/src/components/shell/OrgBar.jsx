@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Building2, Check, Search, X } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Building2, Check, Search, X } from "lucide-react";
 
 const idOf = (client) => client.id || client._id;
 
@@ -11,22 +11,31 @@ export function OrgBar({ selected, onChange }) {
         {selected ? (
           <>
             <Building2 className="h-4 w-4 shrink-0 text-primary" />
-            <span className="hidden shrink-0 text-xs font-semibold uppercase tracking-wider text-muted sm:inline">
+            <span className="hidden shrink-0 text-xs font-semibold uppercase tracking-wider text-muted-foreground sm:inline">
               Working on
             </span>
             <span className="min-w-0 flex-1 truncate text-sm font-semibold text-heading">
               {selected.name}
             </span>
-            <button type="button" onClick={onChange} className="shrink-0 rounded-btn px-2 py-1 text-sm font-semibold text-primary hover:bg-primary/10">
+            <button
+              type="button"
+              onClick={onChange}
+              className="shrink-0 rounded-btn px-2 py-1 text-sm font-semibold text-primary hover:bg-primary/10"
+            >
               Change
             </button>
           </>
         ) : (
           <>
             <p className="min-w-0 flex-1 truncate text-sm text-body">
-              Select an organization to open its brand kit, templates and posters
+              Select an organization to open its brand kit, templates and
+              posters
             </p>
-            <button type="button" onClick={onChange} className="btn-primary shrink-0 !px-3 !py-1.5 text-sm">
+            <button
+              type="button"
+              onClick={onChange}
+              className="btn-primary shrink-0 !px-3 !py-1.5 text-sm"
+            >
               Select organization
             </button>
           </>
@@ -36,30 +45,41 @@ export function OrgBar({ selected, onChange }) {
   );
 }
 
-export function OrgPicker({ open, clients, currentId, loading, onClose, onPick }) {
-  const [query, setQuery] = useState('');
+export function OrgPicker({
+  open,
+  clients,
+  currentId,
+  loading,
+  onClose,
+  onPick,
+}) {
+  const [query, setQuery] = useState("");
   const inputRef = useRef(null);
 
   useEffect(() => {
     if (!open) {
-      setQuery('');
+      setQuery("");
       return undefined;
     }
     const timer = setTimeout(() => inputRef.current?.focus(), 30);
     const onKeyDown = (event) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === "Escape") onClose();
     };
-    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener("keydown", onKeyDown);
     return () => {
       clearTimeout(timer);
-      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener("keydown", onKeyDown);
     };
   }, [open, onClose]);
 
   const matches = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return clients;
-    return clients.filter((client) => String(client.name || '').toLowerCase().includes(needle));
+    return clients.filter((client) =>
+      String(client.name || "")
+        .toLowerCase()
+        .includes(needle),
+    );
   }, [clients, query]);
 
   if (!open) return null;
@@ -76,7 +96,7 @@ export function OrgPicker({ open, clients, currentId, loading, onClose, onPick }
     >
       <div className="w-full max-w-md rounded-card border border-line bg-canvas shadow-soft">
         <div className="flex items-center gap-2 border-b border-line px-4 py-3">
-          <Search className="h-4 w-4 shrink-0 text-muted" />
+          <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
           <input
             ref={inputRef}
             type="search"
@@ -84,18 +104,27 @@ export function OrgPicker({ open, clients, currentId, loading, onClose, onPick }
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search organizations"
             aria-label="Search organizations"
-            className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-heading placeholder:text-muted focus:outline-none focus:ring-0"
+            className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-heading placeholder:text-muted-foreground focus:outline-none focus:ring-0"
           />
-          <button type="button" onClick={onClose} className="text-muted hover:text-heading" aria-label="Close">
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-muted-foreground hover:text-heading"
+            aria-label="Close"
+          >
             <X className="h-5 w-5" />
           </button>
         </div>
         <div className="max-h-[60vh] overflow-y-auto p-2">
           {loading && clients.length === 0 ? (
-            <p className="px-3 py-6 text-center text-sm text-muted">Loading organizations…</p>
+            <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+              Loading organizations…
+            </p>
           ) : matches.length === 0 ? (
-            <p className="px-3 py-6 text-center text-sm text-muted">
-              {query ? 'No organization matches that name.' : 'No organizations yet. Add one under Organizations.'}
+            <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+              {query
+                ? "No organization matches that name."
+                : "No organizations yet. Add one under Organizations."}
             </p>
           ) : (
             matches.map((client) => {
@@ -111,11 +140,17 @@ export function OrgPicker({ open, clients, currentId, loading, onClose, onPick }
                     onClose();
                   }}
                   className={`flex w-full items-center gap-3 rounded-btn px-3 py-2.5 text-left text-sm transition-colors ${
-                    id === currentId ? 'bg-primary/10 text-primary font-semibold' : 'text-body hover:bg-section hover:text-heading'
+                    id === currentId
+                      ? "bg-primary/10 text-primary font-semibold"
+                      : "text-body hover:bg-section hover:text-heading"
                   } disabled:cursor-not-allowed disabled:opacity-50`}
                 >
                   <span className="min-w-0 flex-1 truncate">{client.name}</span>
-                  {!isActive && <span className="shrink-0 text-xs text-muted">inactive</span>}
+                  {!isActive && (
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      inactive
+                    </span>
+                  )}
                   {id === currentId && <Check className="h-4 w-4 shrink-0" />}
                 </button>
               );

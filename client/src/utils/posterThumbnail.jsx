@@ -18,7 +18,7 @@ export async function renderAndUploadThumbnail(
   if (!posterId || !brandKit || !template || !content) return false;
   const width = template?.size?.width || 1080;
   const height = template?.size?.height || 1350;
-  const backgroundColor = canvasBaseColor(brandKit);
+  const backgroundColor = canvasBaseColor(brandKit, template);
 
   const container = document.createElement('div');
   container.style.cssText = `position:fixed;left:-10000px;top:0;width:${width}px;height:${height}px;overflow:hidden;z-index:-1;pointer-events:none;`;

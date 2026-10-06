@@ -856,6 +856,210 @@ const BAND_CASES = ['hero', 'typographic']
     design,
   }));
 
+const STYLE_LINK_TEST_TEMPLATE = {
+  name: 'Brand Linked Template',
+  category: 'Event',
+  size: { width: 1080, height: 1350 },
+  page: {
+    background: {
+      mode: 'custom',
+      type: 'color',
+      color: '#1a102f',
+    },
+    decoration: {
+      mode: 'custom',
+      decoration: 'band',
+      decorationColor: 'brand:accent',
+    },
+    infoCard: {
+      mode: 'custom',
+      background: '#281a46',
+      border: 'brand:accent',
+      radius: 16,
+      iconColor: 'brand:accent',
+    },
+  },
+  elements: [
+    {
+      id: 'sl-title',
+      kind: 'field',
+      field: 'headline',
+      x: 70,
+      y: 190,
+      w: 940,
+      h: 110,
+      z: 5,
+      style: {
+        fontFamily: 'brand:heading',
+        size: 56,
+        minSize: 28,
+        weight: 700,
+        color: 'brand:primary',
+      },
+    },
+    {
+      id: 'sl-tagline',
+      kind: 'field',
+      field: 'tagline',
+      x: 70,
+      y: 310,
+      w: 940,
+      h: 50,
+      z: 5,
+      style: {
+        fontFamily: 'brand:body',
+        size: 24,
+        minSize: 14,
+        weight: 500,
+        color: 'brand:accent',
+      },
+    },
+    {
+      id: 'sl-card-plate',
+      kind: 'shape',
+      shape: {
+        type: 'rect',
+        fill: 'brand:secondary',
+        stroke: 'brand:accent',
+        strokeWidth: 2,
+      },
+      x: 70,
+      y: 380,
+      w: 940,
+      h: 160,
+      z: 3,
+      style: { radius: 16, opacity: 0.6 },
+    },
+    {
+      id: 'sl-date',
+      kind: 'field',
+      field: 'date',
+      x: 100,
+      y: 410,
+      w: 420,
+      h: 50,
+      z: 5,
+      style: {
+        fontFamily: 'brand:body',
+        size: 26,
+        minSize: 16,
+        weight: 600,
+        color: 'brand:text',
+        showIcon: true,
+        showLabel: true,
+      },
+    },
+    {
+      id: 'sl-time',
+      kind: 'field',
+      field: 'time',
+      x: 550,
+      y: 410,
+      w: 420,
+      h: 50,
+      z: 5,
+      style: {
+        fontFamily: 'brand:body',
+        size: 26,
+        minSize: 16,
+        weight: 600,
+        color: 'brand:text',
+        showIcon: true,
+        showLabel: true,
+      },
+    },
+    {
+      id: 'sl-venue',
+      kind: 'field',
+      field: 'venue',
+      x: 100,
+      y: 470,
+      w: 870,
+      h: 50,
+      z: 5,
+      style: {
+        fontFamily: 'brand:body',
+        size: 24,
+        minSize: 15,
+        weight: 500,
+        color: 'brand:text',
+        showIcon: true,
+        showLabel: false,
+      },
+    },
+    {
+      id: 'sl-details',
+      kind: 'field',
+      field: 'details',
+      x: 70,
+      y: 570,
+      w: 940,
+      h: 220,
+      z: 5,
+      style: {
+        fontFamily: 'brand:body',
+        size: 24,
+        minSize: 14,
+        weight: 400,
+        color: 'brand:body',
+        lineHeight: 1.4,
+      },
+    },
+  ],
+};
+
+const STYLE_LINK_SAMPLE_CONTENT = {
+  title: 'Future of Sustainable Design 2026',
+  tagline: 'Architecture, materials and climate impact',
+  date: 'Friday, 27 November 2026',
+  time: '10:00 AM – 5:00 PM',
+  venue: 'Design Innovation Pavilion, West Wing',
+  details: [
+    'Keynote on circular architecture from industry pioneers',
+    'Interactive case studies & material testing exhibits',
+    'Networking reception with leaders & practitioners',
+  ],
+  imageUrl: '',
+};
+
+const SAVED_POSTER_SNAPSHOT_KIT = {
+  ...SAMPLE_BRANDS[0].kit,
+  orgName: 'Rosewood Philharmonic',
+  colors: { primary: '#e11d48', secondary: '#4c0519', accent: '#fb7185', text: '#fff1f2', background: '#2e020d' },
+  fonts: { heading: 'Cinzel', body: 'Lato' },
+  header: {
+    ...SAMPLE_BRANDS[0].kit.header,
+    orgName: {
+      show: true,
+      text: 'Rosewood Philharmonic',
+      style: styleText({ fontFamily: 'Cinzel', size: 30, weight: 700, color: '#ffffff' }),
+    },
+    border: { show: true, color: '#fb7185', thickness: 3 },
+  },
+  content: {
+    ...SAMPLE_BRANDS[0].kit.content,
+    headingColor: '#fff1f2',
+    bodyColor: '#fecdd3',
+    accentColor: '#fb7185',
+    headingFont: 'Cinzel',
+    bodyFont: 'Lato',
+  },
+};
+
+const SAVED_POSTER_CONTENT = {
+  ...STYLE_LINK_SAMPLE_CONTENT,
+  title: 'Autumn Symphony Gala',
+  tagline: 'Annual Charity Concert',
+  date: 'Saturday, 14 November 2026',
+  time: '7:30 PM',
+  venue: 'Royal Symphony Hall',
+  design: {
+    brandKit: SAVED_POSTER_SNAPSHOT_KIT,
+    template: STYLE_LINK_TEST_TEMPLATE,
+    capturedAt: '2026-08-01T12:00:00.000Z',
+  },
+};
+
 /** The numbers the renderer actually paints, in the words this page reports. */
 function layerReadout(kit, tpl) {
   const brand = resolvePosterBrand(kit, tpl);
@@ -1379,6 +1583,95 @@ export default function PosterStudioTest() {
             </div>
             );
           })}
+        </div>
+      </div>
+
+      {/* ── Style link and snapshot tests ── */}
+      <div className="pt-10 border-t border-slate-800 space-y-6">
+        <div>
+          <h2 className="text-xl font-bold text-white">Style link and saved snapshot tests</h2>
+          <p className="text-slate-400 text-sm mt-1">
+            Verifies tokens and page overrides: (1 &amp; 2) one template with tokens and a custom page backdrop drawn
+            with two different brand kits (colours &amp; fonts follow each brand); (3) a saved poster whose brand kit was
+            changed to Bold afterwards, confirming it keeps its Rosewood / Cinzel snapshot look.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider">
+              1 · Professional Brand (Tokens + Custom Page)
+            </p>
+            <PosterPreview
+              brandKit={SAMPLE_BRANDS[0].kit}
+              template={STYLE_LINK_TEST_TEMPLATE}
+              content={STYLE_LINK_SAMPLE_CONTENT}
+              showZoneBorders={showZoneBorders}
+            />
+            <p className="text-[10px] font-mono text-slate-400">
+              Custom purple page backdrop (#1a102f). Headline in Northbridge blue (#1d4ed8) Playfair Display; accent sky (#38bdf8).
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setBrandKit(SAMPLE_BRANDS[0].kit);
+                setTemplate(STYLE_LINK_TEST_TEMPLATE);
+                setContent(STYLE_LINK_SAMPLE_CONTENT);
+              }}
+              className="text-[11px] px-2 py-1 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30"
+            >
+              Use above for export
+            </button>
+          </div>
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider">
+              2 · Bold Brand (Same Template, Tokens follow Brand)
+            </p>
+            <PosterPreview
+              brandKit={SAMPLE_BRANDS[1].kit}
+              template={STYLE_LINK_TEST_TEMPLATE}
+              content={STYLE_LINK_SAMPLE_CONTENT}
+              showZoneBorders={showZoneBorders}
+            />
+            <p className="text-[10px] font-mono text-slate-400">
+              Same custom purple page (#1a102f). Headline in Ironforge orange (#f97316) Montserrat; accent yellow (#facc15).
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setBrandKit(SAMPLE_BRANDS[1].kit);
+                setTemplate(STYLE_LINK_TEST_TEMPLATE);
+                setContent(STYLE_LINK_SAMPLE_CONTENT);
+              }}
+              className="text-[11px] px-2 py-1 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30"
+            >
+              Use above for export
+            </button>
+          </div>
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold text-emerald-400 uppercase tracking-wider">
+              3 · Saved Poster Snapshot (Brand changed to Bold)
+            </p>
+            <PosterPreview
+              brandKit={SAMPLE_BRANDS[1].kit}
+              template={STYLE_LINK_TEST_TEMPLATE}
+              content={SAVED_POSTER_CONTENT}
+              showZoneBorders={showZoneBorders}
+            />
+            <p className="text-[10px] font-mono text-slate-400">
+              Live brand kit passed is Bold (Orange / Montserrat), but poster carries Rosewood snapshot: preserves ruby (#e11d48) &amp; Cinzel typography!
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setBrandKit(SAMPLE_BRANDS[1].kit);
+                setTemplate(STYLE_LINK_TEST_TEMPLATE);
+                setContent(SAVED_POSTER_CONTENT);
+              }}
+              className="text-[11px] px-2 py-1 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30"
+            >
+              Use above for export
+            </button>
+          </div>
         </div>
       </div>
 

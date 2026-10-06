@@ -17,9 +17,11 @@ export default function PosterExportButtons({ brandKit, template, content, orgNa
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
 
-  const width = template?.size?.width || 1080;
-  const height = template?.size?.height || 1350;
-  const bgColor = canvasBaseColor(brandKit);
+  const effectiveBrandKit = content?.design?.brandKit || brandKit;
+  const effectiveTemplate = template || content?.design?.template;
+  const width = effectiveTemplate?.size?.width || 1080;
+  const height = effectiveTemplate?.size?.height || 1350;
+  const bgColor = canvasBaseColor(effectiveBrandKit, effectiveTemplate);
 
   useEffect(() => {
     const onDoc = (e) => {
@@ -34,7 +36,7 @@ export default function PosterExportButtons({ brandKit, template, content, orgNa
     setExporting(format);
     setOpen(false);
 
-    const org = (orgName || brandKit?.orgName || 'poster').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    const org = (orgName || effectiveBrandKit?.orgName || 'poster').replace(/[^a-z0-9]/gi, '-').toLowerCase();
     const title = (content?.title || 'poster').replace(/[^a-z0-9]/gi, '-').toLowerCase();
     const filename = `${org}-${title}`.replace(/-+/g, '-').slice(0, 60);
 
@@ -60,8 +62,8 @@ export default function PosterExportButtons({ brandKit, template, content, orgNa
       await new Promise((resolve) => {
         ReactDOM.render(
           <PosterCanvas
-            brandKit={brandKit}
-            template={template}
+            brandKit={effectiveBrandKit}
+            template={effectiveTemplate}
             content={content}
             view={view}
             onLayoutSettled={settleResolve}

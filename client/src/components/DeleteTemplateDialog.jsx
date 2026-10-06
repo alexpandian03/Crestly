@@ -1,22 +1,29 @@
-import React, { useEffect } from 'react';
-import { AlertTriangle, Power, Trash2 } from 'lucide-react';
+import React, { useEffect } from "react";
+import { AlertTriangle, Power, Trash2 } from "lucide-react";
 
 /**
  * The confirm step for deleting a template. An active template cannot be deleted,
  * so this also offers the one step that fixes it.
  */
-export default function DeleteTemplateDialog({ template, error = '', busy = false, onCancel, onConfirm, onDeactivate }) {
+export default function DeleteTemplateDialog({
+  template,
+  error = "",
+  busy = false,
+  onCancel,
+  onConfirm,
+  onDeactivate,
+}) {
   const active = template?.isActive !== false;
 
   useEffect(() => {
     const closeOnEscape = (event) => {
-      if (event.key === 'Escape') onCancel();
+      if (event.key === "Escape") onCancel();
     };
-    document.addEventListener('keydown', closeOnEscape);
-    return () => document.removeEventListener('keydown', closeOnEscape);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
   }, [onCancel]);
 
-  const cancelClass = 'btn-ghost border border-line px-4 py-2 text-sm';
+  const cancelClass = "btn-ghost border border-line px-4 py-2 text-sm";
 
   return (
     <div
@@ -34,16 +41,24 @@ export default function DeleteTemplateDialog({ template, error = '', busy = fals
             <AlertTriangle className="h-5 w-5" />
           </span>
           <div className="min-w-0">
-            <h2 id="delete-template-title" className="text-base font-semibold text-heading">
-              {active ? 'Turn this template off first' : 'Delete this template?'}
+            <h2
+              id="delete-template-title"
+              className="text-base font-semibold text-heading"
+            >
+              {active
+                ? "Turn this template off first"
+                : "Delete this template?"}
             </h2>
-            <p className="mt-1 text-xs text-muted truncate" title={template?.name}>
+            <p
+              className="mt-1 text-xs text-muted-foreground truncate"
+              title={template?.name}
+            >
               {template?.name}
             </p>
             <p className="mt-2 text-sm text-body leading-snug">
               {active
-                ? 'Your team can still choose this template on the Create page. Turn it off and you can delete it.'
-                : 'Posters already created from it will not be affected. This cannot be undone.'}
+                ? "Your team can still choose this template on the Create page. Turn it off and you can delete it."
+                : "Posters already created from it will not be affected. This cannot be undone."}
             </p>
           </div>
         </div>
@@ -70,7 +85,7 @@ export default function DeleteTemplateDialog({ template, error = '', busy = fals
               disabled={busy}
               className="inline-flex items-center gap-2 rounded-btn bg-danger px-4 py-2 text-sm font-semibold text-canvas transition-colors hover:bg-danger/90 disabled:opacity-60"
             >
-              <Trash2 className="h-4 w-4" /> {busy ? 'Deleting…' : 'Delete'}
+              <Trash2 className="h-4 w-4" /> {busy ? "Deleting…" : "Delete"}
             </button>
           )}
         </div>

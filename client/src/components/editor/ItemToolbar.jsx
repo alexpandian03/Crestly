@@ -1,11 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AlignCenter, AlignLeft, AlignRight, CaseSensitive, Bold, Italic, ChevronDown } from 'lucide-react';
+import { AlignCenter, AlignLeft, AlignRight, CaseSensitive, Bold, Italic, ChevronDown, Check, RotateCcw } from 'lucide-react';
 import {
   ELEMENT_FONTS,
   ELEMENT_LIMITS,
   IMAGE_FITS,
   VARIABLE_LIMITS,
+  isBrandColorToken,
+  isBrandFontToken,
+  resolveColorToken,
+  effectivePage,
 } from '../../../../shared/templateElements.js';
+import { toHex, wcagLevel } from '../../utils/contrast.js';
 import {
   FIXED_TEXT_WARNING,
   ITEM_MODES,
@@ -15,6 +20,190 @@ import {
   looksLikeFixedText,
   modeOf,
 } from '../../utils/templateEditorItems';
+
+const BRAND_SWATCHES = [
+  { token: 'brand:primary', label: 'Primary' },
+  { token: 'brand:secondary', label: 'Secondary' },
+  { token: 'brand:accent', label: 'Accent' },
+  { token: 'brand:text', label: 'Text' },
+  { token: 'brand:background', label: 'Background' },
+  { token: 'brand:heading', label: 'Heading' },
+  { token: 'brand:body', label: 'Body' },
+];
+
+function ItemColorPicker({ value, brandKit, surfaceBg, onCommit }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+
+  const isToken = isBrandColorToken(value);
+  const tokenObj = BRAND_SWATCHES.find((s) => s.token === value);
+  const tokenLabel = tokenObj ? tokenObj.label : 'Brand';
+  const resolvedColor = resolveColorToken(value, brandKit);
+  const resolvedHex = toHex(resolvedColor, '#0f172a');
+  const bgHex = toHex(surfaceBg, '#ffffff');
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const away = (event) => {
+      if (rootRef.current && !rootRef.current.contains(event.target)) setOpen(false);
+    };
+    const escape = (event) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        setOpen(false);
+      }
+    };
+    window.addEventListener('pointerdown', away, true);
+    window.addEventListener('keydown', escape, true);
+    return () => {
+      window.removeEventListener('pointerdown', away, true);
+      window.removeEventListener('keydown', escape, true);
+    };
+  }, [open]);
+
+  const level = wcagLevel(resolvedHex, bgHex);
+  const lowContrast = level !== 'AAA' && level !== 'AA';
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        aria-label="Colour"
+        aria-expanded={open}
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex items-center gap-1.5 rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+      >
+        <span
+          className="h-3.5 w-3.5 rounded-full border border-slate-300 shrink-0 shadow-inner"
+          style={{ backgroundColor: resolvedHex }}
+        />
+        <span className="max-w-[70px] truncate font-medium">
+          {isToken ? tokenLabel : 'Custom'}
+        </span>
+        {!isToken && (
+          <span className="rounded bg-amber-50 px-1 py-0.5 text-[9px] font-semibold text-amber-700 border border-amber-200">
+            Customized
+          </span>
+        )}
+        <ChevronDown className="h-3 w-3 text-slate-400" />
+      </button>
+
+      {open && (
+        <div
+          role="dialog"
+          aria-label="Colour picker"
+          className="absolute left-0 top-[calc(100%+6px)] z-[60] w-[260px] rounded-lg border border-slate-200 bg-white p-3 text-left shadow-lg"
+        >
+          <span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">
+            Brand colours
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            {BRAND_SWATCHES.map((swatch) => {
+              const swatchColor = toHex(resolveColorToken(swatch.token, brandKit), '#ffffff');
+              const active = value === swatch.token;
+              return (
+                <button
+                  key={swatch.token}
+                  type="button"
+                  title={`${swatch.label} (${swatchColor})`}
+                  onClick={() => {
+                    onCommit(swatch.token);
+                  }}
+                  className={`relative flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 transition-transform hover:scale-105 ${
+                    active ? 'ring-2 ring-blue-600 ring-offset-1' : ''
+                  }`}
+                  style={{ backgroundColor: swatchColor }}
+                >
+                  {active && (
+                    <Check
+                      className="h-3.5 w-3.5"
+                      style={{
+                        color: wcagLevel(swatchColor, '#000000') === 'AAA' || wcagLevel(swatchColor, '#000000') === 'AA' ? '#000000' : '#ffffff',
+                      }}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="my-2.5 border-t border-slate-100" />
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                Custom colour
+              </span>
+              {!isToken ? (
+                <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 border border-amber-200">
+                  Customized
+                </span>
+              ) : null}
+            </div>
+
+            {isToken ? (
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <span className="text-xs text-slate-600">Using brand {tokenLabel.toLowerCase()}</span>
+                <button
+                  type="button"
+                  onClick={() => onCommit(resolvedHex)}
+                  className="text-xs font-semibold text-blue-600 hover:underline"
+                >
+                  Use custom colour
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    aria-label="Custom colour picker"
+                    value={resolvedHex}
+                    onChange={(event) => onCommit(event.target.value)}
+                    className="h-7 w-9 cursor-pointer rounded border border-slate-300 bg-white p-0.5"
+                  />
+                  <input
+                    type="text"
+                    aria-label="Colour code"
+                    value={value || ''}
+                    maxLength={7}
+                    onChange={(event) => {
+                      const raw = event.target.value;
+                      if (/^#[0-9a-fA-F]{6}$/.test(raw)) onCommit(raw);
+                    }}
+                    className="w-20 rounded border border-slate-300 px-1.5 py-1 font-mono text-xs uppercase text-slate-700 focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onCommit('brand:text')}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 hover:text-slate-900"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  <span>Reset to brand</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {lowContrast && (
+            <div className="mt-2.5 rounded bg-amber-50 border border-amber-200 p-2 text-[10px] text-amber-800 leading-snug">
+              Low contrast against the poster background. Text might be hard to read.
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="mt-3 w-full rounded bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-200"
+          >
+            Done
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* ------------------------------------------------------------------ *
  * The tools for the item you picked, floating at the top of the canvas.
@@ -307,7 +496,17 @@ function ModeRow({ item, mode, modes, counters, onMode, onMeta }) {
   );
 }
 
-export default function ItemToolbar({ item, items = [], onStyle, onStyleLive, onMode, onMeta }) {
+export default function ItemToolbar({
+  item,
+  items = [],
+  brandKit = null,
+  page = null,
+  onStyle,
+  onStyleLive,
+  onMode,
+  onMeta,
+  onResetToBrand,
+}) {
   if (!item) return null;
 
   const style = item.style || {};
@@ -324,6 +523,9 @@ export default function ItemToolbar({ item, items = [], onStyle, onStyleLive, on
   const modes = modeOptionsFor(item);
   const mode = modeOf(item);
 
+  const effective = effectivePage(brandKit, { page });
+  const surfaceBg = resolveColorToken(effective?.background?.color || 'brand:background', brandKit) || '#ffffff';
+
   return (
     <div
       role="group"
@@ -339,18 +541,38 @@ export default function ItemToolbar({ item, items = [], onStyle, onStyleLive, on
       {textTools ? (
         <>
           <Tool label="Font">
-            <select
-              aria-label="Font"
-              value={style.fontFamily}
-              onChange={(event) => set({ fontFamily: event.target.value })}
-              className="max-w-[150px] rounded border border-slate-300 bg-white px-1.5 py-1 text-xs text-slate-800 focus:border-blue-500 focus:outline-none"
-            >
-              {ELEMENT_FONTS.map((font) => (
-                <option key={font} value={font}>
-                  {font}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center gap-1">
+              <select
+                aria-label="Font"
+                value={style.fontFamily || 'brand:body'}
+                onChange={(event) => set({ fontFamily: event.target.value })}
+                className="max-w-[155px] rounded border border-slate-300 bg-white px-1.5 py-1 text-xs text-slate-800 focus:border-blue-500 focus:outline-none"
+              >
+                <optgroup label="Brand fonts">
+                  <option value="brand:heading">
+                    Brand heading ({brandKit?.fonts?.heading || 'Cinzel'})
+                  </option>
+                  <option value="brand:body">
+                    Brand body ({brandKit?.fonts?.body || 'Inter'})
+                  </option>
+                </optgroup>
+                <optgroup label="Other fonts">
+                  {ELEMENT_FONTS.filter((f) => f !== 'brand:heading' && f !== 'brand:body').map((font) => (
+                    <option key={font} value={font}>
+                      {font}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+              {!isBrandFontToken(style.fontFamily) && (
+                <span
+                  className="rounded bg-amber-50 px-1 py-0.5 text-[9px] font-semibold text-amber-700 border border-amber-200"
+                  title="Custom font"
+                >
+                  Customized
+                </span>
+              )}
+            </div>
           </Tool>
 
           <Tool label="Text size">
@@ -365,32 +587,12 @@ export default function ItemToolbar({ item, items = [], onStyle, onStyleLive, on
           </Tool>
 
           <Tool label="Colour">
-            <span className="flex items-center gap-1">
-              <input
-                type="color"
-                aria-label="Colour"
-                value={/^#[0-9a-f]{6}$/i.test(style.color || '') ? style.color : '#0f172a'}
-                onChange={(event) => live({ color: event.target.value })}
-                onBlur={(event) => set({ color: event.target.value })}
-                className="h-7 w-8 cursor-pointer rounded border border-slate-300 bg-white p-0.5"
-              />
-              <input
-                type="text"
-                aria-label="Colour code"
-                value={style.color || ''}
-                maxLength={7}
-                onChange={(event) => {
-                  const raw = event.target.value;
-                  if (/^#[0-9a-fA-F]{6}$/.test(raw)) live({ color: raw });
-                }}
-                onBlur={(event) => {
-                  const raw = event.target.value;
-                  if (/^#[0-9a-fA-F]{6}$/.test(raw)) set({ color: raw });
-                }}
-                onKeyDown={(event) => event.stopPropagation()}
-                className="w-[74px] rounded border border-slate-300 px-1 py-1 font-mono text-[11px] uppercase text-slate-700 focus:border-blue-500 focus:outline-none"
-              />
-            </span>
+            <ItemColorPicker
+              value={style.color}
+              brandKit={brandKit}
+              surfaceBg={surfaceBg}
+              onCommit={(color) => set({ color })}
+            />
           </Tool>
 
           <span className="flex items-center gap-0.5 self-end">
@@ -505,6 +707,18 @@ export default function ItemToolbar({ item, items = [], onStyle, onStyleLive, on
             <span className="w-7 text-[11px] tabular-nums text-slate-500">{(style.lineHeight || 1.2).toFixed(2)}</span>
           </span>
         </Tool>
+      ) : null}
+
+      {onResetToBrand ? (
+        <button
+          type="button"
+          title="Reset this item's colours and fonts to brand style"
+          onClick={() => onResetToBrand(item.id)}
+          className="inline-flex items-center gap-1 self-end rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+        >
+          <RotateCcw className="h-3 w-3" />
+          <span>Reset to brand</span>
+        </button>
       ) : null}
     </div>
   );

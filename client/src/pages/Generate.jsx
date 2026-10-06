@@ -1,5 +1,12 @@
-import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  lazy,
+  Suspense,
+} from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Sparkles,
   Loader2,
@@ -16,19 +23,23 @@ import {
   Save,
   Shuffle,
   LayoutTemplate,
-} from 'lucide-react';
-import api from '../services/api';
-import PosterExportButtons from '../components/PosterExportButtons';
-import PosterImageInput from '../components/PosterImageInput';
-import EditTextPanel from '../components/EditTextPanel';
-import { renderAndUploadThumbnail } from '../utils/posterThumbnail';
-import { emptyView, photoUrlOf, viewIsDirty } from '../utils/posterContentFields';
+} from "lucide-react";
+import api from "../services/api";
+import PosterExportButtons from "../components/PosterExportButtons";
+import PosterImageInput from "../components/PosterImageInput";
+import EditTextPanel from "../components/EditTextPanel";
+import { renderAndUploadThumbnail } from "../utils/posterThumbnail";
+import {
+  emptyView,
+  photoUrlOf,
+  viewIsDirty,
+} from "../utils/posterContentFields";
 import {
   blankAnswersProblem,
   blankPayloadOf,
   canUploadBlankImage,
   mergeGeneratedBlanks,
-} from '../utils/posterVariables';
+} from "../utils/posterVariables";
 import {
   designBrandKit,
   designTemplate,
@@ -36,7 +47,7 @@ import {
   DESIGN_STALE_MESSAGE,
   DESIGN_APPLY_LABEL,
   DESIGN_APPLY_CONFIRM,
-} from '../utils/posterDesign';
+} from "../utils/posterDesign";
 import {
   DESIGN_MODES_DEFAULT,
   MODE_AI,
@@ -54,42 +65,59 @@ import {
   PICTURE_BUTTON_LABEL,
   recipeKeyOf,
   recipeOf,
-} from '../utils/posterAiDesign';
-import { readDraft } from '../config/draft';
-import { SAMPLE_PROMPTS } from '../data/demoPosters';
-import { useAuth } from '../context/AuthContext';
+} from "../utils/posterAiDesign";
+import { readDraft } from "../config/draft";
+import { SAMPLE_PROMPTS } from "../data/demoPosters";
+import { useAuth } from "../context/AuthContext";
 
 const templateId = (template) => template?.id || template?._id;
 
-const isRealId = (id) => typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+const isRealId = (id) => typeof id === "string" && /^[0-9a-fA-F]{24}$/.test(id);
 
 /* Editing the poster where it stands is only fetched once a poster is on the screen. */
-const EditablePoster = lazy(() => import('../components/posteredit/EditablePoster'));
+const EditablePoster = lazy(
+  () => import("../components/posteredit/EditablePoster"),
+);
 /* The layout list is only opened by the people whose organization still picks layouts. */
-const DesignChooser = lazy(() => import('../components/create/DesignChooser'));
-const SaveAsTemplateDialog = lazy(() => import('../components/create/SaveAsTemplateDialog'));
+const DesignChooser = lazy(() => import("../components/create/DesignChooser"));
+const SaveAsTemplateDialog = lazy(
+  () => import("../components/create/SaveAsTemplateDialog"),
+);
 /* A drawn picture is only asked for on designs that have a place for one. */
-const AiPictureDialog = lazy(() => import('../components/create/AiPictureDialog'));
+const AiPictureDialog = lazy(
+  () => import("../components/create/AiPictureDialog"),
+);
 
 /** One width for the poster and every notice under it, so nothing jumps sideways. */
-const STAGE_WIDTH = 'w-full max-w-[560px] xl:max-w-[660px]';
+const STAGE_WIDTH = "w-full max-w-[560px] xl:max-w-[660px]";
 
 /** The picture dialog's own closed shape, so discarding and failing start from one place. */
-const PICTURE_IDLE = { open: false, busy: false, url: '', stockUrl: '', message: '', error: '', subject: '' };
+const PICTURE_IDLE = {
+  open: false,
+  busy: false,
+  url: "",
+  stockUrl: "",
+  message: "",
+  error: "",
+  subject: "",
+};
 
 function buildContentPayload(content) {
   if (!content) return null;
   const blanks = blankPayloadOf(content);
   return {
-    title: String(content.title || '').trim(),
-    tagline: String(content.tagline || '').trim(),
-    date: String(content.date || '').trim(),
-    time: String(content.time || '').trim(),
-    venue: String(content.venue || '').trim(),
+    title: String(content.title || "").trim(),
+    tagline: String(content.tagline || "").trim(),
+    date: String(content.date || "").trim(),
+    time: String(content.time || "").trim(),
+    venue: String(content.venue || "").trim(),
     details: Array.isArray(content.details)
-      ? content.details.map((d) => String(d).trim()).filter(Boolean).slice(0, 4)
+      ? content.details
+          .map((d) => String(d).trim())
+          .filter(Boolean)
+          .slice(0, 4)
       : [],
-    imageUrl: String(content.imageUrl || content.image || '').trim(),
+    imageUrl: String(content.imageUrl || content.image || "").trim(),
     /* The answers for the spaces the layout left are part of the poster, so they travel
      * with every save, every thumbnail and every dirty check. */
     ...(blanks.extras ? { extras: blanks.extras } : {}),
@@ -100,21 +128,34 @@ function buildContentPayload(content) {
 function friendlySaveError(err) {
   const status = err.response?.status;
   if (status === 409) {
-    return { message: 'This poster was changed somewhere else. Reload to continue.', conflict: true };
+    return {
+      message: "This poster was changed somewhere else. Reload to continue.",
+      conflict: true,
+    };
   }
   if (status === 404) {
-    return { message: "We couldn't find this poster. It may have been deleted.", conflict: false };
+    return {
+      message: "We couldn't find this poster. It may have been deleted.",
+      conflict: false,
+    };
   }
-  return { message: "We couldn't save this poster. Try again.", conflict: false };
+  return {
+    message: "We couldn't save this poster. Try again.",
+    conflict: false,
+  };
 }
 
 const REFINEMENT_BUTTONS = [
-  { label: 'Regenerate', instruction: undefined, icon: RefreshCw },
-  { label: 'Shorter', instruction: 'shorter', icon: Minimize2 },
-  { label: 'Minimal', instruction: 'minimal', icon: Sparkles },
-  { label: 'More professional', instruction: 'more professional', icon: Briefcase },
-  { label: 'Emphasize date', instruction: 'emphasize date', icon: Calendar },
-  { label: 'New photo', instruction: 'change image', icon: ImageIcon },
+  { label: "Regenerate", instruction: undefined, icon: RefreshCw },
+  { label: "Shorter", instruction: "shorter", icon: Minimize2 },
+  { label: "Minimal", instruction: "minimal", icon: Sparkles },
+  {
+    label: "More professional",
+    instruction: "more professional",
+    icon: Briefcase,
+  },
+  { label: "Emphasize date", instruction: "emphasize date", icon: Calendar },
+  { label: "New photo", instruction: "change image", icon: ImageIcon },
 ];
 
 function SkeletonPoster() {
@@ -128,14 +169,18 @@ function SkeletonPoster() {
 
 export default function Generate() {
   const { activeClientId, user } = useAuth();
-  const [description, setDescription] = useState('');
-  const [activeInstruction, setActiveInstruction] = useState('');
+  const [description, setDescription] = useState("");
+  const [activeInstruction, setActiveInstruction] = useState("");
   const [templates, setTemplates] = useState([]);
-  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
   /* The two switches the organization's settings hold, and the way of working chosen here. */
   const [clientModes, setClientModes] = useState(null);
   const [designMode, setDesignMode] = useState(MODE_AI);
-  const [templateDialog, setTemplateDialog] = useState({ open: false, busy: false, error: '' });
+  const [templateDialog, setTemplateDialog] = useState({
+    open: false,
+    busy: false,
+    error: "",
+  });
   /* A picture the assistant drew. It only reaches the poster when the person takes it. */
   const [pictureDialog, setPictureDialog] = useState(PICTURE_IDLE);
   /* Which designs the assistant already showed in this session: a fresh try asks for another. */
@@ -144,7 +189,7 @@ export default function Generate() {
      New posters have none and draw with the current brand. */
   const [posterDesign, setPosterDesign] = useState(null);
   const [isApplyingDesign, setIsApplyingDesign] = useState(false);
-  const [designError, setDesignError] = useState('');
+  const [designError, setDesignError] = useState("");
   const [brandKit, setBrandKit] = useState(null);
   const [generatedContent, setGeneratedContent] = useState(null);
   const [rawGeneratedContent, setRawGeneratedContent] = useState(null);
@@ -152,28 +197,28 @@ export default function Generate() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [feedback, setFeedback] = useState({ type: null, message: '' });
-  const [userImageUrl, setUserImageUrl] = useState('');
+  const [feedback, setFeedback] = useState({ type: null, message: "" });
+  const [userImageUrl, setUserImageUrl] = useState("");
   const [imageLoadError, setImageLoadError] = useState(false);
   const [overflowWarning, setOverflowWarning] = useState(null);
   /* Text size and photo shape chosen on this screen. They are never sent to the server:
    * the poster keeps the size its layout was made with. */
   const [posterView, setPosterView] = useState(emptyView);
-  const aiImageRef = useRef('');
+  const aiImageRef = useRef("");
 
   // Stage 8C: poster persistence state
   const [searchParams] = useSearchParams();
-  const [posterId, setPosterId] = useState('');
+  const [posterId, setPosterId] = useState("");
   const [currentVersion, setCurrentVersion] = useState(1);
-  const [saveStatus, setSaveStatus] = useState('idle'); // idle | saving | saved
+  const [saveStatus, setSaveStatus] = useState("idle"); // idle | saving | saved
   const [saveError, setSaveError] = useState(null); // { message, conflict }
   const [showSavedChip, setShowSavedChip] = useState(false);
   const [isSavingEdits, setIsSavingEdits] = useState(false);
-  const [drawerSaveError, setDrawerSaveError] = useState('');
+  const [drawerSaveError, setDrawerSaveError] = useState("");
   const [drawerConflict, setDrawerConflict] = useState(false);
-  const posterIdRef = useRef('');
+  const posterIdRef = useRef("");
   const versionRef = useRef(1);
-  const savedSnapshotRef = useRef('');
+  const savedSnapshotRef = useRef("");
   const retryOpRef = useRef(null);
   const thumbSeqRef = useRef(0);
   /* The size and shape changes on screen, for the background thumbnail, which is fired
@@ -204,29 +249,37 @@ export default function Generate() {
       try {
         setLoadingInitial(true);
         const [templatesRes, brandKitRes, clientRes] = await Promise.all([
-          api.get('/templates').catch(() => null),
-          api.get('/brand-kit').catch(() => null),
-          activeClientId ? api.get(`/clients/${activeClientId}`).catch(() => null) : Promise.resolve(null),
+          api.get("/templates").catch(() => null),
+          api.get("/brand-kit").catch(() => null),
+          activeClientId
+            ? api.get(`/clients/${activeClientId}`).catch(() => null)
+            : Promise.resolve(null),
         ]);
 
         const loadedTemplates = templatesRes?.data?.data?.templates || [];
         if (templatesRes?.data?.success && loadedTemplates.length > 0) {
           setTemplates(loadedTemplates);
-          if (!searchParams.get('poster')) {
-            const firstActive = loadedTemplates.find((t) => t.isActive !== false);
-            if (firstActive) setSelectedTemplateId(firstActive.id || firstActive._id);
+          if (!searchParams.get("poster")) {
+            const firstActive = loadedTemplates.find(
+              (t) => t.isActive !== false,
+            );
+            if (firstActive)
+              setSelectedTemplateId(firstActive.id || firstActive._id);
           }
         } else {
           setTemplates([]);
-          setSelectedTemplateId('');
+          setSelectedTemplateId("");
         }
 
         const loadedBrandKit = brandKitRes?.data?.data?.brandKit;
-        setBrandKit(brandKitRes?.data?.success && loadedBrandKit ? loadedBrandKit : null);
+        setBrandKit(
+          brandKitRes?.data?.success && loadedBrandKit ? loadedBrandKit : null,
+        );
 
-        if (clientRes?.data?.success) setClientModes(designModesOf(clientRes.data.data.client));
+        if (clientRes?.data?.success)
+          setClientModes(designModesOf(clientRes.data.data.client));
       } catch (err) {
-        console.warn('Initial data load warning:', err.message);
+        console.warn("Initial data load warning:", err.message);
       } finally {
         setLoadingInitial(false);
       }
@@ -252,27 +305,35 @@ export default function Generate() {
   };
 
   /* The Create page only ever offers layouts that are turned on. */
-  const usableTemplates = useMemo(() => templates.filter((t) => t.isActive !== false), [templates]);
+  const usableTemplates = useMemo(
+    () => templates.filter((t) => t.isActive !== false),
+    [templates],
+  );
 
   const runGenerate = async (extraInstruction, options = {}) => {
     const avoid = Boolean(options.avoid);
-    const inst = extraInstruction !== undefined ? extraInstruction : activeInstruction;
+    const inst =
+      extraInstruction !== undefined ? extraInstruction : activeInstruction;
     if (!description.trim() || description.trim().length < 5) {
       setFeedback({
-        type: 'error',
-        message: 'Please write a sentence describing the event.',
+        type: "error",
+        message: "Please write a sentence describing the event.",
       });
       return;
     }
 
-    if (designMode === MODE_TEMPLATE && !selectedTemplateId && usableTemplates.length > 0) {
-      setFeedback({ type: 'error', message: 'Please choose a layout.' });
+    if (
+      designMode === MODE_TEMPLATE &&
+      !selectedTemplateId &&
+      usableTemplates.length > 0
+    ) {
+      setFeedback({ type: "error", message: "Please choose a layout." });
       return;
     }
 
     try {
       setIsGenerating(true);
-      setFeedback({ type: null, message: '' });
+      setFeedback({ type: null, message: "" });
       setOverflowWarning(null);
 
       const resolvedTemplateId = getRealTemplateId();
@@ -289,20 +350,21 @@ export default function Generate() {
           : {}),
       };
 
-      const res = await api.post('/posters/generate', payload);
+      const res = await api.post("/posters/generate", payload);
 
       if (res.data?.data?.content) {
         const aiContent = res.data.data.content;
         if (!userImageUrl) {
-          aiImageRef.current = aiContent.imageUrl || aiContent.image || '';
+          aiImageRef.current = aiContent.imageUrl || aiContent.image || "";
         }
-        const chosenImage = userImageUrl || aiContent.imageUrl || aiContent.image || '';
+        const chosenImage =
+          userImageUrl || aiContent.imageUrl || aiContent.image || "";
         /* The assistant writes the open spaces again, but only the ones nobody answered here:
          * a picture put into a space stays, and a new photo changes the poster's own one only. */
         const merged = mergeGeneratedBlanks(
           { ...aiContent, imageUrl: chosenImage, image: chosenImage },
           generatedContent,
-          Array.from(editedBlanksRef.current)
+          Array.from(editedBlanksRef.current),
         );
 
         /* A design the assistant laid out is drawn from the pieces the server placed, until
@@ -310,11 +372,16 @@ export default function Generate() {
         let nextDesign = null;
         let sameDesignAgain = false;
         if (designMode === MODE_AI) {
-          nextDesign = aiDesignOf(res.data.data.design, designSizeFor(selectedTemplate, brandKit));
+          nextDesign = aiDesignOf(
+            res.data.data.design,
+            designSizeFor(selectedTemplate, brandKit),
+          );
           if (nextDesign) {
             const id = nextDesign.template.recipeId;
             sameDesignAgain = avoid && seenRecipesRef.current.includes(id);
-            seenRecipesRef.current = Array.from(new Set([...seenRecipesRef.current, id]));
+            seenRecipesRef.current = Array.from(
+              new Set([...seenRecipesRef.current, id]),
+            );
           }
         }
 
@@ -322,8 +389,10 @@ export default function Generate() {
            poster was made with, so a different design becomes a poster of its own. Leaving
            an assistant design for one of our layouts changes the design the same way. */
         const savedKey = recipeKeyOf(posterDesign?.template);
-        const nextKey = nextDesign ? recipeKeyOf(nextDesign.template) : '';
-        const designChanges = nextDesign ? nextKey !== savedKey : savedKey !== '';
+        const nextKey = nextDesign ? recipeKeyOf(nextDesign.template) : "";
+        const designChanges = nextDesign
+          ? nextKey !== savedKey
+          : savedKey !== "";
         const newDesignNeeded = designChanges && Boolean(posterIdRef.current);
 
         if (nextDesign) setPosterDesign(nextDesign);
@@ -332,12 +401,12 @@ export default function Generate() {
         setRawGeneratedContent(merged);
         setGeneratedContent(merged);
         setHistoryStack([]);
-        setActiveInstruction(inst || '');
+        setActiveInstruction(inst || "");
         setFeedback({
-          type: 'success',
+          type: "success",
           message: sameDesignAgain
-            ? 'That is the best design for these words. Describe the event differently for another one.'
-            : 'Poster ready! Download your file or refine the wording below.',
+            ? "That is the best design for these words. Describe the event differently for another one."
+            : "Poster ready! Download your file or refine the wording below.",
         });
 
         const savedPayload = buildContentPayload(merged);
@@ -347,13 +416,13 @@ export default function Generate() {
           if (!resolvedTemplateId) {
             setSaveError({
               message:
-                'This poster is shown but not saved yet. Your organization has no layout switched on, and a poster needs one. An administrator can turn one on under Templates.',
+                "This poster is shown but not saved yet. Your organization has no layout switched on, and a poster needs one. An administrator can turn one on under Templates.",
               conflict: false,
             });
             return;
           }
           runSaveOp({
-            mode: 'create',
+            mode: "create",
             content: savedPayload,
             templateId: resolvedTemplateId,
             prompt: description.trim().slice(0, 1000),
@@ -361,32 +430,34 @@ export default function Generate() {
           });
           if (newDesignNeeded) {
             setFeedback({
-              type: 'success',
-              message: 'A different design saves as a poster of its own. Your earlier one stays under Posters.',
+              type: "success",
+              message:
+                "A different design saves as a poster of its own. Your earlier one stays under Posters.",
             });
           }
           return;
         }
 
         runSaveOp({
-          mode: 'version',
+          mode: "version",
           content: savedPayload,
           instruction: inst || undefined,
         });
       }
     } catch (err) {
       const serverMessage = err.response?.data?.error?.message;
-      let displayMessage = 'We could not create the poster. Please try again.';
+      let displayMessage = "We could not create the poster. Please try again.";
       if (err.response?.status === 504) {
-        displayMessage = 'The request took a little too long. Please try again.';
+        displayMessage =
+          "The request took a little too long. Please try again.";
       } else if (
         serverMessage &&
-        !serverMessage.toLowerCase().includes('mongo') &&
-        !serverMessage.toLowerCase().includes('internal')
+        !serverMessage.toLowerCase().includes("mongo") &&
+        !serverMessage.toLowerCase().includes("internal")
       ) {
         displayMessage = serverMessage;
       }
-      setFeedback({ type: 'error', message: displayMessage });
+      setFeedback({ type: "error", message: displayMessage });
     } finally {
       setIsGenerating(false);
     }
@@ -422,7 +493,9 @@ export default function Generate() {
   };
 
   const selectedTemplate =
-    usableTemplates.find((template) => templateId(template) === selectedTemplateId) ||
+    usableTemplates.find(
+      (template) => templateId(template) === selectedTemplateId,
+    ) ||
     usableTemplates[0] ||
     null;
 
@@ -432,14 +505,16 @@ export default function Generate() {
   const drawTemplate = designTemplate(posterDesign, selectedTemplate);
 
   const aiPoster = isAiDesign(drawTemplate);
-  const canManageTemplates = user?.role === 'superadmin' || user?.role === 'clientadmin';
+  const canManageTemplates =
+    user?.role === "superadmin" || user?.role === "clientadmin";
 
   const designStale = useMemo(
     () => isDesignStale(posterDesign, { brandKit, templates }),
-    [posterDesign, brandKit, templates]
+    [posterDesign, brandKit, templates],
   );
 
-  const chosenImageUrl = userImageUrl || generatedContent?.imageUrl || generatedContent?.image || '';
+  const chosenImageUrl =
+    userImageUrl || generatedContent?.imageUrl || generatedContent?.image || "";
   /* The spaces to fill in belong to the design this poster was made with, so the snapshot
    * answers first; a brand-new one uses the layout chosen on this page. */
   const blanksSource = posterDesign || drawTemplate;
@@ -447,11 +522,11 @@ export default function Generate() {
     ? { ...generatedContent, imageUrl: chosenImageUrl, image: chosenImageUrl }
     : userImageUrl
       ? {
-          title: '',
-          tagline: '',
-          date: '',
-          time: '',
-          venue: '',
+          title: "",
+          tagline: "",
+          date: "",
+          time: "",
+          venue: "",
           details: [],
           imageUrl: userImageUrl,
           image: userImageUrl,
@@ -475,7 +550,7 @@ export default function Generate() {
     designMode === MODE_AI &&
     hasPictureArea(drawTemplate) &&
     Boolean(recipeOf(drawTemplate)?.recipeId) &&
-    String(posterContent?.title || '').trim().length >= 3;
+    String(posterContent?.title || "").trim().length >= 3;
 
   /* Words or a picture changed where the poster stands. A picture the user put in takes
    * the place of the one the poster came with, exactly as it does in the side form. */
@@ -489,24 +564,29 @@ export default function Generate() {
   const photoOptions = useMemo(() => {
     const list = [];
     const own = aiImageRef.current;
-    if (own && own !== chosenImageUrl) list.push({ url: own, label: 'The picture this poster came with' });
-    const brandPhoto = String(drawBrandKit?.content?.defaultImageUrl || '').trim();
+    if (own && own !== chosenImageUrl)
+      list.push({ url: own, label: "The picture this poster came with" });
+    const brandPhoto = String(
+      drawBrandKit?.content?.defaultImageUrl || "",
+    ).trim();
     if (brandPhoto && brandPhoto !== chosenImageUrl) {
-      list.push({ url: brandPhoto, label: 'Your organization’s picture' });
+      list.push({ url: brandPhoto, label: "Your organization’s picture" });
     }
     return list;
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [drawBrandKit, chosenImageUrl, generatedContent]);
 
   const contentSnapshot = useMemo(
-    () => (posterContent ? JSON.stringify(buildContentPayload(posterContent)) : ''),
-    [generatedContent, userImageUrl]
+    () =>
+      posterContent ? JSON.stringify(buildContentPayload(posterContent)) : "",
+    [generatedContent, userImageUrl],
   );
-  const hasUnsavedChanges = Boolean(posterContent) && contentSnapshot !== savedSnapshotRef.current;
+  const hasUnsavedChanges =
+    Boolean(posterContent) && contentSnapshot !== savedSnapshotRef.current;
 
   const getRealTemplateId = () => {
     const chosen = templateId(selectedTemplate);
-    return isRealId(chosen) ? String(chosen) : '';
+    return isRealId(chosen) ? String(chosen) : "";
   };
 
   // Warn when leaving the tab with unsaved poster changes
@@ -514,30 +594,34 @@ export default function Generate() {
     if (!hasUnsavedChanges) return undefined;
     const handler = (e) => {
       e.preventDefault();
-      e.returnValue = '';
+      e.returnValue = "";
     };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
   }, [hasUnsavedChanges]);
 
   // Load an existing poster with /create?poster=<id>
   useEffect(() => {
-    const paramId = searchParams.get('poster');
+    const paramId = searchParams.get("poster");
     if (!isRealId(paramId)) return undefined;
     let cancelled = false;
     (async () => {
       try {
         const res = await api.get(`/posters/${paramId}`);
         const loaded = res.data?.data?.poster;
-        if (cancelled || !loaded || String(loaded._id) !== String(paramId)) return;
-        const content = { ...loaded.content, image: loaded.content?.imageUrl || '' };
+        if (cancelled || !loaded || String(loaded._id) !== String(paramId))
+          return;
+        const content = {
+          ...loaded.content,
+          image: loaded.content?.imageUrl || "",
+        };
         posterIdRef.current = String(loaded._id);
         setPosterId(posterIdRef.current);
         versionRef.current = loaded.currentVersion || 1;
         setCurrentVersion(versionRef.current);
         setGeneratedContent(content);
         setRawGeneratedContent(content);
-        setUserImageUrl(loaded.content?.imageUrl || '');
+        setUserImageUrl(loaded.content?.imageUrl || "");
         setPosterDesign(loaded.design || null);
         setPosterView(emptyView());
         editedBlanksRef.current = new Set();
@@ -545,19 +629,24 @@ export default function Generate() {
         if (loaded.prompt) setDescription(loaded.prompt);
         seenRecipesRef.current = [];
         /* Opening a poster the assistant designed puts the page back on that card. */
-        setDesignMode(loaded.design?.template?.recipeId ? MODE_AI : MODE_TEMPLATE);
+        setDesignMode(
+          loaded.design?.template?.recipeId ? MODE_AI : MODE_TEMPLATE,
+        );
         markSaved(content);
         setSaveError(null);
         retryOpRef.current = null;
-        setFeedback({ type: 'success', message: 'Poster loaded. Edit, refine or download it below.' });
+        setFeedback({
+          type: "success",
+          message: "Poster loaded. Edit, refine or download it below.",
+        });
       } catch (err) {
         if (cancelled) return;
         setFeedback({
-          type: 'error',
+          type: "error",
           message:
             err.response?.status === 404
               ? "We couldn't find this poster. It may have been deleted."
-              : 'We could not open this poster. Please try again.',
+              : "We could not open this poster. Please try again.",
         });
       }
     })();
@@ -578,13 +667,17 @@ export default function Generate() {
         content,
         view: posterViewRef.current,
       },
-      { shouldAbort: () => thumbSeqRef.current !== seq }
+      { shouldAbort: () => thumbSeqRef.current !== seq },
     );
   };
 
   const queueThumbnail = (id, content, design) => {
     if (!id || !content) return;
-    captureAndUploadThumbnail(id, { ...content, image: content.imageUrl || '' }, design);
+    captureAndUploadThumbnail(
+      id,
+      { ...content, image: content.imageUrl || "" },
+      design,
+    );
   };
 
   /**
@@ -596,12 +689,12 @@ export default function Generate() {
    */
   const runSaveOp = async (op) => {
     try {
-      setSaveStatus('saving');
+      setSaveStatus("saving");
       setSaveError(null);
 
       let poster;
-      if (op.mode === 'create') {
-        const res = await api.post('/posters', {
+      if (op.mode === "create") {
+        const res = await api.post("/posters", {
           templateId: op.templateId,
           prompt: op.prompt,
           content: op.content,
@@ -610,12 +703,14 @@ export default function Generate() {
           ...(op.recipe ? { recipe: op.recipe } : {}),
         });
         poster = res.data?.data?.poster;
-      } else if (op.mode === 'version') {
+      } else if (op.mode === "version") {
         let expected = versionRef.current;
         if (op.refreshVersion && posterIdRef.current) {
-          const fresh = await api.get(`/posters/${posterIdRef.current}`).catch(() => null);
+          const fresh = await api
+            .get(`/posters/${posterIdRef.current}`)
+            .catch(() => null);
           const freshVersion = fresh?.data?.data?.poster?.currentVersion;
-          if (typeof freshVersion === 'number') {
+          if (typeof freshVersion === "number") {
             versionRef.current = freshVersion;
             setCurrentVersion(freshVersion);
             expected = freshVersion;
@@ -635,12 +730,14 @@ export default function Generate() {
         poster = res.data?.data?.poster;
       }
 
-      if (!poster?._id) throw new Error('Save returned no poster');
+      if (!poster?._id) throw new Error("Save returned no poster");
 
       posterIdRef.current = String(poster._id);
       setPosterId(posterIdRef.current);
       const nextVersion =
-        typeof poster.currentVersion === 'number' ? poster.currentVersion : versionRef.current + 1;
+        typeof poster.currentVersion === "number"
+          ? poster.currentVersion
+          : versionRef.current + 1;
       versionRef.current = nextVersion;
       setCurrentVersion(nextVersion);
       const savedDesign = poster.design || posterDesign;
@@ -648,16 +745,19 @@ export default function Generate() {
 
       markSaved(op.content);
       retryOpRef.current = null;
-      setSaveStatus('saved');
+      setSaveStatus("saved");
       setShowSavedChip(true);
       clearTimeout(savedChipTimerRef.current);
-      savedChipTimerRef.current = setTimeout(() => setShowSavedChip(false), 2500);
+      savedChipTimerRef.current = setTimeout(
+        () => setShowSavedChip(false),
+        2500,
+      );
       queueThumbnail(posterIdRef.current, op.content, savedDesign);
       return { ok: true };
     } catch (err) {
       const friendly = friendlySaveError(err);
       retryOpRef.current = op;
-      setSaveStatus('idle');
+      setSaveStatus("idle");
       setSaveError(friendly);
       return { ok: false, ...friendly };
     }
@@ -666,7 +766,11 @@ export default function Generate() {
   const handleRetrySave = () => {
     const op = retryOpRef.current;
     if (!op) return;
-    runSaveOp(op.mode === 'version' && posterIdRef.current ? { ...op, refreshVersion: true } : op);
+    runSaveOp(
+      op.mode === "version" && posterIdRef.current
+        ? { ...op, refreshVersion: true }
+        : op,
+    );
   };
 
   // 409 recovery: pull the latest saved version back onto the screen
@@ -676,25 +780,34 @@ export default function Generate() {
     try {
       const res = await api.get(`/posters/${id}`);
       const loaded = res.data?.data?.poster;
-      if (!loaded) throw new Error('missing poster');
-      const content = { ...loaded.content, image: loaded.content?.imageUrl || '' };
+      if (!loaded) throw new Error("missing poster");
+      const content = {
+        ...loaded.content,
+        image: loaded.content?.imageUrl || "",
+      };
       versionRef.current = loaded.currentVersion || 1;
       setCurrentVersion(versionRef.current);
       setGeneratedContent(content);
       setRawGeneratedContent(content);
-      setUserImageUrl(loaded.content?.imageUrl || '');
+      setUserImageUrl(loaded.content?.imageUrl || "");
       setPosterDesign(loaded.design || null);
       setPosterView(emptyView());
       editedBlanksRef.current = new Set();
       markSaved(content);
       setSaveError(null);
-      setDrawerSaveError('');
+      setDrawerSaveError("");
       setDrawerConflict(false);
       setShowSavedChip(true);
       clearTimeout(savedChipTimerRef.current);
-      savedChipTimerRef.current = setTimeout(() => setShowSavedChip(false), 2500);
+      savedChipTimerRef.current = setTimeout(
+        () => setShowSavedChip(false),
+        2500,
+      );
     } catch {
-      setSaveError({ message: 'We could not reload this poster. Please refresh the page.', conflict: false });
+      setSaveError({
+        message: "We could not reload this poster. Please refresh the page.",
+        conflict: false,
+      });
     }
   };
 
@@ -703,34 +816,44 @@ export default function Generate() {
     if (tooMuch) {
       setDrawerSaveError(tooMuch);
       setDrawerConflict(false);
-      if (!isEditOpen) setFeedback({ type: 'error', message: tooMuch });
+      if (!isEditOpen) setFeedback({ type: "error", message: tooMuch });
       return;
     }
     const payload = buildContentPayload(posterContent);
     if (!payload || !payload.title) {
-      setDrawerSaveError('Please add a headline before saving.');
+      setDrawerSaveError("Please add a headline before saving.");
       setDrawerConflict(false);
-      if (!isEditOpen) setFeedback({ type: 'error', message: 'Please add a headline before saving.' });
+      if (!isEditOpen)
+        setFeedback({
+          type: "error",
+          message: "Please add a headline before saving.",
+        });
       return;
     }
     setIsSavingEdits(true);
-    setDrawerSaveError('');
+    setDrawerSaveError("");
     setDrawerConflict(false);
 
     if (!posterIdRef.current && !getRealTemplateId()) {
       setDrawerSaveError(
-        'Your organization has no layout switched on, and a poster needs one. An administrator can turn one on under Templates.'
+        "Your organization has no layout switched on, and a poster needs one. An administrator can turn one on under Templates.",
       );
-      setFeedback({ type: 'error', message: 'This poster could not be saved, because there is no layout to attach it to.' });
+      setFeedback({
+        type: "error",
+        message:
+          "This poster could not be saved, because there is no layout to attach it to.",
+      });
       return;
     }
 
-    const unsavedRecipe = posterIdRef.current ? null : recipeOf(posterDesign?.template);
+    const unsavedRecipe = posterIdRef.current
+      ? null
+      : recipeOf(posterDesign?.template);
 
     const result = posterIdRef.current
-      ? await runSaveOp({ mode: 'patch', content: payload })
+      ? await runSaveOp({ mode: "patch", content: payload })
       : await runSaveOp({
-          mode: 'create',
+          mode: "create",
           content: payload,
           templateId: getRealTemplateId(),
           prompt: (description.trim() || payload.title).slice(0, 1000),
@@ -751,62 +874,77 @@ export default function Generate() {
     if (!id || isApplyingDesign) return;
     if (!window.confirm(DESIGN_APPLY_CONFIRM)) return;
     setIsApplyingDesign(true);
-    setDesignError('');
+    setDesignError("");
     try {
       const res = await api.post(`/posters/${id}/apply-latest-design`, {
         expectedVersion: versionRef.current,
       });
       const poster = res.data?.data?.poster;
-      if (!poster?._id) throw new Error('Missing poster');
+      if (!poster?._id) throw new Error("Missing poster");
 
-      const content = { ...poster.content, image: poster.content?.imageUrl || '' };
+      const content = {
+        ...poster.content,
+        image: poster.content?.imageUrl || "",
+      };
       versionRef.current = poster.currentVersion || versionRef.current;
       setCurrentVersion(versionRef.current);
       setGeneratedContent(content);
       setRawGeneratedContent(content);
-      setUserImageUrl(poster.content?.imageUrl || '');
+      setUserImageUrl(poster.content?.imageUrl || "");
       setPosterDesign(poster.design || null);
       markSaved(content);
       setSaveError(null);
       queueThumbnail(posterIdRef.current, content, poster.design || null);
-      setFeedback({ type: 'success', message: 'This poster now uses your latest brand design.' });
+      setFeedback({
+        type: "success",
+        message: "This poster now uses your latest brand design.",
+      });
     } catch (err) {
       if (err.response?.status === 409) {
         setSaveError({
-          message: 'This poster was changed somewhere else. Reload it, then try again.',
+          message:
+            "This poster was changed somewhere else. Reload it, then try again.",
           conflict: true,
         });
       } else {
-        setDesignError('We could not update this poster. Please try again.');
+        setDesignError("We could not update this poster. Please try again.");
       }
     } finally {
       setIsApplyingDesign(false);
     }
   };
 
-  const closeTemplateDialog = () => setTemplateDialog({ open: false, busy: false, error: '' });
+  const closeTemplateDialog = () =>
+    setTemplateDialog({ open: false, busy: false, error: "" });
 
   /** Keeps an assistant-made design as a layout, through the layout route that already exists. */
   const handleSaveAsTemplate = async (name) => {
-    setTemplateDialog((prev) => ({ ...prev, busy: true, error: '' }));
+    setTemplateDialog((prev) => ({ ...prev, busy: true, error: "" }));
     try {
       const res = await api.post(
-        '/templates',
-        aiTemplateBody({ name, design: { template: drawTemplate }, brandKit })
+        "/templates",
+        aiTemplateBody({ name, design: { template: drawTemplate }, brandKit }),
       );
       const made = res.data?.data?.template;
       if (made) {
         setTemplates((prev) =>
-          prev.some((t) => templateId(t) === templateId(made)) ? prev : [...prev, made]
+          prev.some((t) => templateId(t) === templateId(made))
+            ? prev
+            : [...prev, made],
         );
       }
-      setTemplateDialog({ open: false, busy: false, error: '' });
+      setTemplateDialog({ open: false, busy: false, error: "" });
       setFeedback({
-        type: 'success',
-        message: 'Saved as a layout. Choose it under “Use one of our layouts” or change it under Templates.',
+        type: "success",
+        message:
+          "Saved as a layout. Choose it under “Use one of our layouts” or change it under Templates.",
       });
     } catch (err) {
-      setTemplateDialog((prev) => ({ ...prev, busy: false, error: friendlyTemplateError(err) }));
+      setTemplateDialog((prev) => ({
+        ...prev,
+        busy: false,
+        error: friendlyTemplateError(err),
+      }));
     }
   };
 
@@ -815,48 +953,64 @@ export default function Generate() {
   /** Asks for one drawn picture for the place this design keeps open for it. */
   const handleMakePicture = async () => {
     const recipe = recipeOf(drawTemplate);
-    const title = String(posterContent?.title || '').trim();
+    const title = String(posterContent?.title || "").trim();
     if (!recipe?.recipeId || title.length < 3) return;
-    setPictureDialog({ ...PICTURE_IDLE, open: true, busy: true, subject: title });
+    setPictureDialog({
+      ...PICTURE_IDLE,
+      open: true,
+      busy: true,
+      subject: title,
+    });
     try {
       const res = await api.post(
-        '/posters/image',
+        "/posters/image",
         { recipeId: recipe.recipeId, title },
-        { timeout: 60000 }
+        { timeout: 60000 },
       );
       const made = res.data?.data || {};
       setPictureDialog({
         open: true,
         busy: false,
         subject: title,
-        url: made.imageUrl || '',
-        stockUrl: made.stockUrl || '',
-        message: made.message || '',
-        error: '',
+        url: made.imageUrl || "",
+        stockUrl: made.stockUrl || "",
+        message: made.message || "",
+        error: "",
       });
     } catch (err) {
-      setPictureDialog({ ...PICTURE_IDLE, open: true, subject: title, error: friendlyPictureError(err) });
+      setPictureDialog({
+        ...PICTURE_IDLE,
+        open: true,
+        subject: title,
+        error: friendlyPictureError(err),
+      });
     }
   };
 
   /** Takes the picture onto the poster. Discarding simply closes, so the poster is untouched. */
   const handleUsePicture = (url) => {
-    const next = String(url || '').trim();
+    const next = String(url || "").trim();
     if (!next || !posterContent) return;
     handleStageContent({ ...posterContent, imageUrl: next, image: next });
     setPictureDialog(PICTURE_IDLE);
     setFeedback({
-      type: 'success',
-      message: 'That picture is on your poster now. Press Save changes to keep it with the poster.',
+      type: "success",
+      message:
+        "That picture is on your poster now. Press Save changes to keep it with the poster.",
     });
   };
 
   const requestCloseEditor = () => {
-    if (hasUnsavedChanges && !window.confirm('You have unsaved changes. Close the editor without saving?')) {
+    if (
+      hasUnsavedChanges &&
+      !window.confirm(
+        "You have unsaved changes. Close the editor without saving?",
+      )
+    ) {
       return;
     }
     setIsEditOpen(false);
-    setDrawerSaveError('');
+    setDrawerSaveError("");
     setDrawerConflict(false);
   };
 
@@ -864,22 +1018,25 @@ export default function Generate() {
     <div className="bg-canvas">
       <div className="container-page py-6 sm:py-8 space-y-6">
         <div>
-          <h1 className="text-2xl sm:text-3xl tracking-tight">Create a poster</h1>
-          <p className="text-sm text-muted mt-1">
-            Describe your event in everyday words. Your logo, header, footer, and colors stay locked.
+          <h1 className="text-2xl sm:text-3xl tracking-tight">
+            Create a poster
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Describe your event in everyday words. Your logo, header, footer,
+            and colors stay locked.
           </p>
         </div>
 
         {feedback.message && (
           <div
             className={`p-4 rounded-card text-sm flex items-center gap-3 border ${
-              feedback.type === 'success'
-                ? 'border-success/30 text-success bg-section'
-                : 'border-danger/30 text-danger bg-section'
+              feedback.type === "success"
+                ? "border-success/30 text-success bg-section"
+                : "border-danger/30 text-danger bg-section"
             }`}
             role="status"
           >
-            {feedback.type === 'success' ? (
+            {feedback.type === "success" ? (
               <CheckCircle className="w-5 h-5 shrink-0" />
             ) : (
               <AlertCircle className="w-5 h-5 shrink-0" />
@@ -926,10 +1083,15 @@ export default function Generate() {
               {/* 1. Large Textarea */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label htmlFor="event-copy" className="block text-sm font-semibold text-heading">
+                  <label
+                    htmlFor="event-copy"
+                    className="block text-sm font-semibold text-heading"
+                  >
                     What do you want to create?
                   </label>
-                  <span className="text-xs text-muted">Everyday words</span>
+                  <span className="text-xs text-muted-foreground">
+                    Everyday words
+                  </span>
                 </div>
                 <textarea
                   id="event-copy"
@@ -941,7 +1103,9 @@ export default function Generate() {
                   className="input-field min-h-[130px] resize-y"
                 />
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  <span className="text-xs text-muted mr-1">Suggestions:</span>
+                  <span className="text-xs text-muted-foreground mr-1">
+                    Suggestions:
+                  </span>
                   {SAMPLE_PROMPTS.map((prompt) => (
                     <button
                       key={prompt}
@@ -949,7 +1113,7 @@ export default function Generate() {
                       onClick={() => setDescription(prompt)}
                       className="rounded-chip border border-line bg-canvas px-2.5 py-0.5 text-xs text-body hover:border-primary hover:text-heading transition-colors"
                     >
-                      {prompt.split(' on ')[0] || prompt.slice(0, 22)}
+                      {prompt.split(" on ")[0] || prompt.slice(0, 22)}
                     </button>
                   ))}
                 </div>
@@ -959,28 +1123,32 @@ export default function Generate() {
               <PosterImageInput
                 value={userImageUrl}
                 onChange={(url) => {
-                  const next = url || '';
+                  const next = url || "";
                   setUserImageUrl(next);
                   setImageLoadError(false);
                   setGeneratedContent((prev) => {
                     if (!prev && !next) return null;
                     return {
-                      title: prev?.title || '',
-                      tagline: prev?.tagline || '',
-                      date: prev?.date || '',
-                      time: prev?.time || '',
-                      venue: prev?.venue || '',
+                      title: prev?.title || "",
+                      tagline: prev?.tagline || "",
+                      date: prev?.date || "",
+                      time: prev?.time || "",
+                      venue: prev?.venue || "",
                       details: prev?.details || [],
                       ...prev,
-                      imageUrl: next || aiImageRef.current || '',
-                      image: next || aiImageRef.current || '',
+                      imageUrl: next || aiImageRef.current || "",
+                      image: next || aiImageRef.current || "",
                     };
                   });
                 }}
               />
 
               {/* 3. How this poster gets designed */}
-              <Suspense fallback={<div className="min-h-[140px] rounded-btn bg-line/40 animate-pulse" />}>
+              <Suspense
+                fallback={
+                  <div className="min-h-[140px] rounded-btn bg-line/40 animate-pulse" />
+                }
+              >
                 <DesignChooser
                   modes={allowed}
                   mode={designMode}
@@ -1001,7 +1169,11 @@ export default function Generate() {
                 {isGenerating ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>{designMode === MODE_AI ? 'Designing your poster...' : 'Writing your poster...'}</span>
+                    <span>
+                      {designMode === MODE_AI
+                        ? "Designing your poster..."
+                        : "Writing your poster..."}
+                    </span>
                   </>
                 ) : (
                   <>
@@ -1017,17 +1189,24 @@ export default function Generate() {
           <div className="lg:col-span-7 space-y-3">
             {/* Top Toolbar */}
             <div className="flex items-center justify-between gap-3">
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-chip bg-section border border-line text-xs text-muted">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-chip bg-section border border-line text-xs text-muted-foreground">
                 <Lock className="w-3.5 h-3.5 text-primary shrink-0" />
                 <span>Brand locked</span>
               </div>
 
               <div className="flex items-center gap-3">
-                {hasUnsavedChanges && saveStatus !== 'saving' && !showSavedChip && (
-                  <span className="text-[11px] text-amber-600 font-medium">Unsaved changes</span>
-                )}
-                {saveStatus === 'saving' ? (
-                  <span className="inline-flex items-center gap-1.5 text-xs text-muted" role="status">
+                {hasUnsavedChanges &&
+                  saveStatus !== "saving" &&
+                  !showSavedChip && (
+                    <span className="text-[11px] text-amber-600 font-medium">
+                      Unsaved changes
+                    </span>
+                  )}
+                {saveStatus === "saving" ? (
+                  <span
+                    className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+                    role="status"
+                  >
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     <span>Saving…</span>
                   </span>
@@ -1047,7 +1226,9 @@ export default function Generate() {
                 {ready && aiPoster && canManageTemplates && (
                   <button
                     type="button"
-                    onClick={() => setTemplateDialog({ open: true, busy: false, error: '' })}
+                    onClick={() =>
+                      setTemplateDialog({ open: true, busy: false, error: "" })
+                    }
                     className="inline-flex items-center gap-1.5 rounded-btn border border-line bg-canvas px-3 py-1.5 text-xs font-semibold text-heading shadow-soft hover:bg-section hover:border-primary transition-colors"
                   >
                     <LayoutTemplate className="w-3.5 h-3.5 text-primary" />
@@ -1078,7 +1259,7 @@ export default function Generate() {
                     ) : (
                       <Save className="w-3.5 h-3.5" />
                     )}
-                    <span>{isSavingEdits ? 'Saving…' : 'Save changes'}</span>
+                    <span>{isSavingEdits ? "Saving…" : "Save changes"}</span>
                   </button>
                 )}
               </div>
@@ -1089,7 +1270,9 @@ export default function Generate() {
               {loadingInitial || isGenerating ? (
                 <SkeletonPoster />
               ) : ready ? (
-                <div className={`${STAGE_WIDTH} shadow-soft rounded-card overflow-hidden bg-canvas`}>
+                <div
+                  className={`${STAGE_WIDTH} shadow-soft rounded-card overflow-hidden bg-canvas`}
+                >
                   <Suspense fallback={<SkeletonPoster />}>
                     <EditablePoster
                       brandKit={drawBrandKit}
@@ -1103,7 +1286,10 @@ export default function Generate() {
                       photoOptions={photoOptions}
                       onOverflow={(isOver, msg) => {
                         setOverflowWarning(
-                          isOver ? (msg || 'Text is scaled down to fit your poster comfortably.') : null
+                          isOver
+                            ? msg ||
+                                "Text is scaled down to fit your poster comfortably."
+                            : null,
                         );
                       }}
                       onImageFail={() => setImageLoadError(true)}
@@ -1113,21 +1299,26 @@ export default function Generate() {
               ) : (
                 <div className="text-center max-w-sm">
                   <div className="aspect-[4/5] w-full max-w-[280px] mx-auto rounded-card border border-dashed border-line bg-canvas" />
-                  <p className="mt-4 text-sm text-muted">
+                  <p className="mt-4 text-sm text-muted-foreground">
                     Describe an event on the left to see a live preview here.
                   </p>
                 </div>
               )}
 
               {ready && viewIsDirty(posterView) ? (
-                <p className={`${STAGE_WIDTH} mt-2 text-center text-[11px] text-muted`}>
-                  Text size and photo shape apply on this screen and in the file you download.
+                <p
+                  className={`${STAGE_WIDTH} mt-2 text-center text-[11px] text-muted-foreground`}
+                >
+                  Text size and photo shape apply on this screen and in the file
+                  you download.
                 </p>
               ) : null}
 
               {/* Friendly Warnings */}
               {overflowWarning && (
-                <div className={`${STAGE_WIDTH} mt-3 p-3 rounded-card bg-amber-500/10 border border-amber-500/20 text-amber-900 text-xs flex items-center justify-between gap-2`}>
+                <div
+                  className={`${STAGE_WIDTH} mt-3 p-3 rounded-card bg-amber-500/10 border border-amber-500/20 text-amber-900 text-xs flex items-center justify-between gap-2`}
+                >
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
                     <span>{overflowWarning}</span>
@@ -1143,19 +1334,30 @@ export default function Generate() {
               )}
 
               {imageLoadError && (
-                <div className={`${STAGE_WIDTH} mt-3 p-3 rounded-card bg-amber-500/10 border border-amber-500/20 text-amber-900 text-xs flex items-center gap-2`}>
+                <div
+                  className={`${STAGE_WIDTH} mt-3 p-3 rounded-card bg-amber-500/10 border border-amber-500/20 text-amber-900 text-xs flex items-center gap-2`}
+                >
                   <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span>This photo could not be loaded. Choose another one or upload from your device.</span>
+                  <span>
+                    This photo could not be loaded. Choose another one or upload
+                    from your device.
+                  </span>
                 </div>
               )}
 
               {posterId && designStale && (
-                <div className={`${STAGE_WIDTH} mt-3 p-3 rounded-card bg-primary/10 border border-primary/20 text-xs`}>
+                <div
+                  className={`${STAGE_WIDTH} mt-3 p-3 rounded-card bg-primary/10 border border-primary/20 text-xs`}
+                >
                   <div className="flex items-start gap-2">
                     <AlertTriangle className="w-4 h-4 text-primary shrink-0 mt-0.5" />
                     <div className="flex-1 space-y-2">
-                      <p className="font-medium text-heading">{DESIGN_STALE_MESSAGE}</p>
-                      {designError && <p className="font-medium text-danger">{designError}</p>}
+                      <p className="font-medium text-heading">
+                        {DESIGN_STALE_MESSAGE}
+                      </p>
+                      {designError && (
+                        <p className="font-medium text-danger">{designError}</p>
+                      )}
                       <button
                         type="button"
                         onClick={handleApplyLatestDesign}
@@ -1167,7 +1369,9 @@ export default function Generate() {
                         ) : (
                           <RefreshCw className="w-3.5 h-3.5" />
                         )}
-                        <span>{isApplyingDesign ? 'Updating…' : DESIGN_APPLY_LABEL}</span>
+                        <span>
+                          {isApplyingDesign ? "Updating…" : DESIGN_APPLY_LABEL}
+                        </span>
                       </button>
                     </div>
                   </div>
@@ -1191,20 +1395,21 @@ export default function Generate() {
                 )}
                 {REFINEMENT_BUTTONS.map((btn) => {
                   const Icon = btn.icon;
-                  const isActive = btn.instruction && activeInstruction === btn.instruction;
+                  const isActive =
+                    btn.instruction && activeInstruction === btn.instruction;
                   return (
                     <button
                       key={btn.label}
                       type="button"
                       disabled={isGenerating || !description.trim()}
                       onClick={() => {
-                        setActiveInstruction(btn.instruction || '');
+                        setActiveInstruction(btn.instruction || "");
                         runGenerate(btn.instruction);
                       }}
                       className={`inline-flex items-center gap-1.5 rounded-chip px-3 py-1.5 text-xs font-medium border transition-colors disabled:opacity-50 ${
                         isActive
-                          ? 'bg-primary text-white border-primary shadow-soft'
-                          : 'border-line bg-canvas text-body hover:border-primary hover:text-heading'
+                          ? "bg-primary text-white border-primary shadow-soft"
+                          : "border-line bg-canvas text-body hover:border-primary hover:text-heading"
                       }`}
                     >
                       <Icon className="w-3.5 h-3.5" />
@@ -1224,7 +1429,11 @@ export default function Generate() {
                     ) : (
                       <Sparkles className="w-3.5 h-3.5" />
                     )}
-                    <span>{pictureDialog.busy ? 'Making a picture…' : PICTURE_BUTTON_LABEL}</span>
+                    <span>
+                      {pictureDialog.busy
+                        ? "Making a picture…"
+                        : PICTURE_BUTTON_LABEL}
+                    </span>
                   </button>
                 )}
               </div>
@@ -1288,7 +1497,8 @@ export default function Generate() {
               posterContent.time !== rawGeneratedContent.time ||
               posterContent.venue !== rawGeneratedContent.venue ||
               posterContent.imageUrl !== rawGeneratedContent.imageUrl ||
-              JSON.stringify(posterContent.details || []) !== JSON.stringify(rawGeneratedContent.details || []))
+              JSON.stringify(posterContent.details || []) !==
+                JSON.stringify(rawGeneratedContent.details || [])),
           )}
           onUndo={handleUndo}
           canUndo={historyStack.length > 0}

@@ -142,6 +142,7 @@ export function templateSnapshot(template) {
     },
     zones,
     layout: normalizeLayout(plain(raw.layout), zones),
+    page: raw.page ? prune(raw.page) : undefined,
     version: Math.max(1, Math.round(Number(raw.version) || 1)),
     editorVersion:
       Number(raw.editorVersion) === EDITOR_VERSION || elements.length > 0

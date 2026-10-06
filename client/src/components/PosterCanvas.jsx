@@ -9,6 +9,7 @@ import {
   templateElements,
   usesTemplateElements,
 } from '../utils/templateRender';
+import { resolveStyleTokens } from '../../../shared/templateElements.js';
 import PosterElementLayer from './PosterElementLayer';
 
 /* ------------------------------------------------------------------ *
@@ -1233,8 +1234,10 @@ export default function PosterCanvas({
    * in the downloaded file and in the card picture alike. */
   view = null,
 }) {
-  const brand = useMemo(() => resolvePosterBrand(brandKit, template), [brandKit, template]);
-  const rendered = useMemo(() => resolveTemplateRender(template), [template]);
+  const effectiveBrandKit = content?.design?.brandKit || brandKit;
+  const effectiveTemplate = template || content?.design?.template;
+  const brand = useMemo(() => resolvePosterBrand(effectiveBrandKit, effectiveTemplate), [effectiveBrandKit, effectiveTemplate]);
+  const rendered = useMemo(() => resolveTemplateRender(effectiveTemplate), [effectiveTemplate]);
 
   /* A poster always carries the locked header and footer from its own brand kit. If one
    * is missing here, the brand layer was lost somewhere upstream, so say so loudly while
@@ -1251,8 +1254,10 @@ export default function PosterCanvas({
   /* A template that carries items of its own is drawn from those items; everything
    * saved before the editor keeps the flow layout it has always had. */
   const items = useMemo(() => {
-    if (!usesTemplateElements(template)) return null;
-    const placed = templateElements(template, brandKit);
+    if (!usesTemplateElements(effectiveTemplate)) return null;
+    const placed = templateElements(effectiveTemplate, effectiveBrandKit).map((item) =>
+      resolveStyleTokens(item, effectiveBrandKit)
+    );
     const sizes = view?.sizes;
     const fit = view?.photoFit;
     const blankFits = view?.blankFits;
@@ -1287,20 +1292,33 @@ export default function PosterCanvas({
         '#0b0f17',
       ],
     }).items;
-  }, [template, brandKit, view, brand]);
+  }, [effectiveTemplate, effectiveBrandKit, view, brand]);
 
-  /* Only the faces this poster really draws: the brand's own, plus the typeface of
-   * every item that shows words. Photos and shapes ask for nothing. */
-  const extraFonts = useMemo(() => {
-    const families = brand.fonts.filter(Boolean);
+  /* Only the faces this poster really draws: active brand bands, plus placed items
+   * showing words (or content fonts when using the flow layout).
+   * Brand tokens are resolved, and unknown or token strings are never sent to Google Fonts. */
+  const usedFonts = useMemo(() => {
+    const list = [];
+    if (brand.header.present) {
+      if (brand.header.orgName?.show) list.push(brand.header.orgName.style?.fontFamily);
+      if (brand.header.tagline?.show) list.push(brand.header.tagline.style?.fontFamily);
+    }
+    if (brand.footer.present) {
+      list.push(brand.footer.style?.fontFamily);
+    }
     if (items) {
       for (const item of items) {
-        if (item.kind === 'field' || item.kind === 'text') families.push(item.style.fontFamily);
+        if (item.kind === 'field' || item.kind === 'text') {
+          list.push(item.style?.fontFamily);
+        }
       }
+    } else {
+      list.push(brand.content.fonts.heading);
+      list.push(brand.content.fonts.body);
     }
-    return [...new Set(families)];
-  }, [brand.fonts, items]);
-  const fontsReady = useGoogleFonts(brand.content.fonts.heading, brand.content.fonts.body, extraFonts);
+    return [...new Set(list.filter((f) => typeof f === 'string' && f.trim() && !f.startsWith('brand:')))];
+  }, [brand, items]);
+  const fontsReady = useGoogleFonts(usedFonts[0] || '', usedFonts[1] || '', usedFonts.slice(2));
 
   /* The flow layout announces when it is done fitting. Placed items announce it through
    * this layer, once nothing is resizing any more. */

@@ -17,11 +17,16 @@ import { buildRecipeDesign } from '../services/poster/recipe.js';
 import { cleanElements, elementContext } from '../services/template/elements.js';
 import { recipeIds } from '../../shared/designRecipes.js';
 import {
+  BRAND_COLOR_TOKENS,
+  BRAND_FONT_TOKENS,
   ICON_NAMES,
   TEMPLATE_DOC_MAX_BYTES,
   contentArea,
+  defaultPage,
+  effectivePage,
   isInsideArea,
   jsonBytes,
+  resolveStyleTokens,
 } from '../../shared/templateElements.js';
 import { generateToken } from '../services/auth.service.js';
 
@@ -1135,6 +1140,204 @@ async function run() {
     token: otherAdmin.token,
   });
   assert(designTemplateOther.status === 404, "another organization cannot reach a template made from this client's design");
+
+  // 18. Brand tokens, page overrides and snapshots (STYLE LINK 1)
+  console.log('\n18. Brand tokens, page overrides and snapshots');
+
+  // A. Tokens validate on elements
+  const tokenElements = [
+    {
+      id: 'token-headline',
+      kind: 'field',
+      field: 'headline',
+      x: 70,
+      y: 240,
+      w: 900,
+      h: 80,
+      text: 'Headline with tokens',
+      style: {
+        color: 'brand:primary',
+        fontFamily: 'brand:heading',
+        size: 40,
+        minSize: 16,
+      },
+    },
+    {
+      id: 'token-shape',
+      kind: 'shape',
+      x: 70,
+      y: 340,
+      w: 900,
+      h: 40,
+      shape: {
+        type: 'rect',
+        fill: 'brand:accent',
+        stroke: 'brand:secondary',
+      },
+    },
+  ];
+
+  const tokenTemplateCreate = await createTemplate(admin, `Token Template ${runId}`, {
+    elements: tokenElements,
+    editorVersion: 2,
+  });
+  assert(tokenTemplateCreate.status === 201, 'a template with brand tokens in element styles and shapes validates and saves');
+  const savedTokenTpl = tokenTemplateCreate.body.data.template;
+  const textEl = savedTokenTpl.elements.find((e) => e.id === 'token-headline');
+  const shapeEl = savedTokenTpl.elements.find((e) => e.id === 'token-shape');
+  assert(textEl.style.color === 'brand:primary' && textEl.style.fontFamily === 'brand:heading', 'token text keeps brand:primary and brand:heading');
+  assert(shapeEl.shape.fill === 'brand:accent' && shapeEl.shape.stroke === 'brand:secondary', 'token shape keeps brand:accent and brand:secondary');
+
+  // B. Unknown tokens are rejected
+  const badColorToken = await createTemplate(admin, `Bad Color Token ${runId}`, {
+    elements: [
+      {
+        id: 'token-headline',
+        kind: 'field',
+        field: 'headline',
+        x: 70,
+        y: 240,
+        w: 900,
+        h: 80,
+        text: 'Bad',
+        style: { color: 'brand:notreal', size: 40, minSize: 16 },
+      },
+    ],
+    editorVersion: 2,
+  });
+  assert(badColorToken.status === 400, 'an unknown color token is rejected');
+  assert(/hex/.test(badColorToken.body?.error?.message), 'color rejection explains it needs a hex or known token');
+
+  const badFontToken = await createTemplate(admin, `Bad Font Token ${runId}`, {
+    elements: [
+      {
+        id: 'token-headline',
+        kind: 'field',
+        field: 'headline',
+        x: 70,
+        y: 240,
+        w: 900,
+        h: 80,
+        text: 'Bad',
+        style: { fontFamily: 'brand:notreal', size: 40, minSize: 16 },
+      },
+    ],
+    editorVersion: 2,
+  });
+  assert(badFontToken.status === 400, 'an unknown font token is rejected');
+  assert(/font/.test(badFontToken.body?.error?.message), 'font rejection explains the font is not offered');
+
+  // C. Page custom sections validate like brand ones
+  const validCustomPage = {
+    background: { mode: 'custom', type: 'color', color: '#1a2b3c' },
+    decoration: { mode: 'custom', decoration: 'band', decorationColor: '#059669' },
+    watermark: { mode: 'custom', show: true, opacity: 0.12 },
+    infoCard: { mode: 'custom', background: '#f8fafc', border: '#e2e8f0', radius: 20, iconColor: '#059669' },
+  };
+  const pageTemplateCreate = await createTemplate(admin, `Page Custom ${runId}`, {
+    page: validCustomPage,
+  });
+  assert(pageTemplateCreate.status === 201, 'a template with valid custom page sections validates and saves');
+  const savedPageTpl = pageTemplateCreate.body.data.template;
+  assert(savedPageTpl.page.background.mode === 'custom' && savedPageTpl.page.background.color === '#1a2b3c', 'custom background is saved');
+  assert(savedPageTpl.page.decoration.mode === 'custom' && savedPageTpl.page.decoration.decoration === 'band', 'custom decoration is saved');
+  assert(savedPageTpl.page.watermark.mode === 'custom' && savedPageTpl.page.watermark.opacity === 0.12, 'custom watermark is saved');
+  assert(savedPageTpl.page.infoCard.mode === 'custom' && savedPageTpl.page.infoCard.radius === 20, 'custom infoCard is saved');
+
+  // Page validation rejections:
+  // Watermark opacity > 0.3 rejected
+  const badWatermark = await createTemplate(admin, `Bad Watermark ${runId}`, {
+    page: { watermark: { mode: 'custom', show: true, opacity: 0.5 } },
+  });
+  assert(badWatermark.status === 400, 'page watermark opacity > 0.3 is rejected');
+
+  // InfoCard radius > 32 rejected
+  const badRadius = await createTemplate(admin, `Bad Radius ${runId}`, {
+    page: { infoCard: { mode: 'custom', radius: 48 } },
+  });
+  assert(badRadius.status === 400, 'page infoCard radius > 32 is rejected');
+
+  // Invalid decoration shape rejected
+  const badDec = await createTemplate(admin, `Bad Decoration ${runId}`, {
+    page: { decoration: { mode: 'custom', decoration: 'zigzag' } },
+  });
+  assert(badDec.status === 400, 'page decoration with unknown shape is rejected');
+
+  // Background image outside tenant Cloudinary folder rejected
+  const badImage = await createTemplate(admin, `Bad Image ${runId}`, {
+    page: { background: { mode: 'custom', type: 'image', imageUrl: 'https://evil.com/bg.png' } },
+  });
+  assert(badImage.status === 400, 'page background image outside client folder is rejected');
+
+  // D. Old templates load unchanged
+  const oldDocId = new mongoose.Types.ObjectId();
+  await Template.collection.insertOne({
+    _id: oldDocId,
+    clientId: clientA._id,
+    name: `Old Raw Template ${runId}`,
+    category: 'Event',
+    size: { width: 1080, height: 1350 },
+    zones: zones(),
+    editorVersion: 1,
+    isActive: true,
+    version: 1,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  created.templateIds.push(oldDocId);
+
+  const oldRead = await request(`/api/templates/${oldDocId}`, { token: admin.token });
+  assert(oldRead.status === 200, 'old template without page field loads cleanly');
+  assert(oldRead.body.data.template.name === `Old Raw Template ${runId}`, 'old template retains its name');
+
+  // E. effectivePage picks custom over brand
+  const effPageCustom = effectivePage(aiKit, savedPageTpl);
+  assert(effPageCustom.background.color === '#1a2b3c', 'effectivePage picks custom background color over brand');
+  assert(effPageCustom.decoration === 'band', 'effectivePage picks custom decoration over brand');
+  assert(effPageCustom.watermark.opacity === 0.12, 'effectivePage picks custom watermark over brand');
+  assert(effPageCustom.infoCard.radius === 20, 'effectivePage picks custom infoCard over brand');
+
+  const effPageBrand = effectivePage(aiKit, { page: defaultPage() });
+  assert(
+    effPageBrand.background.color === (aiKit.content?.background?.color || '#ffffff'),
+    'effectivePage picks brand kit background in brand mode'
+  );
+
+  // F. Poster snapshot preserves page and tokens, and resolves the same after brand kit changes
+  const snapTpl = templateSnapshot({
+    ...savedTokenTpl,
+    page: savedPageTpl.page,
+  });
+  assert(snapTpl.page !== undefined, 'template snapshot keeps page');
+  assert(snapTpl.elements[0].style.color === 'brand:primary', 'template snapshot keeps tokens');
+
+  const snapBrandKit = brandKitSnapshot(aiKit);
+  const posterDesign = { brandKit: snapBrandKit, template: snapTpl };
+  assert(designBytes(posterDesign) < DESIGN_MAX_BYTES, 'poster design snapshot with page and tokens stays within size limit');
+
+  const resolvedElBefore = resolveStyleTokens(snapTpl.elements[0], posterDesign.brandKit);
+  const effPageBefore = effectivePage(posterDesign.brandKit, snapTpl);
+
+  // Now mutate the brand kit in the database
+  await BrandKit.updateOne(
+    { clientId: clientA._id },
+    {
+      $set: {
+        'colors.primary': '#990000',
+        'content.headingFont': 'Caveat',
+        'content.background.color': '#009900',
+      },
+    }
+  );
+  const mutatedLiveKit = await BrandKit.findOne({ clientId: clientA._id }).lean();
+  assert(mutatedLiveKit.colors.primary === '#990000', 'brand kit primary color was mutated in database');
+
+  // The snapshot resolves using its own frozen brandKit, so resolution does not change
+  const resolvedElAfter = resolveStyleTokens(snapTpl.elements[0], posterDesign.brandKit);
+  const effPageAfter = effectivePage(posterDesign.brandKit, snapTpl);
+  assert(resolvedElAfter.style.color === resolvedElBefore.style.color, 'snapshot tokens resolve identical color after brand kit changes');
+  assert(resolvedElAfter.style.fontFamily === resolvedElBefore.style.fontFamily, 'snapshot tokens resolve identical font after brand kit changes');
+  assert(effPageAfter.background.color === effPageBefore.background.color, 'snapshot effectivePage resolves identical after brand kit changes');
 
   console.log(`\nStage 9 tests passed: ${passed} assertions`);
 }

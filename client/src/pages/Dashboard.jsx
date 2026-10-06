@@ -1,8 +1,16 @@
-import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Sparkles, Layers, Activity, ArrowRight, ShieldCheck, Database, Server } from 'lucide-react';
-import api from '../services/api';
-import { useAuth } from '../context/AuthContext';
+import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import {
+  Sparkles,
+  Layers,
+  Activity,
+  ArrowRight,
+  ShieldCheck,
+  Database,
+  Server,
+} from "lucide-react";
+import api from "../services/api";
+import { useAuth } from "../context/AuthContext";
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -14,16 +22,18 @@ export default function Dashboard() {
     setLoadingHealth(true);
     setError(null);
     try {
-      const res = await api.get('/health');
+      const res = await api.get("/health");
       setHealth(res.data);
     } catch (err) {
-      setError(err.message || 'Failed to reach API');
+      setError(err.message || "Failed to reach API");
     } finally {
       setLoadingHealth(false);
     }
   };
 
-  useEffect(() => { fetchHealth(); }, []);
+  useEffect(() => {
+    fetchHealth();
+  }, []);
 
   return (
     <div className="container-page section-pad space-y-8">
@@ -31,9 +41,13 @@ export default function Dashboard() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-line">
         <div>
           <h1 className="text-2xl">
-            {user?.name ? `Welcome back, ${user.name.split(' ')[0]}` : 'Dashboard'}
+            {user?.name
+              ? `Welcome back, ${user.name.split(" ")[0]}`
+              : "Dashboard"}
           </h1>
-          <p className="text-muted text-sm mt-1">Your poster workspace</p>
+          <p className="text-muted-foreground text-sm mt-1">
+            Your poster workspace
+          </p>
         </div>
         <Link
           to="/create"
@@ -57,11 +71,11 @@ export default function Dashboard() {
             <h2 className="text-base font-semibold text-heading group-hover:text-primary transition-colors">
               Create a poster
             </h2>
-            <p className="text-sm text-muted mt-0.5">
+            <p className="text-sm text-muted-foreground mt-0.5">
               Describe your event and get an on-brand poster in seconds.
             </p>
           </div>
-          <ArrowRight className="w-4 h-4 text-muted mt-1 shrink-0 group-hover:translate-x-0.5 transition-transform" />
+          <ArrowRight className="w-4 h-4 text-muted-foreground mt-1 shrink-0 group-hover:translate-x-0.5 transition-transform" />
         </Link>
 
         <Link
@@ -75,11 +89,11 @@ export default function Dashboard() {
             <h2 className="text-base font-semibold text-heading group-hover:text-primary transition-colors">
               My posters
             </h2>
-            <p className="text-sm text-muted mt-0.5">
+            <p className="text-sm text-muted-foreground mt-0.5">
               Download or re-generate previous posters.
             </p>
           </div>
-          <ArrowRight className="w-4 h-4 text-muted mt-1 shrink-0 group-hover:translate-x-0.5 transition-transform" />
+          <ArrowRight className="w-4 h-4 text-muted-foreground mt-1 shrink-0 group-hover:translate-x-0.5 transition-transform" />
         </Link>
       </div>
 
@@ -92,7 +106,7 @@ export default function Dashboard() {
           </div>
           <button
             onClick={fetchHealth}
-            className="text-xs px-3 py-1.5 rounded-btn border border-line text-muted hover:text-heading hover:border-primary/40 transition-colors"
+            className="text-xs px-3 py-1.5 rounded-btn border border-line text-muted-foreground hover:text-heading hover:border-primary/40 transition-colors"
           >
             Refresh
           </button>
@@ -110,17 +124,44 @@ export default function Dashboard() {
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
-              { icon: <Server className="w-3.5 h-3.5" />, label: 'API', value: health?.status, sub: `Uptime ${health?.uptime}s` },
-              { icon: <Database className="w-3.5 h-3.5" />, label: 'Database', value: health?.db, sub: 'MongoDB' },
-              { icon: <ShieldCheck className="w-3.5 h-3.5" />, label: 'Environment', value: health?.environment, sub: health?.vercel ? 'Vercel' : 'Local' },
-              { icon: <Layers className="w-3.5 h-3.5" />, label: 'Checked at', value: new Date(health?.timestamp).toLocaleTimeString(), sub: '/api/health' },
+              {
+                icon: <Server className="w-3.5 h-3.5" />,
+                label: "API",
+                value: health?.status,
+                sub: `Uptime ${health?.uptime}s`,
+              },
+              {
+                icon: <Database className="w-3.5 h-3.5" />,
+                label: "Database",
+                value: health?.db,
+                sub: "MongoDB",
+              },
+              {
+                icon: <ShieldCheck className="w-3.5 h-3.5" />,
+                label: "Environment",
+                value: health?.environment,
+                sub: health?.vercel ? "Vercel" : "Local",
+              },
+              {
+                icon: <Layers className="w-3.5 h-3.5" />,
+                label: "Checked at",
+                value: new Date(health?.timestamp).toLocaleTimeString(),
+                sub: "/api/health",
+              },
             ].map(({ icon, label, value, sub }) => (
-              <div key={label} className="p-3 bg-section rounded-btn border border-line/60">
-                <div className="flex items-center gap-1.5 text-muted text-[11px] uppercase tracking-wider mb-1.5">
+              <div
+                key={label}
+                className="p-3 bg-section rounded-btn border border-line/60"
+              >
+                <div className="flex items-center gap-1.5 text-muted-foreground text-[11px] uppercase tracking-wider mb-1.5">
                   {icon} {label}
                 </div>
-                <div className="text-sm font-semibold text-heading capitalize truncate">{value}</div>
-                <div className="text-[11px] text-muted mt-0.5">{sub}</div>
+                <div className="text-sm font-semibold text-heading capitalize truncate">
+                  {value}
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">
+                  {sub}
+                </div>
               </div>
             ))}
           </div>

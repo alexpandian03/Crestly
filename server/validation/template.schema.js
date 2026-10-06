@@ -19,6 +19,7 @@ import {
   VARIABLE_LIMITS,
   validateElements,
 } from '../../shared/templateElements.js';
+import { templatePageSchema } from './brandKit.schema.js';
 
 const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid template ID');
 
@@ -204,6 +205,7 @@ const templateWriteSchema = (context) => ({
   size: sizeSchema.optional(),
   zones: zonesSchema,
   layout: layoutSchema.optional(),
+  page: templatePageSchema(context.clientId).optional(),
   elements: templateElementsSchema(context).optional(),
 });
 
@@ -218,13 +220,14 @@ export const updateTemplateSchemaFor = (req) => {
       size: shape.size,
       zones: shape.zones.optional(),
       layout: shape.layout,
+      page: shape.page,
       elements: shape.elements,
       note: z.string().trim().max(120).optional(),
       expectedVersion: z.coerce.number().int().min(1, 'Invalid version number').optional(),
     })
     .refine(
       (value) =>
-        ['name', 'category', 'size', 'zones', 'layout', 'elements'].some((key) => value[key] !== undefined),
+        ['name', 'category', 'size', 'zones', 'layout', 'page', 'elements'].some((key) => value[key] !== undefined),
       { message: 'Provide at least one change' }
     );
 };

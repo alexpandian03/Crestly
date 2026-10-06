@@ -14,6 +14,13 @@ import BrandKit from '../models/BrandKit.model.js';
 import RateCounter from '../models/RateCounter.model.js';
 import { generateToken } from '../services/auth.service.js';
 import { SIGNATURE_LIMIT_PER_HOUR } from '../services/brand/style.js';
+import {
+  BRAND_COLOR_TOKENS,
+  BRAND_FONT_TOKENS,
+  resolveStyleTokens,
+  effectivePage,
+  defaultPage,
+} from '../../shared/templateElements.js';
 
 if (process.env.NODE_ENV === 'production') {
   throw new Error('Brand kit tests cannot run in production.');
@@ -397,6 +404,93 @@ async function run() {
   const lonelyAdmin = await makeUser({ email: `brand-lonely-${runId}@example.test`, role: 'clientadmin', clientId: noKitClient._id });
   const noKit = await getKit(lonelyAdmin.token);
   assert(noKit.status === 404 && /not found/i.test(noKit.body.error.message), 'client without a brand kit gets a friendly 404');
+
+  console.log('\n10. Brand tokens and effectivePage');
+  const sampleKit = {
+    colors: {
+      primary: '#112233',
+      secondary: '#223344',
+      accent: '#334455',
+      text: '#445566',
+      background: '#556677',
+    },
+    fonts: {
+      heading: 'Playfair Display',
+      body: 'Roboto',
+    },
+    content: {
+      headingColor: '#667788',
+      bodyColor: '#778899',
+      headingFont: 'Montserrat',
+      bodyFont: 'Lato',
+      background: {
+        type: 'color',
+        color: '#123456',
+      },
+      decoration: 'band',
+      decorationColor: '#abcdef',
+      watermark: {
+        show: true,
+        opacity: 0.15,
+      },
+      infoCard: {
+        background: '#fedcba',
+        border: '#098765',
+        radius: 12,
+        iconColor: '#543210',
+      },
+    },
+  };
+
+  const styleWithTokens = {
+    color: 'brand:primary',
+    fill: 'brand:accent',
+    stroke: 'brand:secondary',
+    fontFamily: 'brand:heading',
+  };
+  const resolved = resolveStyleTokens(styleWithTokens, sampleKit);
+  assert(resolved.color === '#112233', 'resolveStyleTokens resolves brand:primary');
+  assert(resolved.fill === '#334455', 'resolveStyleTokens resolves brand:accent');
+  assert(resolved.stroke === '#223344', 'resolveStyleTokens resolves brand:secondary');
+  assert(resolved.fontFamily === 'Montserrat', 'resolveStyleTokens resolves brand:heading from content.headingFont');
+
+  const resolvedBody = resolveStyleTokens({ color: 'brand:body', fontFamily: 'brand:body' }, sampleKit);
+  assert(resolvedBody.color === '#778899', 'resolveStyleTokens resolves brand:body color');
+  assert(resolvedBody.fontFamily === 'Lato', 'resolveStyleTokens resolves brand:body font');
+
+  const resolvedText = resolveStyleTokens({ color: 'brand:text', fill: 'brand:background' }, sampleKit);
+  assert(resolvedText.color === '#445566', 'resolveStyleTokens resolves brand:text');
+  assert(resolvedText.fill === '#556677', 'resolveStyleTokens resolves brand:background');
+
+  const literalStyle = { color: '#ffffff', fontFamily: 'Cinzel' };
+  const resolvedLiteral = resolveStyleTokens(literalStyle, sampleKit);
+  assert(resolvedLiteral.color === '#ffffff', 'resolveStyleTokens preserves literal hex');
+  assert(resolvedLiteral.fontFamily === 'Cinzel', 'resolveStyleTokens preserves literal font');
+
+  // effectivePage: brand mode picks brand kit values
+  const defaultTpl = { page: defaultPage() };
+  const effectiveDefault = effectivePage(sampleKit, defaultTpl);
+  assert(effectiveDefault.background.color === '#123456', 'effectivePage in brand mode uses brand background color');
+  assert(effectiveDefault.decoration === 'band', 'effectivePage in brand mode uses brand decoration');
+  assert(effectiveDefault.decorationColor === '#abcdef', 'effectivePage in brand mode uses brand decorationColor');
+  assert(effectiveDefault.watermark.show === true && effectiveDefault.watermark.opacity === 0.15, 'effectivePage in brand mode uses brand watermark');
+  assert(effectiveDefault.infoCard.radius === 12 && effectiveDefault.infoCard.background === '#fedcba', 'effectivePage in brand mode uses brand infoCard');
+
+  // effectivePage: custom mode overrides brand
+  const customTpl = {
+    page: {
+      background: { mode: 'custom', type: 'color', color: '#ff0055' },
+      decoration: { mode: 'custom', decoration: 'circle', decorationColor: '#00ff55' },
+      watermark: { mode: 'custom', show: false, opacity: 0.05 },
+      infoCard: { mode: 'custom', background: '#0000ff', border: '#ffffff', radius: 24, iconColor: '#ffff00' },
+    },
+  };
+  const effectiveCustom = effectivePage(sampleKit, customTpl);
+  assert(effectiveCustom.background.color === '#ff0055', 'effectivePage picks custom background over brand');
+  assert(effectiveCustom.decoration === 'circle', 'effectivePage picks custom decoration over brand');
+  assert(effectiveCustom.decorationColor === '#00ff55', 'effectivePage picks custom decorationColor over brand');
+  assert(effectiveCustom.watermark.show === false && effectiveCustom.watermark.opacity === 0.05, 'effectivePage picks custom watermark over brand');
+  assert(effectiveCustom.infoCard.radius === 24 && effectiveCustom.infoCard.background === '#0000ff', 'effectivePage picks custom infoCard over brand');
 
   console.log(`\nBrand kit tests passed: ${passed} assertions`);
 }

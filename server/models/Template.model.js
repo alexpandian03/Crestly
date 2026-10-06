@@ -10,6 +10,11 @@ import {
   layoutDefaultsFor,
 } from '../services/template/zones.js';
 import {
+  BACKGROUND_PATTERNS,
+  BACKGROUND_POSITIONS,
+  BRAND_FONT_TOKENS,
+  CONTENT_BACKGROUND_TYPES,
+  CONTENT_DECORATIONS,
   ELEMENT_FIELDS,
   ELEMENT_FONTS,
   ELEMENT_KINDS,
@@ -24,6 +29,7 @@ import {
   TEXT_ALIGNS,
   VARIABLE_KEY_PATTERN,
   VARIABLE_LIMITS,
+  defaultPage,
   jsonBytes,
 } from '../../shared/templateElements.js';
 
@@ -131,7 +137,10 @@ const elementStyleSchema = new mongoose.Schema(
   {
     fontFamily: {
       type: String,
-      enum: { values: ELEMENT_FONTS, message: '{VALUE} is not one of the fonts this app offers' },
+      enum: {
+        values: [...ELEMENT_FONTS, ...BRAND_FONT_TOKENS],
+        message: '{VALUE} is not one of the fonts this app offers',
+      },
       default: ELEMENT_STYLE_DEFAULTS.fontFamily,
     },
     size: {
@@ -252,12 +261,70 @@ const elementSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const pageBackgroundSchema = new mongoose.Schema(
+  {
+    mode: { type: String, enum: ['brand', 'custom'], default: 'brand' },
+    type: { type: String, enum: CONTENT_BACKGROUND_TYPES, default: 'color' },
+    color: { type: String, default: '#ffffff' },
+    gradientFrom: { type: String, default: '#059669' },
+    gradientTo: { type: String, default: '#0f172a' },
+    gradientAngle: { type: Number, default: 135 },
+    imageUrl: { type: String, default: '' },
+    overlayColor: { type: String, default: '#0b0f17' },
+    overlayOpacity: { type: Number, default: 0.4 },
+    fit: { type: String, default: 'cover', enum: IMAGE_FITS },
+    position: { type: String, default: 'center', enum: BACKGROUND_POSITIONS },
+    pattern: { type: String, default: 'none', enum: BACKGROUND_PATTERNS },
+  },
+  { _id: false }
+);
+
+const pageDecorationSchema = new mongoose.Schema(
+  {
+    mode: { type: String, enum: ['brand', 'custom'], default: 'brand' },
+    decoration: { type: String, enum: CONTENT_DECORATIONS, default: 'none' },
+    decorationColor: { type: String, default: '#059669' },
+  },
+  { _id: false }
+);
+
+const pageWatermarkSchema = new mongoose.Schema(
+  {
+    mode: { type: String, enum: ['brand', 'custom'], default: 'brand' },
+    show: { type: Boolean, default: false },
+    opacity: { type: Number, default: 0.08 },
+  },
+  { _id: false }
+);
+
+const pageInfoCardSchema = new mongoose.Schema(
+  {
+    mode: { type: String, enum: ['brand', 'custom'], default: 'brand' },
+    background: { type: String, default: '#f8fafc' },
+    border: { type: String, default: '#e2e8f0' },
+    radius: { type: Number, default: 16 },
+    iconColor: { type: String, default: '#059669' },
+  },
+  { _id: false }
+);
+
+const pageSchema = new mongoose.Schema(
+  {
+    background: { type: pageBackgroundSchema, default: undefined },
+    decoration: { type: pageDecorationSchema, default: undefined },
+    watermark: { type: pageWatermarkSchema, default: undefined },
+    infoCard: { type: pageInfoCardSchema, default: undefined },
+  },
+  { _id: false }
+);
+
 const templateVersionSchema = new mongoose.Schema(
   {
     version: { type: Number, min: 1 },
     name: { type: String, trim: true, maxlength: 120 },
     zones: { type: [zoneSchema], default: [] },
     layout: { type: layoutSchema, default: () => ({}) },
+    page: { type: pageSchema, default: undefined },
     elements: { type: [elementSchema], default: [] },
     editorVersion: { type: Number, min: 1, default: LEGACY_EDITOR_VERSION },
     size: {
@@ -311,6 +378,10 @@ const templateSchema = new mongoose.Schema(
     layout: {
       type: layoutSchema,
       default: () => ({ ...layoutDefaultsFor([]) }),
+    },
+    page: {
+      type: pageSchema,
+      default: undefined,
     },
     /* Items placed by the editor. A template saved before the editor exists has none and is
        converted from its zones on read, so nothing is rewritten until an admin saves. */
@@ -449,6 +520,7 @@ export function getDefaultTemplateData(clientId, clientName = 'Default') {
       },
     ],
     layout: layoutDefaultsFor([{ type: 'image' }]),
+    page: defaultPage(),
     version: 1,
     versions: [],
     isActive: true,

@@ -8,8 +8,12 @@ const repoRoot = path.resolve(clientRoot, '..');
 
 export default defineConfig({
   plugins: [react()],
+   resolve: {
+    alias: { '@': path.resolve(clientRoot, './src') },
+  },
   server: {
     port: 5173,
+    
     /* /shared holds the item rules the API and this app must agree on, so the dev
        server may serve files from the repository root, not only from /client. */
     fs: { allow: [repoRoot] },
