@@ -339,49 +339,6 @@ async function run() {
   const deactivate = await request(`/api/templates/${copy._id}/deactivate`, { method: 'POST', token: admin.token });
   assert(deactivate.status === 200 && deactivate.body.data.template.isActive === false, 'deactivate hides the copy again');
 
-  /* 8b. Every write moves the changed date, because each preview is keyed on
-     id + version + updatedAt: a save that left the date alone would keep showing an old look.
-     The date is planted with a raw collection write, since going through the model would let
-     the timestamp option overwrite the value being planted. */
-  const LONG_AGO = Date.now() - 5 * 60 * 1000;
-  const makeStale = (id) => Template.collection.updateOne({ _id: id }, { $set: { updatedAt: new Date(LONG_AGO) } });
-  const stampOf = (doc) => new Date(doc.updatedAt).getTime();
-  const datedNow = (doc) => stampOf(doc) > LONG_AGO;
-
-  await makeStale(template._id);
-  const freshPatch = await request(`/api/templates/${template._id}`, {
-    method: 'PATCH',
-    token: admin.token,
-    body: { name: `Fresh After Save ${runId}`, expectedVersion: running + 1 },
-  });
-  assert(freshPatch.status === 200, 'a save after the restore still has the current version number');
-  assert(datedNow(freshPatch.body.data.template), 'saving a template dates it now');
-  assert(freshPatch.body.data.template.version === running + 2, 'that save is its own new version');
-
-  await makeStale(template._id);
-  const beforeFreshRestore = await request(`/api/templates/${template._id}`, { token: admin.token });
-  const oldestNow = beforeFreshRestore.body.data.template.versions[0].version;
-  const freshRestore = await request(`/api/templates/${template._id}/restore`, {
-    method: 'POST',
-    token: admin.token,
-    body: { version: oldestNow },
-  });
-  assert(freshRestore.status === 200, `restoring the oldest stored version still works (got ${freshRestore.status})`);
-  assert(datedNow(freshRestore.body.data.template), 'restoring an old state dates the template now');
-
-  await makeStale(copy._id);
-  const freshActivate = await request(`/api/templates/${copy._id}/activate`, { method: 'POST', token: admin.token });
-  assert(freshActivate.status === 200 && datedNow(freshActivate.body.data.template), 'activating dates the template now');
-  await makeStale(copy._id);
-  const freshDeactivate = await request(`/api/templates/${copy._id}/deactivate`, { method: 'POST', token: admin.token });
-  assert(freshDeactivate.status === 200 && datedNow(freshDeactivate.body.data.template), 'deactivating dates the template now');
-
-  await makeStale(template._id);
-  const freshCopy = await request(`/api/templates/${template._id}/duplicate`, { method: 'POST', token: admin.token });
-  created.templateIds.push(freshCopy.body.data.template._id);
-  assert(freshCopy.status === 201 && datedNow(freshCopy.body.data.template), 'a duplicate is dated now, not copied from its source');
-  assert(freshCopy.body.data.template.version === 1, 'a duplicate still starts at version 1');
-
   // 9. Last active template of an organization is protected
   const onlyOne = await createTemplate(soloAdmin, `Solo Template ${runId}`);
   assert(onlyOne.status === 201, 'admin of an empty organization creates a template');
@@ -603,16 +560,7 @@ async function run() {
   const listRead = await request('/api/templates', { token: admin.token });
   const listed = listRead.body.data.templates.find((item) => String(item._id) === String(editorTemplate._id));
   assert(listed && listed.editorVersion === 2, 'the list says which editor a template was made with');
-  /* Every miniature in the app is the real poster renderer, so the list has to carry the items
-     a template was made of. Without them a card would draw the old flow layout instead. */
-  assert(
-    listed && Array.isArray(listed.elements) && listed.elements.length === 3,
-    'the list carries the placed items so a preview can draw them',
-  );
-  assert(
-    listed && listed.elements.every((element) => element.id && element.kind && element.style),
-    'each listed item keeps its own kind, place and look',
-  );
+  assert(listed && listed.elements === undefined, 'the list stays light and leaves the items to one template');
   assert(listed && listed.versions === undefined, 'the list never carries the change history');
 
   // Two of the same part of the poster

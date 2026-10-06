@@ -23,7 +23,6 @@
     "test:posterdesign": "node server/scripts/test-poster-design.js",
     "test:elements": "node server/scripts/test-template-elements.js",
     "test:recipes": "node server/scripts/test-design-recipes.js",
-    "test:timeago": "node server/scripts/test-time-ago.js",
     "test:aidesign": "node server/scripts/test-poster-ai-design.js",
     "test:image": "node server/scripts/test-poster-image.js",
     "start": "node server/dev.js"

@@ -20,10 +20,7 @@ import {
 } from '../services/template/elements.js';
 import { defaultPage, normalizePage } from '../../shared/templateElements.js';
 
-/* The list also carries the placed items: every miniature a template is shown in draws the
-   items it really stores, so a list can never disagree with the poster the editor saved. */
-const LIST_FIELDS =
-  'clientId name category isActive isDefault version editorVersion updatedAt size layout zones page elements';
+const LIST_FIELDS = 'clientId name category isActive isDefault version editorVersion updatedAt size layout zones page';
 const LIST_SORT = { isDefault: -1, createdAt: -1 };
 const CONFLICT_MESSAGE = 'This template was changed somewhere else. Reload to continue.';
 
