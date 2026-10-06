@@ -1367,3 +1367,95 @@ JWT Bearer auth, Cloudinary, ES modules. One repo, one Vercel project:
      never restyle when the live brand kit changes. Stays under DESIGN_MAX_BYTES.
   6. Tests: extended test-stage9.js (now 334 assertions) and test-brandkit.js (now 111 assertions); all test
      suites pass; npm run build clean; /client untouched.
+- Style Link 2 (client only, /server untouched) done:
+  1. In <PosterCanvas> and renderers, effectivePage(brandKit, template) is called for the area behind the poster
+     text (fill, decoration, watermark) and date/time/place cards, and resolveStyleTokens is called for every
+     item's colors and fonts before auto-fit, contrast checks and export. Saved posters use their own saved brand
+     kit snapshot (content?.design?.brandKit || brandKit) and template snapshot.
+  2. Contrast checks (readableItems) evaluate with resolved colors against the effective surface and plates;
+     header and footer still come only from the brand kit.
+  3. Load only Google Fonts actually used: useGoogleFonts requests only the unique font families actually rendered
+     on the canvas (active header, footer, placed word items / flow content fonts), with brand tokens resolved
+     and stripped.
+  4. In /preview-test (DEV only), added a dedicated "Style link and saved snapshot tests" suite showing one template
+     with brand tokens and a custom page backdrop drawn with two different brand kits (colors and typography
+     follow each brand), and one saved poster snapshot preserving its Rosewood / Cinzel look when the live brand
+     kit changes to Bold.
+  5. Exports match preview; canvasBaseColor resolves custom page background; old templates and brand kits remain
+     visually identical. npm run build clean; all tests pass (740 assertions across suites).
+- Style Link 3 (client only, /server untouched) done:
+  1. LEFT RAIL: added "Page" and "Brand" tabs to `RAIL_TABS` with `Sliders` and `Palette` icons.
+     - Page: four sections (Background, Decoration, Watermark, Cards for date, time and place). Each has a switch
+       "Use brand setting" / "Customize", "Customized" badge, and "Reset to brand" button. "Customize" reuses the same
+       control components imported directly from `components/brand/controls.jsx` (`BackgroundEditor`, `ColorInput`,
+       `Segmented`, `Toggle`, `SliderNumber`, `LIMITS`).
+     - Brand: brand colours swatches (Primary, Secondary, Accent, Text, Background) and brand fonts (Heading, Body).
+       Clicking a swatch applies the token to the selected item's colour; clicking a font applies the font token.
+       Includes link "Edit in Brand Kit" (opens `/brand-kit` in a new tab) and note "Header and footer are set in the Brand Kit."
+  2. PICKERS: `ItemColorPicker` in `ItemToolbar.jsx` presents a "Brand colours" row first, then custom picker. Items using a
+     brand token show the token name ("Primary") and a "Use custom colour" action; a custom colour displays a "Customized" badge.
+     Font select lists brand fonts first under an `<optgroup label="Brand fonts">` followed by other fonts, showing "Customized"
+     when custom.
+  3. Reset to brand per item (resets text to brand tokens) and per section (sets mode: 'brand'), with seamless undo/redo
+     support through `historyReducer` state tracking `{ items, page }`.
+  4. Contrast warnings evaluate against resolved colors (`resolveColorToken` + `effectivePage` surface).
+  5. Fixed Templates list "updated N hours ago" label in `utils/timeAgo.js`: corrected millisecond/second scaling bug so
+     recent templates show "just now", minutes, hours, days.
+  6. Plain words everywhere ("Background", "Cards for date, time and place", no technical jargon).
+  7. `npm run build` clean; lazy chunk `TemplateEdit-*.js` is 117.41 kB (33.25 kB gzip); no new libraries added.
+- Style Link 4 (client only, /server untouched) done:
+  1. SIMPLE / ADVANCED SWITCH: added toggle at the top of `/brand-kit` page, persisted in `sessionStorage`
+     ('brand-kit-mode'). Simple shows only: organization identity (name & logo), 5 brand colours (primary,
+     accent, dark/secondary, text, poster background), 2 fonts (heading & body), header text & toggles, footer
+     contact details (address, phone, email, website, up to 6 social links), and style presets picker. Advanced
+     shows everything else in collapsible sections: Header, Area behind the poster text, Cards for date, time
+     and place, Footer, Fonts and sizes, and Poster creation modes. Each section features an individual Reset button
+     and a one-line description of where it is used.
+  2. LARGER STICKY LIVE PREVIEW: 6/6 grid split gives 50% width to the live preview card on desktop; live
+     preview header contains a small `<select>` populated from loaded templates so admins can test different
+     templates; preview and WCAG contrast readouts update live as users type.
+  3. NOTES AND TEMPLATE COUNTS: added note near Save: "Changes apply to new posters. Posters already made keep
+     their design." Each section displays a "Used by N templates" line computed cheaply from the loaded templates
+     list (accounting for templates with custom page overrides vs using brand kit settings).
+  4. STICKY SAVE BAR: includes unsaved-changes pulse indicator / status chip, "Discard changes" button, "Save
+     brand kit" button, and unsaved changes `beforeunload` guard.
+  5. REUSE: existing controls and validation reused without changes to the server or data model. `npm run build`
+     clean; BrandKit chunk 39.57 kB (11.39 kB gzip).
+
+- PREVIEW UNIFY (client + one projection line) done: one component now draws every template miniature.
+  Investigation: the Templates card used components/TemplateThumb.jsx (fixed-width PosterCanvas, own
+  IntersectionObserver), DesignChooser used TemplateThumb at 64 px, BrandKit used <PosterPreview> (which forces
+  minHeight 200 px and its own sample), TemplateEdit's Preview and /templates/builder used PosterPreview too, and
+  every one of them drew from the LIST row - which the server projected without `elements`, so a card showed a
+  zones reconstruction of an items template instead of its real look. PATCH did bump `version` and `updatedAt`
+  (findOneAndUpdate + timestamps:true on the model) and the label came from utils/timeAgo.js.
+  New `client/src/components/TemplatePreview.jsx` is the single renderer: <PosterCanvas> with the template's own
+  items (utils/templateRender.js `templateElements` → normalizeElements, or legacyToElements for an old template),
+  the client's brand kit, sample words, `transform: scale(shown/canvasW)` inside an `aspect-ratio` box, plus
+  `templateSignature(template)` = id|version|updatedAt|item count|editorVersion used as the PosterCanvas key so any
+  save repaints; `size` for a fixed width (list 132, chooser 64), fluid ResizeObserver width when omitted,
+  IntersectionObserver (rootMargin 240 px) until in view unless `eager`, and `showZoneBorders` for the read-only
+  builder page. TemplateThumb.jsx is deleted; TemplateCard, DesignChooser, VersionDrawer (per-version items,
+  `eager`), BrandKit, TemplateEdit (narrow screen + the four Preview samples) and TemplateBuilder all use it, so
+  PosterPreview now serves posters only. No template ever reads a stored thumbnail image.
+  Freshness: Templates.jsx reloads quietly on window focus and visibilitychange (the list is re-read after the
+  editor saves or closes); the server LIST_FIELDS now carries `elements`. Brand Kit preview lists only active
+  templates (`previewTemplates`), defaults to the first active one, redraws as the kit is typed and gained an
+  "Edit this template" link (/templates/:id/edit in a new tab).
+  utils/timeAgo.js rewritten as the shared ladder - "just now" under a minute, N minutes, N hours, N days up to 30,
+  then a plain date - with an injectable `now`; new `npm run test:timeago` (server/scripts/test-time-ago.js, 20
+  assertions on every boundary). test-stage9.js gained section 8b: a 5-minute-old `updatedAt` planted with a raw
+  `Template.collection.updateOne` (the model's timestamp option would overwrite a value planted through it), then
+  PATCH, restore (of the version oldest NOW, since the extra save shifts the 10-entry window), activate, deactivate
+  and duplicate each proved to date the template again, plus 'a duplicate still starts at version 1'; the old "the
+  list stays light" assertion became 'the list carries the placed items so a preview can draw them'.
+  Save feedback: TemplateEdit's success banner now carries a "Back to templates" action next to
+  "Saved as version N." and the failure banner keeps "Reload this template". Every route, guard and the poster
+  canvas are unchanged; a zones-only template converts on read and looks exactly as before.
+  Caveat: the sample picture is the organization's own photo (brandKit.content.defaultImageUrl, or the photo baked
+  into the item) - no external sample URL is hardcoded, because this project previously shipped dead ones.
+  All suites green: timeago 20, stage9 344, elements 99, recipes 155, stage5 86, stage8 129, brandkit 111,
+  posterdesign 41, image 89, aidesign 266, auth; `npm run build` clean (TemplatePreview 1.56 kB / 0.80 gzip as its
+  own lazy chunk, timeAgo 0.75 kB, Templates 13.92, DesignChooser 3.46, TemplateBuilder 5.44, BrandKit 39.99,
+  TemplateEdit 117.24 kB / 33.25 gzip, main chunk 478.00 kB / 149.73 gzip). Backups of the files replaced are in
+  `.backups/preview-unify/`.
