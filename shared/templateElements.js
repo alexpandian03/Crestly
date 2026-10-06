@@ -128,6 +128,84 @@ export const ELEMENT_FONTS = [
 
 export const ELEMENT_WEIGHTS = [400, 500, 600, 700, 800];
 
+/** Brand tokens that can be used in place of explicit colors or fonts. */
+export const BRAND_COLOR_TOKENS = [
+  'brand:primary',
+  'brand:secondary',
+  'brand:accent',
+  'brand:text',
+  'brand:background',
+  'brand:heading',
+  'brand:body',
+];
+
+export const BRAND_FONT_TOKENS = [
+  'brand:heading',
+  'brand:body',
+];
+
+export const PAGE_MODES = ['brand', 'custom'];
+export const CONTENT_BACKGROUND_TYPES = ['color', 'gradient', 'image', 'pattern'];
+export const BACKGROUND_POSITIONS = ['top', 'center', 'bottom', 'left', 'right'];
+export const BACKGROUND_PATTERNS = ['none', 'dots', 'lines', 'grid'];
+export const CONTENT_DECORATIONS = ['none', 'band', 'circle', 'corners'];
+
+export const DEFAULT_PAGE_BACKGROUND = {
+  type: 'color',
+  color: '#ffffff',
+  gradientFrom: '#059669',
+  gradientTo: '#0f172a',
+  gradientAngle: 135,
+  imageUrl: '',
+  overlayColor: '#0b0f17',
+  overlayOpacity: 0.4,
+  position: 'center',
+  pattern: 'none',
+  fit: 'cover',
+};
+
+export const DEFAULT_PAGE_DECORATION = {
+  decoration: 'none',
+  decorationColor: '#059669',
+};
+
+export const DEFAULT_PAGE_WATERMARK = {
+  show: false,
+  opacity: 0.08,
+};
+
+export const DEFAULT_PAGE_INFO_CARD = {
+  background: '#f8fafc',
+  border: '#e2e8f0',
+  radius: 16,
+  iconColor: '#059669',
+};
+
+export function defaultPage() {
+  return {
+    background: { mode: 'brand' },
+    decoration: { mode: 'brand' },
+    watermark: { mode: 'brand' },
+    infoCard: { mode: 'brand' },
+  };
+}
+
+export function isBrandColorToken(value) {
+  return typeof value === 'string' && BRAND_COLOR_TOKENS.includes(value.trim());
+}
+
+export function isBrandFontToken(value) {
+  return typeof value === 'string' && BRAND_FONT_TOKENS.includes(value.trim());
+}
+
+export function isStyleColor(value) {
+  return isHexColor(value) || isBrandColorToken(value);
+}
+
+export function isStyleFont(value) {
+  return (typeof value === 'string' && ELEMENT_FONTS.includes(value.trim())) || isBrandFontToken(value);
+}
+
 /**
  * Fill-in slots.
  *
@@ -329,6 +407,200 @@ function toPlain(value) {
   return value;
 }
 
+export function normalizeStyleColor(value, fallback) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (isBrandColorToken(text)) return text;
+  return normalizeHexColor(text, fallback);
+}
+
+export function resolveColorToken(token, brandKit) {
+  if (typeof token !== 'string') return token;
+  const key = token.trim();
+  if (!BRAND_COLOR_TOKENS.includes(key)) return token;
+  const kit = toPlain(brandKit) || {};
+  const colors = kit.colors || {};
+  const content = kit.content || {};
+  switch (key) {
+    case 'brand:primary':
+      return normalizeHexColor(colors.primary, '#059669');
+    case 'brand:secondary':
+      return normalizeHexColor(colors.secondary, '#0f172a');
+    case 'brand:accent':
+      return normalizeHexColor(colors.accent || content.accentColor, '#10b981');
+    case 'brand:text':
+      return normalizeHexColor(colors.text, '#ffffff');
+    case 'brand:background':
+      return normalizeHexColor(colors.background, '#0b0f17');
+    case 'brand:heading':
+      return normalizeHexColor(content.headingColor || colors.primary, '#0f172a');
+    case 'brand:body':
+      return normalizeHexColor(content.bodyColor || colors.text, '#334155');
+    default:
+      return token;
+  }
+}
+
+export function resolveFontToken(token, brandKit) {
+  if (typeof token !== 'string') return token;
+  const key = token.trim();
+  if (!BRAND_FONT_TOKENS.includes(key)) return token;
+  const kit = toPlain(brandKit) || {};
+  const fonts = kit.fonts || {};
+  const content = kit.content || {};
+  switch (key) {
+    case 'brand:heading':
+      return content.headingFont || fonts.heading || 'Outfit';
+    case 'brand:body':
+      return content.bodyFont || fonts.body || 'Inter';
+    default:
+      return token;
+  }
+}
+
+export function resolveStyleTokens(styleOrElement, brandKit) {
+  if (!styleOrElement || typeof styleOrElement !== 'object') return styleOrElement;
+  const raw = toPlain(styleOrElement);
+  const out = { ...raw };
+  if (out.color && typeof out.color === 'string' && isBrandColorToken(out.color)) {
+    out.color = resolveColorToken(out.color, brandKit);
+  }
+  if (out.fill && typeof out.fill === 'string' && isBrandColorToken(out.fill)) {
+    out.fill = resolveColorToken(out.fill, brandKit);
+  }
+  if (out.stroke && typeof out.stroke === 'string' && isBrandColorToken(out.stroke)) {
+    out.stroke = resolveColorToken(out.stroke, brandKit);
+  }
+  if (out.fontFamily && typeof out.fontFamily === 'string' && isBrandFontToken(out.fontFamily)) {
+    out.fontFamily = resolveFontToken(out.fontFamily, brandKit);
+  }
+  if (out.style && typeof out.style === 'object') {
+    out.style = resolveStyleTokens(out.style, brandKit);
+  }
+  if (out.shape && typeof out.shape === 'object') {
+    out.shape = resolveStyleTokens(out.shape, brandKit);
+  }
+  return out;
+}
+
+export function effectivePage(brandKit, template) {
+  const kit = toPlain(brandKit) || {};
+  const tpl = toPlain(template) || {};
+  const content = kit.content || {};
+  const page = tpl.page || {};
+
+  const customBg = page.background?.mode === 'custom';
+  const customDec = page.decoration?.mode === 'custom';
+  const customWatermark = page.watermark?.mode === 'custom';
+  const customCard = page.infoCard?.mode === 'custom';
+
+  const rawBg = customBg ? page.background : (content.background || {});
+  const background = {
+    ...DEFAULT_PAGE_BACKGROUND,
+    ...(isPlainObject(rawBg) ? rawBg : {}),
+  };
+  if (isBrandColorToken(background.color)) background.color = resolveColorToken(background.color, kit);
+  if (isBrandColorToken(background.gradientFrom)) background.gradientFrom = resolveColorToken(background.gradientFrom, kit);
+  if (isBrandColorToken(background.gradientTo)) background.gradientTo = resolveColorToken(background.gradientTo, kit);
+  if (isBrandColorToken(background.overlayColor)) background.overlayColor = resolveColorToken(background.overlayColor, kit);
+
+  const decRaw = customDec
+    ? (page.decoration.decoration || page.decoration.type || 'none')
+    : (content.decoration || 'none');
+  const decoration = CONTENT_DECORATIONS.includes(decRaw) ? decRaw : 'none';
+
+  let decorationColor = customDec
+    ? (page.decoration.decorationColor || '#059669')
+    : (content.decorationColor || '#059669');
+  if (isBrandColorToken(decorationColor)) decorationColor = resolveColorToken(decorationColor, kit);
+
+  const watermark = customWatermark
+    ? {
+        show: Boolean(page.watermark.show),
+        opacity: page.watermark.opacity !== undefined ? Number(page.watermark.opacity) : 0.08,
+      }
+    : {
+        show: Boolean(content.watermark?.show),
+        opacity: content.watermark?.opacity !== undefined ? Number(content.watermark.opacity) : 0.08,
+      };
+
+  const rawCard = customCard ? page.infoCard : (content.infoCard || {});
+  const infoCard = {
+    ...DEFAULT_PAGE_INFO_CARD,
+    ...(isPlainObject(rawCard) ? rawCard : {}),
+  };
+  if (isBrandColorToken(infoCard.background)) infoCard.background = resolveColorToken(infoCard.background, kit);
+  if (isBrandColorToken(infoCard.border)) infoCard.border = resolveColorToken(infoCard.border, kit);
+  if (isBrandColorToken(infoCard.iconColor)) infoCard.iconColor = resolveColorToken(infoCard.iconColor, kit);
+
+  return {
+    background,
+    decoration,
+    decorationColor,
+    watermark,
+    infoCard,
+  };
+}
+
+export function normalizePage(page) {
+  if (!page || typeof page !== 'object') return undefined;
+  const raw = toPlain(page);
+  const out = {};
+
+  if (raw.background) {
+    const bg = isPlainObject(raw.background) ? raw.background : {};
+    const mode = bg.mode === 'custom' ? 'custom' : 'brand';
+    out.background = {
+      mode,
+      type: CONTENT_BACKGROUND_TYPES.includes(bg.type) ? bg.type : 'color',
+      color: normalizeStyleColor(bg.color, '#ffffff'),
+      gradientFrom: normalizeStyleColor(bg.gradientFrom, '#059669'),
+      gradientTo: normalizeStyleColor(bg.gradientTo, '#0f172a'),
+      gradientAngle: clamp(toInt(bg.gradientAngle, 135), 0, 360),
+      imageUrl: typeof bg.imageUrl === 'string' ? bg.imageUrl.trim().slice(0, 500) : '',
+      overlayColor: normalizeStyleColor(bg.overlayColor, '#0b0f17'),
+      overlayOpacity: clamp(toNumber(bg.overlayOpacity, 0.4), 0, 1),
+      fit: IMAGE_FITS.includes(bg.fit) ? bg.fit : 'cover',
+      position: BACKGROUND_POSITIONS.includes(bg.position) ? bg.position : 'center',
+      pattern: BACKGROUND_PATTERNS.includes(bg.pattern) ? bg.pattern : 'none',
+    };
+  }
+
+  if (raw.decoration) {
+    const dec = isPlainObject(raw.decoration) ? raw.decoration : {};
+    const mode = dec.mode === 'custom' ? 'custom' : 'brand';
+    const decType = dec.decoration || dec.type || 'none';
+    out.decoration = {
+      mode,
+      decoration: CONTENT_DECORATIONS.includes(decType) ? decType : 'none',
+      decorationColor: normalizeStyleColor(dec.decorationColor, '#059669'),
+    };
+  }
+
+  if (raw.watermark) {
+    const wm = isPlainObject(raw.watermark) ? raw.watermark : {};
+    const mode = wm.mode === 'custom' ? 'custom' : 'brand';
+    out.watermark = {
+      mode,
+      show: Boolean(wm.show),
+      opacity: clamp(toNumber(wm.opacity, 0.08), 0, 0.3),
+    };
+  }
+
+  if (raw.infoCard) {
+    const card = isPlainObject(raw.infoCard) ? raw.infoCard : {};
+    const mode = card.mode === 'custom' ? 'custom' : 'brand';
+    out.infoCard = {
+      mode,
+      background: normalizeStyleColor(card.background, '#f8fafc'),
+      border: normalizeStyleColor(card.border, '#e2e8f0'),
+      radius: clamp(toInt(card.radius, 16), 0, 32),
+      iconColor: normalizeStyleColor(card.iconColor, '#059669'),
+    };
+  }
+
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 export function templateSizeOf(template) {
   const size = toPlain(template?.size);
   return {
@@ -427,11 +699,13 @@ function normalizeStyle(style) {
   );
   const weight = ELEMENT_WEIGHTS.includes(toInt(filled.weight, 500)) ? toInt(filled.weight, 500) : 500;
   return {
-    fontFamily: ELEMENT_FONTS.includes(filled.fontFamily) ? filled.fontFamily : ELEMENT_STYLE_DEFAULTS.fontFamily,
+    fontFamily: isStyleFont(filled.fontFamily)
+      ? (typeof filled.fontFamily === 'string' ? filled.fontFamily.trim() : filled.fontFamily)
+      : ELEMENT_STYLE_DEFAULTS.fontFamily,
     size,
     minSize,
     weight,
-    color: normalizeHexColor(filled.color, ELEMENT_STYLE_DEFAULTS.color),
+    color: normalizeStyleColor(filled.color, ELEMENT_STYLE_DEFAULTS.color),
     align: TEXT_ALIGNS.includes(filled.align) ? filled.align : ELEMENT_STYLE_DEFAULTS.align,
     lineHeight: clamp(toNumber(filled.lineHeight, 1.2), ELEMENT_LIMITS.lineHeight.min, ELEMENT_LIMITS.lineHeight.max),
     letterSpacing: clamp(toInt(filled.letterSpacing, 0), ELEMENT_LIMITS.letterSpacing.min, ELEMENT_LIMITS.letterSpacing.max),
@@ -449,8 +723,8 @@ function normalizeShape(shape) {
   const filled = { ...ELEMENT_SHAPE_DEFAULTS, ...(toPlain(shape) || {}) };
   return {
     type: SHAPE_TYPES.includes(filled.type) ? filled.type : ELEMENT_SHAPE_DEFAULTS.type,
-    fill: normalizeHexColor(filled.fill, ''),
-    stroke: normalizeHexColor(filled.stroke, ''),
+    fill: normalizeStyleColor(filled.fill, ''),
+    stroke: normalizeStyleColor(filled.stroke, ''),
     strokeWidth: clamp(toInt(filled.strokeWidth, 0), ELEMENT_LIMITS.strokeWidth.min, ELEMENT_LIMITS.strokeWidth.max),
   };
 }
@@ -825,11 +1099,11 @@ export function validateElements(elements, context = {}) {
       ['outline colour', toPlain(sent.shape)?.stroke],
     ];
     for (const [name, value] of colours) {
-      if (value !== undefined && value !== null && value !== '' && !isHexColor(value)) {
+      if (value !== undefined && value !== null && value !== '' && !isHexColor(value) && !isBrandColorToken(value)) {
         problems.push(`The ${label} has a ${name} that is not a hex value such as #1a2b3c.`);
       }
     }
-    if (rawStyle?.fontFamily !== undefined && !ELEMENT_FONTS.includes(rawStyle.fontFamily)) {
+    if (rawStyle?.fontFamily !== undefined && !ELEMENT_FONTS.includes(rawStyle.fontFamily) && !isBrandFontToken(rawStyle.fontFamily)) {
       problems.push(`"${rawStyle.fontFamily}" is not one of the fonts this app offers.`);
     }
     const size = rawStyle?.size;

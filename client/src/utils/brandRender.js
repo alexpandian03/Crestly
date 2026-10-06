@@ -14,7 +14,7 @@
  */
 import { blendOver, parseColor, pickReadableColor } from './contrast.js';
 import { resolveTemplateRender } from './templateRender.js';
-import { contentArea } from '../../../shared/templateElements.js';
+import { contentArea, effectivePage } from '../../../shared/templateElements.js';
 
 /** Mirrors BRAND_KIT_DEFAULTS in server/services/brand/style.js. */
 export const BRAND_RENDER_DEFAULTS = {

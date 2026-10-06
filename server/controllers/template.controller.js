@@ -18,8 +18,9 @@ import {
   elementsForRead,
   storedEditorVersion,
 } from '../services/template/elements.js';
+import { defaultPage, normalizePage } from '../../shared/templateElements.js';
 
-const LIST_FIELDS = 'clientId name category isActive isDefault version editorVersion updatedAt size layout zones';
+const LIST_FIELDS = 'clientId name category isActive isDefault version editorVersion updatedAt size layout zones page';
 const LIST_SORT = { isDefault: -1, createdAt: -1 };
 const CONFLICT_MESSAGE = 'This template was changed somewhere else. Reload to continue.';
 
@@ -109,6 +110,7 @@ function snapshotOf(template, note, byUser) {
     name: template.name,
     zones,
     layout: normalizeLayout(plain(template.layout), zones),
+    page: plain(template.page),
     elements: plain(template.elements || []),
     editorVersion: storedEditorVersion(template),
     size: normalizeTemplateSize(template.size),
@@ -194,6 +196,7 @@ export async function createTemplate(req, res, next) {
       size,
       zones,
       layout,
+      page: req.body.page !== undefined ? normalizePage(req.body.page) : defaultPage(),
       elements,
       editorVersion: editorVersionFor(elements),
       version: 1,
@@ -242,6 +245,7 @@ export async function updateTemplate(req, res, next) {
       editorVersion: editorVersionFor(elements, storedEditorVersion(template)),
     };
     if (req.body.category !== undefined) changes.category = req.body.category;
+    if (req.body.page !== undefined) changes.page = normalizePage(req.body.page);
     if (req.body.name !== undefined) {
       const name = cleanName(req.body.name);
       if (!name) return sendBadRequest('Give the template a name.', res);
@@ -297,6 +301,7 @@ export async function duplicateTemplate(req, res, next) {
       size,
       zones,
       layout: normalizeLayout(plain(template.layout), zones),
+      page: plain(template.page),
       elements,
       editorVersion: editorVersionFor(elements),
       version: 1,
@@ -397,6 +402,7 @@ export async function restoreTemplateVersion(req, res, next) {
       zones,
       size,
       layout,
+      ...(source.page !== undefined ? { page: plain(source.page) } : {}),
       elements,
       editorVersion: editorVersionFor(elements),
     };

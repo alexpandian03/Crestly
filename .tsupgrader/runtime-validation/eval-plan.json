@@ -1,0 +1,51 @@
+{
+  "generatedAt": "2026-10-06T10:17:37Z",
+  "generatedOnPlatform": "win32",
+  "projectType": "server",
+  "setup": [
+    {
+      "command": "npm",
+      "args": ["ci"]
+    },
+    {
+      "command": "npm",
+      "args": ["ci"],
+      "cwd": "client"
+    }
+  ],
+  "assertions": [
+    {
+      "name": "tests-pass",
+      "kind": "process",
+      "command": "npm",
+      "args": ["run", "test:recipes"],
+      "verificationMethod": "test-results",
+      "expected": "0",
+      "timeoutSeconds": 300
+    },
+    {
+      "name": "client-production-build",
+      "kind": "process",
+      "command": "npm",
+      "args": ["run", "build"],
+      "cwd": "client",
+      "verificationMethod": "exit-code",
+      "expected": "0",
+      "timeoutSeconds": 300
+    },
+    {
+      "name": "health-endpoint",
+      "kind": "http-probe",
+      "startCommand": "npm",
+      "startArgs": ["run", "dev:server"],
+      "env": {
+        "NODE_ENV": "development",
+        "MONGODB_URI": ""
+      },
+      "url": "http://localhost:5000/api/health",
+      "verificationMethod": "http-status",
+      "expected": "200",
+      "timeoutSeconds": 90
+    }
+  ]
+}

@@ -1,14 +1,20 @@
-import React, { useEffect, useState } from 'react';
-import { AlertCircle, CheckCircle2, ImageIcon, Loader2, Sparkles } from 'lucide-react';
-import api from '../../services/api';
-import { useAuth } from '../../context/AuthContext';
-import { Toggle } from './controls';
+import React, { useEffect, useState } from "react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  ImageIcon,
+  Loader2,
+  Sparkles,
+} from "lucide-react";
+import api from "../../services/api";
+import { useAuth } from "../../context/AuthContext";
+import { Toggle } from "./controls";
 import {
   BOTH_OFF_MESSAGE,
   BRAND_LINE,
   designModesOf,
   designModesPayload,
-} from '../../utils/posterAiDesign';
+} from "../../utils/posterAiDesign";
 
 /**
  * The organization's two ways of making a poster, read and saved through the settings route
@@ -20,14 +26,14 @@ export default function DesignModesCard() {
   const [saved, setSaved] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!activeClientId) return undefined;
     let cancelled = false;
     (async () => {
       setLoading(true);
-      setError('');
+      setError("");
       try {
         const res = await api.get(`/clients/${activeClientId}`);
         const next = designModesOf(res.data?.data?.client);
@@ -38,8 +44,8 @@ export default function DesignModesCard() {
         if (!cancelled) {
           setError(
             err.response?.status === 403
-              ? 'You cannot change these settings for this organization.'
-              : 'We could not read these settings. Please reload this page.'
+              ? "You cannot change these settings for this organization."
+              : "We could not read these settings. Please reload this page.",
           );
         }
       } finally {
@@ -52,11 +58,13 @@ export default function DesignModesCard() {
   }, [activeClientId]);
 
   const setMode = (key, value) => {
-    setError('');
+    setError("");
     setModes((prev) => ({ ...prev, [key]: value }));
   };
 
-  const dirty = Boolean(modes && saved && JSON.stringify(modes) !== JSON.stringify(saved));
+  const dirty = Boolean(
+    modes && saved && JSON.stringify(modes) !== JSON.stringify(saved),
+  );
 
   const save = async () => {
     if (!modes || !dirty || saving) return;
@@ -65,9 +73,12 @@ export default function DesignModesCard() {
       return;
     }
     setSaving(true);
-    setError('');
+    setError("");
     try {
-      const res = await api.patch(`/clients/${activeClientId}`, designModesPayload(modes));
+      const res = await api.patch(
+        `/clients/${activeClientId}`,
+        designModesPayload(modes),
+      );
       const next = designModesOf(res.data?.data?.client);
       setModes(next);
       setSaved(next);
@@ -77,8 +88,8 @@ export default function DesignModesCard() {
         err.response?.status === 400 && serverMessage
           ? serverMessage
           : err.response?.status === 403
-            ? 'You cannot change these settings for this organization.'
-            : 'We could not save these settings. Please try again.'
+            ? "You cannot change these settings for this organization."
+            : "We could not save these settings. Please try again.",
       );
     } finally {
       setSaving(false);
@@ -87,7 +98,10 @@ export default function DesignModesCard() {
 
   if (loading) {
     return (
-      <div className="card-surface p-5 flex items-center gap-2 text-sm text-muted" role="status">
+      <div
+        className="card-surface p-5 flex items-center gap-2 text-sm text-muted-foreground"
+        role="status"
+      >
         <Loader2 className="w-4 h-4 animate-spin" />
         <span>Reading your organization settings…</span>
       </div>
@@ -97,9 +111,12 @@ export default function DesignModesCard() {
   return (
     <section className="card-surface p-4 sm:p-5 space-y-4">
       <div className="pb-3 border-b border-line">
-        <h2 className="text-sm font-semibold text-heading">Ways of making a poster</h2>
-        <p className="text-xs text-muted mt-0.5 leading-snug">
-          Switch off what your team should not use. The Create page then shows only what is left on.
+        <h2 className="text-sm font-semibold text-heading">
+          Ways of making a poster
+        </h2>
+        <p className="text-xs text-muted-foreground mt-0.5 leading-snug">
+          Switch off what your team should not use. The Create page then shows
+          only what is left on.
         </p>
       </div>
 
@@ -109,13 +126,13 @@ export default function DesignModesCard() {
             label="Let AI design posters"
             hint="The assistant chooses the look and writes the words from a description."
             checked={modes.ai}
-            onChange={(value) => setMode('ai', value)}
+            onChange={(value) => setMode("ai", value)}
           />
           <Toggle
             label="Let people pick layouts"
             hint="Your team chooses one of the layouts made under Templates."
             checked={modes.templates}
-            onChange={(value) => setMode('templates', value)}
+            onChange={(value) => setMode("templates", value)}
           />
         </div>
       )}
@@ -128,8 +145,12 @@ export default function DesignModesCard() {
       )}
 
       <div className="flex items-center justify-between gap-3 pt-1">
-        <p className="text-[11px] text-muted flex items-center gap-1.5 min-w-0">
-          {modes?.ai ? <Sparkles className="w-3.5 h-3.5 shrink-0" /> : <ImageIcon className="w-3.5 h-3.5 shrink-0" />}
+        <p className="text-[11px] text-muted-foreground flex items-center gap-1.5 min-w-0">
+          {modes?.ai ? (
+            <Sparkles className="w-3.5 h-3.5 shrink-0" />
+          ) : (
+            <ImageIcon className="w-3.5 h-3.5 shrink-0" />
+          )}
           <span>{BRAND_LINE}</span>
         </p>
         <button
@@ -143,7 +164,7 @@ export default function DesignModesCard() {
           ) : (
             <CheckCircle2 className="w-4 h-4" />
           )}
-          <span>{saving ? 'Saving…' : dirty ? 'Save settings' : 'Saved'}</span>
+          <span>{saving ? "Saving…" : dirty ? "Save settings" : "Saved"}</span>
         </button>
       </div>
     </section>

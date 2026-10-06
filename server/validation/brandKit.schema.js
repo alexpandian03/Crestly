@@ -277,3 +277,121 @@ export function updateBrandKitSchema({ clientId } = {}) {
 export const brandImageSignSchema = z.object({
   kind: z.enum(BRAND_IMAGE_KINDS, 'Choose which part of the brand this photo belongs to.'),
 });
+
+export function templatePageSchema(clientId) {
+  const modeSchema = z.enum(['brand', 'custom']).default('brand');
+
+  const contentBgSchema = backgroundOrColor({
+    clientId,
+    types: CONTENT_BACKGROUND_TYPES,
+    withPattern: true,
+    label: 'Content',
+  });
+
+  const pageBackground = z.preprocess(
+    (val) => (typeof val === 'string' ? { mode: 'custom', color: val } : val || { mode: 'brand' }),
+    z.object({
+      mode: modeSchema.optional(),
+    }).passthrough().transform((val, ctx) => {
+      const mode = val.mode || 'brand';
+      if (mode === 'custom') {
+        const res = contentBgSchema.safeParse(val);
+        if (!res.success) {
+          for (const issue of res.error.issues) ctx.addIssue(issue);
+          return val;
+        }
+        return { ...res.data, mode: 'custom' };
+      }
+      return { ...val, mode: 'brand' };
+    })
+  );
+
+  const pageDecoration = z.preprocess(
+    (val) => {
+      if (!val || typeof val !== 'object') return { mode: 'brand' };
+      const out = { ...val };
+      if (out.type && !out.decoration) out.decoration = out.type;
+      return out;
+    },
+    z.object({
+      mode: modeSchema.optional(),
+    }).passthrough().transform((val, ctx) => {
+      const mode = val.mode || 'brand';
+      if (mode === 'custom') {
+        const out = { ...val, mode: 'custom' };
+        if (val.decoration !== undefined) {
+          const res = z.enum(CONTENT_DECORATIONS, 'Decoration is not supported.').safeParse(val.decoration);
+          if (!res.success) {
+            for (const issue of res.error.issues) ctx.addIssue(issue);
+          } else {
+            out.decoration = res.data;
+          }
+        }
+        if (val.decorationColor !== undefined) {
+          const res = maybeColor('Decoration color').safeParse(val.decorationColor);
+          if (!res.success) {
+            for (const issue of res.error.issues) ctx.addIssue(issue);
+          } else {
+            out.decorationColor = res.data;
+          }
+        }
+        return out;
+      }
+      return { ...val, mode: 'brand' };
+    })
+  );
+
+  const pageWatermark = z.preprocess(
+    (val) => (val && typeof val === 'object' ? val : { mode: 'brand' }),
+    z.object({
+      mode: modeSchema.optional(),
+    }).passthrough().transform((val, ctx) => {
+      const mode = val.mode || 'brand';
+      if (mode === 'custom') {
+        const wmSchema = z.object({
+          show: z.boolean().optional(),
+          opacity: numberField('Watermark opacity', RANGES.watermarkOpacity, { integer: false }).optional(),
+        });
+        const res = wmSchema.safeParse(val);
+        if (!res.success) {
+          for (const issue of res.error.issues) ctx.addIssue(issue);
+          return val;
+        }
+        return { ...res.data, mode: 'custom' };
+      }
+      return { ...val, mode: 'brand' };
+    })
+  );
+
+  const pageInfoCard = z.preprocess(
+    (val) => (val && typeof val === 'object' ? val : { mode: 'brand' }),
+    z.object({
+      mode: modeSchema.optional(),
+    }).passthrough().transform((val, ctx) => {
+      const mode = val.mode || 'brand';
+      if (mode === 'custom') {
+        const cardSchema = z.object({
+          background: maybeColor('Info card background'),
+          border: maybeColor('Info card border'),
+          radius: numberField('Corner roundness', RANGES.cardRadius).optional(),
+          iconColor: maybeColor('Icon color'),
+        });
+        const res = cardSchema.safeParse(val);
+        if (!res.success) {
+          for (const issue of res.error.issues) ctx.addIssue(issue);
+          return val;
+        }
+        return { ...res.data, mode: 'custom' };
+      }
+      return { ...val, mode: 'brand' };
+    })
+  );
+
+  return z.object({
+    background: pageBackground.optional(),
+    decoration: pageDecoration.optional(),
+    watermark: pageWatermark.optional(),
+    infoCard: pageInfoCard.optional(),
+  });
+}
+

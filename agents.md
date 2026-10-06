@@ -1351,3 +1351,19 @@ JWT Bearer auth, Cloudinary, ES modules. One repo, one Vercel project:
   no probe file or chunk in dist). No new dependency, no new env var, nothing saved differently: the
   items are the same shape the editor already stores. Backups of the four files replaced are in
   `.backups/design-polish-2/`.
+- Style Link 1 (/shared and server template validation only, /client untouched) done:
+  1. BRAND TOKENS: item style colours accept hex or tokens ("brand:primary", "brand:secondary",
+     "brand:accent", "brand:text", "brand:background", "brand:heading", "brand:body"). Font values
+     accept allowed font names or "brand:heading" / "brand:body". Pure resolveStyleTokens(style, brandKit)
+     and constants added to /shared/templateElements.js. Validation accepts hex or known tokens only.
+  2. PAGE OVERRIDES: template.page = { background, decoration, watermark, infoCard }, each with mode
+     "brand" (default) or "custom". In custom mode, reuses Brand Kit validation schemas and ranges
+     (content.background, decoration/decorationColor, watermark, infoCard). Tenant Cloudinary image rules enforced.
+  3. Defaults: templates without page and items without tokens behave as before. New items/templates default to
+     brand tokens and defaultPage(). No database rewrite.
+  4. Pure effectivePage(brandKit, template) in /shared/templateElements.js returns effective settings to draw
+     (custom sections over brand kit defaults).
+  5. SNAPSHOTS: poster.design.template preserves page and tokens; brand kit snapshot resolves them so old posters
+     never restyle when the live brand kit changes. Stays under DESIGN_MAX_BYTES.
+  6. Tests: extended test-stage9.js (now 334 assertions) and test-brandkit.js (now 111 assertions); all test
+     suites pass; npm run build clean; /client untouched.

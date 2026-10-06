@@ -1,8 +1,12 @@
-import React from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import React from "react";
+import { Navigate, useLocation } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
-export default function ProtectedRoute({ children, allowedRoles, requireActiveClient = false }) {
+export default function ProtectedRoute({
+  children,
+  allowedRoles,
+  requireActiveClient = false,
+}) {
   const { isAuthenticated, user, loading, activeClientId } = useAuth();
   const location = useLocation();
 
@@ -10,7 +14,7 @@ export default function ProtectedRoute({ children, allowedRoles, requireActiveCl
     return (
       <div className="min-h-[50vh] flex flex-col items-center justify-center gap-4">
         <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-        <p className="text-sm text-muted">Checking your account…</p>
+        <p className="text-sm text-muted-foreground">Checking your account…</p>
       </div>
     );
   }
@@ -29,11 +33,14 @@ export default function ProtectedRoute({ children, allowedRoles, requireActiveCl
     );
   }
 
-  if (requireActiveClient && user?.role === 'superadmin' && !activeClientId) {
+  if (requireActiveClient && user?.role === "superadmin" && !activeClientId) {
     return (
       <Navigate
         to="/access-denied"
-        state={{ message: 'Select an organization from the header before opening this page.' }}
+        state={{
+          message:
+            "Select an organization from the header before opening this page.",
+        }}
         replace
       />
     );
