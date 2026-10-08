@@ -1,9 +1,16 @@
 import { z } from 'zod';
 import { CONTENT_LIMITS } from '../services/poster/content.js';
 import { VARIABLE_KEY_PATTERN, VARIABLE_LIMITS, ICON_NAMES } from '../../shared/templateElements.js';
-import { RECIPE_VARIANTS, recipeIds } from '../../shared/designRecipes.js';
+import { RECIPE_VARIANTS, recipeIds, designById } from '../../shared/designRecipes.js';
 
 const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid ID');
+
+/** Accepts canonical archetype / recipe names as well as legacy aliases (hero, photoTop, etc.) */
+const archetypeOrRecipeId = z
+  .string()
+  .trim()
+  .refine((value) => Boolean(designById(value)), 'Choose one of the designs this app offers')
+  .transform((value) => designById(value)?.id || value);
 
 /** Which of the four arrangements of a design, as a number or the text of one. */
 const variantValue = z
@@ -13,11 +20,22 @@ const variantValue = z
   .refine((value) => RECIPE_VARIANTS.includes(value), 'Choose one of the four arrangements of this design');
 
 /** A design built from a recipe: its name, which arrangement, and which small mark. */
-const recipeChoiceSchema = z.object({
-  recipeId: z.enum(recipeIds(), 'Choose one of the designs this app offers'),
-  variant: variantValue.optional(),
-  icon: z.enum(ICON_NAMES, 'Choose one of the pictures this app can draw').optional(),
-});
+const recipeChoiceSchema = z
+  .object({
+    archetype: archetypeOrRecipeId.optional(),
+    recipeId: archetypeOrRecipeId.optional(),
+    variant: variantValue.optional(),
+    icon: z.enum(ICON_NAMES, 'Choose one of the pictures this app can draw').optional(),
+  })
+  .refine((data) => Boolean(data.archetype || data.recipeId), 'Choose one of the designs this app offers')
+  .transform((data) => {
+    const id = data.archetype || data.recipeId;
+    return {
+      ...data,
+      archetype: id,
+      recipeId: id,
+    };
+  });
 
 export const generatePosterRequestSchema = z.object({
   templateId: z
@@ -36,9 +54,11 @@ export const generatePosterRequestSchema = z.object({
   /* "ai" writes a whole design from a recipe; nothing sent means the words-only path. */
   mode: z.enum(['ai', 'template'], 'Choose either a design written for you or one of your own templates').default('template'),
   avoidRecipeIds: z
-    .array(z.enum(recipeIds(), 'Choose one of the designs this app offers'))
+    .array(archetypeOrRecipeId)
     .max(recipeIds().length, 'There are only this many designs to leave out')
     .optional(),
+  archetype: archetypeOrRecipeId.optional(),
+  recipeId: archetypeOrRecipeId.optional(),
   variant: variantValue.optional(),
   imageUrl: z.string().trim().max(1000, 'Image address is too long').optional(),
 });
@@ -75,18 +95,46 @@ const dateString = z
   .trim()
   .refine((value) => !Number.isNaN(Date.parse(value)), 'Please use a real date');
 
-export const createPosterSchema = z.object({
-  templateId: objectId,
-  prompt: z
-    .string()
-    .trim()
-    .min(5, 'Description must be at least 5 characters long')
-    .max(1000, 'Description cannot exceed 1000 characters'),
-  content: contentSchema,
-  /* A poster made from a design recipe keeps that design: the server re-builds the items from
-     this tenant's own brand kit, so nothing about the look arrives as text to store. */
-  recipe: recipeChoiceSchema.optional(),
-});
+export const createPosterSchema = z
+  .object({
+    templateId: objectId,
+    prompt: z
+      .string()
+      .trim()
+      .min(5, 'Description must be at least 5 characters long')
+      .max(1000, 'Description cannot exceed 1000 characters'),
+    content: contentSchema,
+    /* A poster made from a design recipe keeps that design: the server re-builds the items from
+       this tenant's own brand kit, so nothing about the look arrives as text to store. */
+    recipe: recipeChoiceSchema.optional(),
+    archetype: archetypeOrRecipeId.optional(),
+    recipeId: archetypeOrRecipeId.optional(),
+    variant: variantValue.optional(),
+  })
+  .transform((data) => {
+    let recipe = data.recipe;
+    const topId = data.archetype || data.recipeId;
+    if (!recipe && topId) {
+      recipe = {
+        archetype: topId,
+        recipeId: topId,
+        variant: data.variant ?? 0,
+      };
+    } else if (recipe && topId) {
+      recipe.archetype = recipe.archetype || topId;
+      recipe.recipeId = recipe.recipeId || topId;
+      if (recipe.variant === undefined && data.variant !== undefined) {
+        recipe.variant = data.variant;
+      }
+    }
+    return {
+      ...data,
+      recipe,
+      archetype: recipe?.archetype || topId,
+      recipeId: recipe?.recipeId || topId,
+      variant: recipe?.variant ?? data.variant,
+    };
+  });
 
 export const posterListQuerySchema = z.object({
   clientId: objectId.optional(),
@@ -103,11 +151,40 @@ export const posterIdParamsSchema = z.object({ id: objectId });
 
 const versionNumber = z.coerce.number().int().min(1, 'Invalid version number').optional();
 
-export const updatePosterSchema = z.object({
-  content: contentSchema,
-  note: z.string().trim().max(120, 'Note is too long').optional(),
-  expectedVersion: z.coerce.number().int().min(1, 'Invalid version number'),
-});
+export const updatePosterSchema = z
+  .object({
+    content: contentSchema,
+    note: z.string().trim().max(120, 'Note is too long').optional(),
+    expectedVersion: z.coerce.number().int().min(1, 'Invalid version number'),
+    recipe: recipeChoiceSchema.optional(),
+    archetype: archetypeOrRecipeId.optional(),
+    recipeId: archetypeOrRecipeId.optional(),
+    variant: variantValue.optional(),
+  })
+  .transform((data) => {
+    let recipe = data.recipe;
+    const topId = data.archetype || data.recipeId;
+    if (!recipe && topId) {
+      recipe = {
+        archetype: topId,
+        recipeId: topId,
+        variant: data.variant ?? 0,
+      };
+    } else if (recipe && topId) {
+      recipe.archetype = recipe.archetype || topId;
+      recipe.recipeId = recipe.recipeId || topId;
+      if (recipe.variant === undefined && data.variant !== undefined) {
+        recipe.variant = data.variant;
+      }
+    }
+    return {
+      ...data,
+      recipe,
+      archetype: recipe?.archetype || topId,
+      recipeId: recipe?.recipeId || topId,
+      variant: recipe?.variant ?? data.variant,
+    };
+  });
 
 export const regeneratePosterSchema = z.object({
   content: contentSchema,
@@ -131,11 +208,22 @@ export const applyLatestDesignSchema = z.object({
  * already standing as the poster's headline are accepted; nothing else about the poster, and no
  * free description, can reach the picture service.
  */
-export const posterImageRequestSchema = z.object({
-  recipeId: z.enum(recipeIds(), 'Choose one of the designs this app offers'),
-  title: z
-    .string()
-    .trim()
-    .min(3, 'Give the poster a headline first, then we can draw a picture for it')
-    .max(CONTENT_LIMITS.title, `The headline cannot exceed ${CONTENT_LIMITS.title} characters`),
-});
+export const posterImageRequestSchema = z
+  .object({
+    archetype: archetypeOrRecipeId.optional(),
+    recipeId: archetypeOrRecipeId.optional(),
+    title: z
+      .string()
+      .trim()
+      .min(3, 'Give the poster a headline first, then we can draw a picture for it')
+      .max(CONTENT_LIMITS.title, `The headline cannot exceed ${CONTENT_LIMITS.title} characters`),
+  })
+  .refine((data) => Boolean(data.archetype || data.recipeId), 'Choose one of the designs this app offers')
+  .transform((data) => {
+    const id = data.archetype || data.recipeId;
+    return {
+      ...data,
+      archetype: id,
+      recipeId: id,
+    };
+  });

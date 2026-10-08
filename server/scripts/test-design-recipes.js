@@ -34,6 +34,7 @@ import {
   backdropOf,
   brandOf,
   buildElements,
+  charWidthOf,
   contrastRatio,
   designById,
   designsFor,
@@ -190,10 +191,11 @@ function colorsUsed(elements) {
 /* ------------------------------------------------------------------------- *
  * 1. The list of designs carries what a caller needs to pick one
  * ------------------------------------------------------------------------- */
-assert(DESIGN_RECIPES.length === 5, 'there are five designs to choose from');
+assert(DESIGN_RECIPES.length === 8, 'there are eight designs to choose from');
 assert(
-  JSON.stringify(recipeIds()) === JSON.stringify(['hero', 'photoTop', 'splitPhoto', 'typographic', 'boldBand']),
-  'the designs are named after the five ways to lay a poster out'
+  JSON.stringify(recipeIds()) ===
+    JSON.stringify(['bold-type', 'photo-hero', 'date-block', 'ticket', 'centered-award', 'agenda', 'notice', 'split-color']),
+  'the designs are named after the eight layout archetypes'
 );
 assert(
   DESIGN_RECIPES.every((design) => typeof design.recipe === 'function' && design.name.length > 2),
@@ -217,13 +219,15 @@ assert(
   'every design suits a listed kind of event and repeats none'
 );
 assert(new Set(recipeIds()).size === DESIGN_RECIPES.length, 'no two designs share a name');
-assert(designById('photoTop') === DESIGN_RECIPES[1], 'a design is found by its exact name');
-assert(designById('PHOTOTOP') === DESIGN_RECIPES[1], 'a design name is read whatever the capitals');
-assert(designById('  hero  ') === DESIGN_RECIPES[0], 'stray spaces around a design name are ignored');
+assert(designById('photo-hero') === DESIGN_RECIPES[1], 'a design is found by its exact name');
+assert(designById('PHOTOHERO') === DESIGN_RECIPES[1], 'a design name is read whatever the capitals');
+assert(designById('  ticket  ') === DESIGN_RECIPES[3], 'stray spaces around a design name are ignored');
+assert(designById('hero') === DESIGN_RECIPES[3], 'legacy hero name aliases to ticket');
+assert(designById('photoTop') === DESIGN_RECIPES[1], 'legacy photoTop name aliases to photo-hero');
 assert(designById('nope') === null, 'a design this app does not have answers with nothing');
 assert(designsFor('health').every((design) => design.suits.includes('health')), 'a health event gets designs that suit health');
 assert(designsFor('unknown-kind').length === DESIGN_RECIPES.length, 'an unknown kind of event is offered every design');
-assert(suitsCategory('hero', 'festival') === true && suitsCategory('hero', 'health') === false, 'a design says yes only to what it suits');
+assert(suitsCategory('ticket', 'festival') === true && suitsCategory('ticket', 'health') === false, 'a design says yes only to what it suits');
 assert(suitsCategory('nope', 'festival') === false, 'a design that does not exist suits nothing');
 assert(
   build('nope', NORMAL).built.problems.length === 1 && build('nope', NORMAL).built.problems[0].includes('not a design'),
@@ -286,6 +290,8 @@ const sweepFailures = {
   tooManyText: [],
   manyStyles: [],
   gap: [],
+  brokenWord: [],
+  timeout: [],
 };
 
 /* Every colour a design may paint: the brand's own colours, then one or two mixings of those
@@ -336,22 +342,62 @@ const otherBrandKit = {
 const otherBrand = brandOf(otherBrandKit);
 const otherReachable = reachableFrom(Object.values(otherBrand).filter((value) => /^#[0-9a-f]{6}$/.test(value)));
 
+let totalRuns = 0;
+let passedRuns = 0;
+let failedRuns = 0;
+const failureDetails = [];
+
 for (const design of DESIGN_RECIPES) {
   for (const variant of RECIPE_VARIANTS) {
     for (const palette of RECIPE_PALETTES) {
       for (const [contentName, slots] of CONTENTS) {
+        totalRuns += 1;
+        const startTime = Date.now();
         const label = `${design.id} shape ${variant} palette ${palette} with ${contentName}`;
+        let comboFailed = false;
+
+        function recordFailure(reason, details) {
+          comboFailed = true;
+          failureDetails.push({
+            archetype: design.id,
+            variant,
+            palette,
+            content: contentName,
+            reason,
+            details,
+          });
+        }
+
         const { area, built } = build(design.id, slots, { variant, palette });
+        const elapsed = Date.now() - startTime;
+        if (elapsed > 2000) {
+          sweepFailures.timeout.push(`${label}: ${elapsed}ms (> 2000ms limit)`);
+          recordFailure('timeout', `${elapsed}ms exceeds 2s limit`);
+        }
+
         const elements = built.elements;
         if (built.problems.length) {
           sweepFailures.buildProblem.push(`${label}: ${built.problems.join(' ')}`);
+          recordFailure('build problem', built.problems.join(' '));
+          if (comboFailed) failedRuns += 1; else passedRuns += 1;
+          if (totalRuns % 24 === 0) {
+            console.log(`Progress: ${totalRuns}/384 combinations tested (${passedRuns} passed, ${failedRuns} failed)`);
+          }
           continue;
         }
         if (elements.length === 0) {
           sweepFailures.buildProblem.push(`${label}: built nothing`);
+          recordFailure('build problem', 'built nothing');
+          if (comboFailed) failedRuns += 1; else passedRuns += 1;
+          if (totalRuns % 24 === 0) {
+            console.log(`Progress: ${totalRuns}/384 combinations tested (${passedRuns} passed, ${failedRuns} failed)`);
+          }
           continue;
         }
-        if (elements.length > ELEMENT_LIMITS.maxItems) sweepFailures.tooMany.push(`${label}: ${elements.length} items`);
+        if (elements.length > ELEMENT_LIMITS.maxItems) {
+          sweepFailures.tooMany.push(`${label}: ${elements.length} items`);
+          recordFailure('too many items', `${elements.length} items`);
+        }
         for (const item of elements) {
           if (
             item.x < area.x ||
@@ -360,42 +406,72 @@ for (const design of DESIGN_RECIPES) {
             item.y + item.h > area.y + area.h
           ) {
             sweepFailures.outside.push(`${label}: ${item.id} at ${item.x},${item.y} ${item.w}x${item.h} outside ${JSON.stringify(area)}`);
+            recordFailure('empty space', `${item.id} outside area`);
           }
           if (item.kind === 'icon' && !ICON_NAMES.includes(item.name)) {
             sweepFailures.icon.push(`${label}: ${item.id} asks for "${item.name}"`);
+            recordFailure('icon error', item.name);
           }
           if (item.kind === 'icon' && (item.style.strokeWidth < 1 || item.style.strokeWidth > 4)) {
             sweepFailures.stroke.push(`${label}: ${item.id} line ${item.style.strokeWidth}`);
+            recordFailure('stroke error', `stroke ${item.style.strokeWidth}`);
           }
           if (item.style.opacity < 0 || item.style.opacity > 1) {
             sweepFailures.stroke.push(`${label}: ${item.id} see-through ${item.style.opacity}`);
+            recordFailure('stroke error', `opacity ${item.style.opacity}`);
           }
           if (item.id.startsWith('deco-') && item.style.opacity > DECORATION_MAX_OPACITY) {
             sweepFailures.decoration.push(`${label}: ${item.id} at ${item.style.opacity}`);
+            recordFailure('decoration', `opacity ${item.style.opacity}`);
           }
         }
         for (const colour of colorsUsed(elements)) {
-          if (!reachable.has(colour)) sweepFailures.hardcodedColour.push(`${label}: ${colour} is not a brand colour`);
+          if (!reachable.has(colour)) {
+            sweepFailures.hardcodedColour.push(`${label}: ${colour} is not a brand colour`);
+            recordFailure('hardcoded color', colour);
+          }
         }
         const ids = elements.map((item) => item.id);
-        if (new Set(ids).size !== ids.length) sweepFailures.duplicateId.push(label);
+        if (new Set(ids).size !== ids.length) {
+          sweepFailures.duplicateId.push(label);
+          recordFailure('duplicate id', 'duplicate id');
+        }
         if (elements.filter((item) => item.kind === 'text' && item.variable).length > VARIABLE_LIMITS.maxText) {
           sweepFailures.tooMany.push(`${label}: ${ids.length} fill-ins`);
+          recordFailure('too many items', 'too many fill-ins');
         }
 
         const words = wordBoxes(elements);
         for (const item of words) {
           if (item.w < ELEMENT_LIMITS.minWidth || item.h < ELEMENT_LIMITS.minHeight) {
             sweepFailures.small.push(`${label}: ${item.id} is ${item.w}x${item.h}`);
+            recordFailure('touching text', `${item.id} is ${item.w}x${item.h}`);
           }
           if (item.style.size < MIN_RECIPE_FONT || item.style.minSize < MIN_RECIPE_FONT) {
             sweepFailures.tinyFont.push(`${label}: ${item.id} ${item.style.size}/${item.style.minSize}`);
+            recordFailure('touching text', `${item.id} size ${item.style.size}`);
           }
         }
         for (let a = 0; a < words.length; a += 1) {
           for (let b = a + 1; b < words.length; b += 1) {
             if (overlaps(words[a], words[b])) {
               sweepFailures.overlap.push(`${label}: ${words[a].id} and ${words[b].id}`);
+              recordFailure('overlap', `${words[a].id} and ${words[b].id}`);
+            }
+          }
+        }
+
+        for (const item of words) {
+          const text = wordsOfItem(item, slots);
+          if (typeof text === 'string') {
+            const singleWords = text.trim().split(/\s+/).filter(Boolean);
+            for (const w of singleWords) {
+              const wWidth = Math.ceil(w.length * charWidthOf(item.style.size, item.style));
+              if (wWidth > item.w + 4) {
+                sweepFailures.brokenWord.push(`${label}: ${item.id} word "${w}" (${wWidth}px) exceeds box (${item.w}px)`);
+                recordFailure('broken word', `${item.id} word "${w}" exceeds box`);
+                break;
+              }
             }
           }
         }
@@ -405,26 +481,38 @@ for (const design of DESIGN_RECIPES) {
         const surface = posterSurface(BRAND_KIT);
         for (const item of words) {
           const need = estimatedTextHeight(item, wordsOfItem(item, slots));
-          if (need > item.h + 1) sweepFailures.tooTall.push(`${label}: ${item.id} needs ${need} in ${item.h}`);
+          if (need > item.h + 1) {
+            sweepFailures.tooTall.push(`${label}: ${item.id} needs ${need} in ${item.h}`);
+            recordFailure('touching text', `${item.id} needs ${need} in ${item.h}`);
+          }
           const back = backdropOf(item, elements, surface);
           const ratio = contrastRatio(item.style.color, back);
           if (ratio < TEXT_CONTRAST_MIN) {
             sweepFailures.unreadable.push(`${label}: ${item.id} ${item.style.color} on ${back} is ${ratio.toFixed(2)}:1`);
+            recordFailure('contrast', `${item.id} ${item.style.color} on ${back} is ${ratio.toFixed(2)}:1`);
           }
         }
         const ownText = elements.filter((item) => item.kind === 'text');
-        if (ownText.length > MAX_TEXT_BOXES) sweepFailures.tooManyText.push(`${label}: ${ownText.length} text boxes`);
+        if (ownText.length > MAX_TEXT_BOXES) {
+          sweepFailures.tooManyText.push(`${label}: ${ownText.length} text boxes`);
+          recordFailure('too many text boxes', `${ownText.length} text boxes`);
+        }
         const styles = distinctTypeStyles(elements);
-        if (styles.length > MAX_TYPE_STYLES) sweepFailures.manyStyles.push(`${label}: ${styles.length}`);
+        if (styles.length > MAX_TYPE_STYLES) {
+          sweepFailures.manyStyles.push(`${label}: ${styles.length}`);
+          recordFailure('too many styles', `${styles.length} styles`);
+        }
         for (const item of elements) {
           if (item.kind === 'icon' && item.name === 'gift' && !/gift/i.test(JSON.stringify(slots))) {
             sweepFailures.gift.push(`${label}: ${item.id} draws a parcel with no parcel in the words`);
+            recordFailure('gift', item.id);
           }
         }
         const room = spacingUnit(area.w) * 2;
         const empty = largestVerticalGap(elements, slots);
         if (empty > room) {
           sweepFailures.gap.push(`${label}: ${empty} px of nothing between the blocks`);
+          recordFailure('empty space', `${empty}px vertical gap`);
         }
 
         /* The server's own gate, with today's brand bands and poster size. */
@@ -433,22 +521,56 @@ for (const design of DESIGN_RECIPES) {
           stored = cleanElements(elements, contextFor());
         } catch (error) {
           sweepFailures.serverRefused.push(`${label}: ${error.message}`);
+          recordFailure('server refused', error.message);
         }
         if (stored && JSON.stringify(stored) !== JSON.stringify(elements)) {
           sweepFailures.changedShape.push(`${label}: the server changed the design`);
+          recordFailure('changed shape', 'server changed the design');
         }
         if (stored && validateElements(stored, contextFor()).length) {
           sweepFailures.serverRefused.push(`${label}: ${validateElements(stored, contextFor()).join(' ')}`);
+          recordFailure('server refused', validateElements(stored, contextFor()).join(' '));
         }
 
         const again = buildElements(design.id, { area, brandKit: BRAND_KIT, slots, options: { variant, palette } }).elements;
-        if (JSON.stringify(again) !== JSON.stringify(elements)) sweepFailures.changedShape.push(`${label}: same words built twice gave different designs`);
+        if (JSON.stringify(again) !== JSON.stringify(elements)) {
+          sweepFailures.changedShape.push(`${label}: same words built twice gave different designs`);
+          recordFailure('changed shape', 'nondeterministic build');
+        }
+
+        if (comboFailed) {
+          failedRuns += 1;
+        } else {
+          passedRuns += 1;
+        }
+
+        if (totalRuns % 24 === 0) {
+          console.log(`Progress: ${totalRuns}/384 combinations tested (${passedRuns} passed, ${failedRuns} failed)`);
+        }
       }
     }
   }
 }
 
-const totalRuns = DESIGN_RECIPES.length * RECIPE_VARIANTS.length * RECIPE_PALETTES.length * CONTENTS.length;
+console.log(`\n========================================`);
+console.log(`SWEEP SUMMARY:`);
+console.log(`Total: ${totalRuns}`);
+console.log(`Passed: ${passedRuns}`);
+console.log(`Failed: ${failedRuns}`);
+console.log(`========================================`);
+console.log(`\nFailure categories breakdown:`);
+for (const [key, list] of Object.entries(sweepFailures)) {
+  if (list.length > 0) {
+    console.log(`- ${key}: ${list.length} (first: ${list[0]})`);
+  }
+}
+if (failureDetails.length > 0) {
+  console.log(`\nFirst ${Math.min(20, failureDetails.length)} failures:`);
+  failureDetails.slice(0, 20).forEach((f, idx) => {
+    console.log(`${idx + 1}. [${f.archetype} v${f.variant} ${f.palette} with ${f.content}] ${f.reason}: ${f.details}`);
+  });
+}
+
 assert(sweepFailures.buildProblem.length === 0, `${totalRuns} builds all made a design (${sweepFailures.buildProblem[0] || ''})`);
 assert(sweepFailures.outside.length === 0, `nothing ever sits outside the space between the two brand bands (${sweepFailures.outside[0] || ''})`);
 assert(sweepFailures.small.length === 0, `every box of words is at least ${ELEMENT_LIMITS.minWidth} x ${ELEMENT_LIMITS.minHeight} (${sweepFailures.small[0] || ''})`);
@@ -468,6 +590,8 @@ assert(sweepFailures.gift.length === 0, `a parcel is only drawn when the words s
 assert(sweepFailures.tooManyText.length === 0, `a design never paints more than ${MAX_TEXT_BOXES} text boxes of its own (${sweepFailures.tooManyText[0] || ''})`);
 assert(sweepFailures.manyStyles.length === 0, `a poster sets its words in at most ${MAX_TYPE_STYLES} ways (${sweepFailures.manyStyles[0] || ''})`);
 assert(sweepFailures.gap.length === 0, `the blocks of a design fill the poster with no large empty strip (${sweepFailures.gap[0] || ''})`);
+assert(sweepFailures.timeout.length === 0, `no combination timed out (${sweepFailures.timeout[0] || ''})`);
+assert(sweepFailures.brokenWord.length === 0, `no broken words (${sweepFailures.brokenWord[0] || ''})`);
 
 /* The same design on another brand: most of its colours must move with the brand. */
 const kitColours = new Set();
@@ -640,7 +764,7 @@ assert(['trophy', 'award'].includes(awardsAnswer.icon), `the assistant gives an 
 const giftAnswer = await generateWithMock({ prompt: 'Charity gift fair for the new library', mode: 'design' });
 assert(giftAnswer.icon === 'gift', 'the assistant draws a parcel when the words speak of gifts');
 assert(
-  DESIGN_RECIPES.every((design) => {
+  DESIGN_RECIPES.filter((design) => design.needsPhoto).every((design) => {
     const withPhoto = fieldsUsed(build(design.id, NORMAL).built.elements).includes('photo') ||
       build(design.id, NORMAL).built.elements.some((item) => item.kind === 'image');
     return withPhoto;

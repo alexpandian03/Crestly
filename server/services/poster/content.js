@@ -1,5 +1,8 @@
 import { posterContentJsonSchema, sanitizeString } from '../ai/schema.js';
-import { elementsOfDesign, resolveContentValues } from '../../../shared/templateElements.js';
+import { elementsOfDesign, resolveContentValues, variableSlotsOf } from '../../../shared/templateElements.js';
+import { DESIGN_BLANKS } from '../../../shared/designRecipes.js';
+
+const DESIGN_BLANK_KEYS = new Set(Object.keys(DESIGN_BLANKS));
 
 const schemaProps = posterContentJsonSchema.properties;
 
@@ -95,7 +98,19 @@ export function normalizePosterContent(raw, valuesContext = null) {
   }
 
   const context = valuesContext || { elements: [], cloudName: '', clientId: '' };
-  const values = resolveContentValues(raw, context);
+  let sanitizedRaw = raw;
+  if (raw.extras && typeof raw.extras === 'object' && !Array.isArray(raw.extras)) {
+    const slots = variableSlotsOf(context.elements || []);
+    const offeredKeys = new Set(slots.texts.map((s) => s.key));
+    const filteredExtras = {};
+    for (const [key, val] of Object.entries(raw.extras)) {
+      if (offeredKeys.has(key) || !DESIGN_BLANK_KEYS.has(key)) {
+        filteredExtras[key] = val;
+      }
+    }
+    sanitizedRaw = { ...raw, extras: filteredExtras };
+  }
+  const values = resolveContentValues(sanitizedRaw, context);
   if (values.problems.length) throw reject(values.problems[0]);
 
   const content = {

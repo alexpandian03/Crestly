@@ -1,8 +1,9 @@
 import Template from '../models/Template.model.js';
 import BrandKit from '../models/BrandKit.model.js';
 import Client from '../models/Client.model.js';
-import Poster, { POSTER_MAX_VERSIONS } from '../models/Poster.model.js';
+import Poster, { POSTER_MAX_VERSIONS, normalizePosterRecord } from '../models/Poster.model.js';
 import { variableSlotsOf } from '../../shared/templateElements.js';
+import { designById } from '../../shared/designRecipes.js';
 import { TEMPLATE_SIZE_DEFAULT } from '../services/template/zones.js';
 import { scopedFilter } from '../middleware/auth.middleware.js';
 import { generateContent, generateDesign } from '../services/ai/index.js';
@@ -64,11 +65,25 @@ async function generateFromRecipe(req, res, { templateId, prompt, instruction, a
       answer = await generateDesign({ prompt, brandKit, instruction, avoidRecipeIds, variant });
       content = designToContent(answer);
       built = buildRecipeDesign({
-        recipe: { recipeId: answer.recipeId, variant: answer.variant, icon: answer.icon },
+        recipe: {
+          recipeId: answer.archetype || answer.recipeId,
+          archetype: answer.archetype || answer.recipeId,
+          variant: answer.variant,
+          icon: answer.icon,
+        },
         content,
         brandKit,
         size,
       });
+      if (content.extras) {
+        const slots = variableSlotsOf(built.elements || []);
+        const offered = new Set(slots.texts.map((s) => s.key));
+        const pruned = {};
+        for (const [k, v] of Object.entries(content.extras)) {
+          if (offered.has(k)) pruned[k] = v;
+        }
+        content.extras = Object.keys(pruned).length > 0 ? pruned : undefined;
+      }
     } catch (err) {
       console.error(`[AI Design] Generation failed: ${err.message || 'unknown error'}`);
       isAiGenerated = false;
@@ -81,14 +96,28 @@ async function generateFromRecipe(req, res, { templateId, prompt, instruction, a
           avoidRecipeIds,
           variant,
         });
-        answer = sanitizeAndTruncateDesign(mockRaw, { avoidRecipeIds, variant });
+        answer = sanitizeAndTruncateDesign(mockRaw, { avoidRecipeIds, variant, prompt, instruction });
         content = designToContent(answer);
         built = buildRecipeDesign({
-          recipe: { recipeId: answer.recipeId, variant: answer.variant, icon: answer.icon },
+          recipe: {
+            recipeId: answer.archetype || answer.recipeId,
+            archetype: answer.archetype || answer.recipeId,
+            variant: answer.variant,
+            icon: answer.icon,
+          },
           content,
           brandKit,
           size,
         });
+        if (content.extras) {
+          const slots = variableSlotsOf(built.elements || []);
+          const offered = new Set(slots.texts.map((s) => s.key));
+          const pruned = {};
+          for (const [k, v] of Object.entries(content.extras)) {
+            if (offered.has(k)) pruned[k] = v;
+          }
+          content.extras = Object.keys(pruned).length > 0 ? pruned : undefined;
+        }
       } catch (fallbackErr) {
         console.error(`[AI Design] Fallback failed: ${fallbackErr.message || 'unknown error'}`);
         return res.status(500).json({
@@ -276,8 +305,9 @@ export async function generatePosterImageController(req, res, next) {
       });
     }
 
-    const { recipeId, title } = req.body;
-    if (!recipeNeedsPhoto(recipeId)) {
+    const { recipeId, archetype, title } = req.body;
+    const targetRecipe = archetype || recipeId;
+    if (!recipeNeedsPhoto(targetRecipe)) {
       return res.status(400).json({
         success: false,
         error: {
@@ -375,14 +405,21 @@ function plainDesign(design) {
 async function designForPoster(req, poster, template) {
   const brandKit = await BrandKit.findOne(scopedFilter(req)).lean();
   const stored = plainDesign(poster.design)?.template;
-  if (stored?.recipeId) {
+  const rawKey = stored?.archetype || stored?.recipeId || poster.archetype || poster.recipeId;
+  if (rawKey) {
+    const canonical = designById(rawKey)?.id || rawKey;
     return captureDesign({
       brandKit,
       template: buildRecipeDesign({
-        recipe: { recipeId: stored.recipeId, variant: stored.variant, icon: stored.icon },
+        recipe: {
+          recipeId: canonical,
+          archetype: canonical,
+          variant: stored?.variant ?? poster.variant ?? 0,
+          icon: stored?.icon ?? poster.icon,
+        },
         content: poster.content,
         brandKit,
-        size: stored.size,
+        size: stored?.size,
       }),
     });
   }
@@ -414,6 +451,9 @@ export async function createPosterController(req, res, next) {
       templateId: template._id,
       templateVersion,
       design,
+      recipeId: recipe?.recipeId,
+      archetype: recipe?.archetype || recipe?.recipeId,
+      variant: recipe?.variant,
       title: content.title,
       prompt,
       content,
@@ -424,6 +464,9 @@ export async function createPosterController(req, res, next) {
           versionNumber: 1,
           templateVersion,
           design,
+          recipeId: recipe?.recipeId,
+          archetype: recipe?.archetype || recipe?.recipeId,
+          variant: recipe?.variant,
           createdBy: req.user._id,
           createdAt: new Date(),
         },
@@ -432,7 +475,7 @@ export async function createPosterController(req, res, next) {
       status: 'draft',
     });
 
-    return res.status(201).json({ success: true, data: { poster } });
+    return res.status(201).json({ success: true, data: { poster: normalizePosterRecord(poster) } });
   } catch (err) {
     next(err);
   }
@@ -465,7 +508,7 @@ export async function listPostersController(req, res, next) {
       if (to) filter.updatedAt.$lte = new Date(to);
     }
 
-    const [items, total] = await Promise.all([
+    const [rawItems, total] = await Promise.all([
       Poster.find(filter)
         /* Cards only need to know which look a poster wears, not the whole snapshot. */
         .select(
@@ -477,6 +520,8 @@ export async function listPostersController(req, res, next) {
         .lean(),
       Poster.countDocuments(filter),
     ]);
+
+    const items = rawItems.map((item) => normalizePosterRecord(item));
 
     return res.status(200).json({
       success: true,
@@ -515,20 +560,25 @@ async function templateForPoster(req, poster) {
 
 export async function getPosterController(req, res, next) {
   try {
-    const poster = await Poster.findOne(posterScope(req, { _id: req.params.id })).select('-__v');
-    if (!poster) {
+    const rawPoster = await Poster.findOne(posterScope(req, { _id: req.params.id })).select('-__v');
+    if (!rawPoster) {
       return res.status(404).json({
         success: false,
         error: { message: 'Poster not found or inaccessible for your organization.', status: 404 },
       });
     }
+    const poster = normalizePosterRecord(rawPoster);
     const stored = plainDesign(poster.design)?.template;
     /* The frozen snapshot wins; posters saved before snapshots fall back to the pinned
        template state, and only then to the live document. `_id` is echoed so callers that
        key templates by id still recognise the snapshot as the poster's own template. */
-    const template = stored
+    let template = stored
       ? { ...stored, _id: stored.templateId }
       : await templateForPoster(req, poster);
+    if (template && (template.archetype || template.recipeId)) {
+      const canonical = designById(template.archetype || template.recipeId)?.id || (template.archetype || template.recipeId);
+      template = { ...template, archetype: canonical, recipeId: canonical };
+    }
     /* One poster, one tenant, one response: never let a proxy or the browser replay it. */
     res.setHeader('Cache-Control', 'no-store');
     return res.status(200).json({ success: true, data: { poster, template } });
@@ -577,6 +627,19 @@ async function appendVersion(req, poster, content, note, options = {}) {
   const setFields = { content, title: content.title, currentVersion: versionNumber };
   if (pinned) setFields.templateVersion = pinned;
   if (options.design) setFields.design = options.design;
+
+  const versionTemplate = versionDesign?.template;
+  const rawKey = options.archetype || options.recipeId || versionTemplate?.archetype || versionTemplate?.recipeId || poster.archetype || poster.recipeId;
+  if (rawKey) {
+    const canonical = designById(rawKey)?.id || rawKey;
+    const variantVal = options.variant ?? versionTemplate?.variant ?? poster.variant;
+    versionDoc.archetype = canonical;
+    versionDoc.recipeId = canonical;
+    if (variantVal !== undefined) versionDoc.variant = variantVal;
+    setFields.archetype = canonical;
+    setFields.recipeId = canonical;
+    if (variantVal !== undefined) setFields.variant = variantVal;
+  }
 
   return Poster.findOneAndUpdate(
     posterScope(req, { _id: poster._id, currentVersion: poster.currentVersion }),
@@ -705,12 +768,23 @@ export async function duplicatePosterController(req, res, next) {
     const versionDoc = { content, note: 'Created', versionNumber: 1, createdBy: req.user._id, createdAt: new Date() };
     if (poster.templateVersion) versionDoc.templateVersion = poster.templateVersion;
     versionDoc.design = design;
+
+    const rawKey = design?.template?.archetype || design?.template?.recipeId || poster.archetype || poster.recipeId;
+    const canonical = rawKey ? (designById(rawKey)?.id || rawKey) : undefined;
+    const variantVal = design?.template?.variant ?? poster.variant;
+    if (canonical) {
+      versionDoc.archetype = canonical;
+      versionDoc.recipeId = canonical;
+      if (variantVal !== undefined) versionDoc.variant = variantVal;
+    }
+
     const copy = await Poster.create({
       clientId: req.clientId,
       userId: req.user._id,
       templateId: poster.templateId,
       ...(poster.templateVersion ? { templateVersion: poster.templateVersion } : {}),
       design,
+      ...(canonical ? { archetype: canonical, recipeId: canonical, variant: variantVal } : {}),
       title: content.title,
       prompt: poster.prompt,
       content,
@@ -720,7 +794,7 @@ export async function duplicatePosterController(req, res, next) {
       thumbnailUrl: poster.thumbnailUrl,
     });
 
-    return res.status(201).json({ success: true, data: { poster: copy } });
+    return res.status(201).json({ success: true, data: { poster: normalizePosterRecord(copy) } });
   } catch (err) {
     next(err);
   }

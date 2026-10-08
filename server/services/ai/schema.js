@@ -29,6 +29,7 @@ export const posterContentJsonSchema = {
     },
     imageQuery: { type: 'string', maxLength: 60 },
     imageUrl: { type: 'string' },
+    images: { type: 'object', additionalProperties: { type: 'string' } },
     photographer: { type: 'string', maxLength: 100 },
     photographerUrl: { type: 'string' },
     downloadLocation: { type: 'string' },
@@ -212,118 +213,292 @@ const shortText = (max) => ({ type: 'string', maxLength: max });
 export const designJsonSchema = {
   type: 'object',
   properties: {
-    recipeId: { type: 'string', enum: recipeIds() },
+    archetype: { type: 'string', enum: recipeIds() },
     variant: { type: 'integer', minimum: 0, maximum: RECIPE_VARIANTS.length - 1 },
-    title: {
-      type: 'object',
-      properties: { main: shortText(DESIGN_ANSWER_LIMITS.main), sub: shortText(DESIGN_ANSWER_LIMITS.sub) },
-      required: ['main', 'sub'],
-      additionalProperties: false,
-    },
-    tagline: shortText(DESIGN_ANSWER_LIMITS.tagline),
-    slogan: {
+    fields: {
       type: 'object',
       properties: {
-        line1: shortText(DESIGN_ANSWER_LIMITS.sloganLine1),
-        line2: shortText(DESIGN_ANSWER_LIMITS.sloganLine2),
+        kicker: shortText(40),
+        title: shortText(60),
+        subtitle: shortText(100),
+        bullets: {
+          type: 'array',
+          maxItems: 3,
+          items: shortText(70),
+        },
+        date: shortText(30),
+        time: shortText(20),
+        venue: shortText(80),
+        cta: shortText(40),
+        photoKeywords: shortText(60),
       },
-      required: ['line1', 'line2'],
+      required: ['kicker', 'title', 'subtitle', 'bullets', 'date', 'time', 'venue', 'cta', 'photoKeywords'],
       additionalProperties: false,
     },
-    bullets: {
-      type: 'array',
-      maxItems: DESIGN_ANSWER_LIMITS.maxBullets,
-      items: shortText(DESIGN_ANSWER_LIMITS.bullet),
-    },
-    info: {
-      type: 'object',
-      properties: {
-        date: shortText(DESIGN_ANSWER_LIMITS.date),
-        time: shortText(DESIGN_ANSWER_LIMITS.time),
-        venue: shortText(DESIGN_ANSWER_LIMITS.venue),
-      },
-      required: ['date', 'time', 'venue'],
-      additionalProperties: false,
-    },
-    cta: {
-      type: 'object',
-      properties: {
-        line: shortText(DESIGN_ANSWER_LIMITS.ctaLine),
-        button: shortText(DESIGN_ANSWER_LIMITS.ctaButton),
-      },
-      required: ['line', 'button'],
-      additionalProperties: false,
-    },
-    icon: { type: 'string', enum: ICON_NAMES },
-    imageQuery: shortText(DESIGN_ANSWER_LIMITS.imageQuery),
   },
-  required: ['recipeId', 'variant', 'title', 'tagline', 'slogan', 'bullets', 'info', 'cta', 'icon', 'imageQuery'],
+  required: ['archetype', 'variant', 'fields'],
   additionalProperties: false,
 };
 
 const validateDesignCompiled = ajv.compile(designJsonSchema);
 
-/** The designs this run may use; an avoided id never comes back. */
-function pickRecipeId(value, allowed, avoided) {
-  const wanted = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  const named = allowed.find((id) => id.toLowerCase() === wanted);
-  if (named && !avoided.includes(named)) return named;
-  return allowed.find((id) => !avoided.includes(id)) || allowed[0] || 'hero';
+export const CATEGORY_ARCHETYPES = {
+  sports: ['date-block', 'bold-type'],
+  awards: ['centered-award'],
+  workshop: ['agenda'],
+  seminar: ['agenda'],
+  festival: ['ticket', 'photo-hero'],
+  market: ['ticket', 'photo-hero'],
+  health: ['photo-hero', 'split-color'],
+  camp: ['photo-hero', 'split-color'],
+  awareness: ['photo-hero', 'split-color'],
+  notice: ['notice'],
+  closure: ['notice'],
+};
+
+export function matchCategoryFromText(text) {
+  const lower = String(text || '').toLowerCase();
+  if (/\b(?:sports?|marathon|tournament|cricket|football|athletic|race|relay)\b/i.test(lower)) {
+    return 'sports';
+  }
+  if (/\b(?:awards?|honour|honor|recognition|gala)\b/i.test(lower)) {
+    return 'awards';
+  }
+  if (/\b(?:workshop|seminar|masterclass|bootcamp|training|webinar)\b/i.test(lower)) {
+    return 'workshop';
+  }
+  if (/\b(?:festival|market|fest|fair|carnival|diwali|deepavali|pongal|harvest)\b/i.test(lower)) {
+    return 'festival';
+  }
+  if (/\b(?:health|camp|awareness|blood|donation|clinic|medical|tree|cleanliness|drive)\b/i.test(lower)) {
+    return 'health';
+  }
+  if (/\b(?:notice|closure|closed|maintenance|announcement)\b/i.test(lower)) {
+    return 'notice';
+  }
+  return null;
 }
 
-function pickVariant(value, forced) {
-  if (forced !== null && forced !== undefined && RECIPE_VARIANTS.includes(Number(forced))) {
-    return Number(forced);
+export function preferredArchetypesFor(text) {
+  const cat = matchCategoryFromText(text);
+  if (cat && CATEGORY_ARCHETYPES[cat]) {
+    return CATEGORY_ARCHETYPES[cat];
   }
-  return RECIPE_VARIANTS.includes(Number(value)) ? Number(value) : 0;
+  return recipeIds();
+}
+
+export function hashSeed(str) {
+  let hash = 0;
+  const s = String(str || '');
+  for (let i = 0; i < s.length; i++) {
+    hash = ((hash << 5) - hash) + s.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+export function selectArchetypeAndVariant({
+  text = '',
+  avoidRecipeIds = [],
+  variant = null,
+  instruction = '',
+  seed = null,
+} = {}) {
+  const preferred = preferredArchetypesFor(text);
+  const forcedVariant =
+    variant !== null && variant !== undefined && RECIPE_VARIANTS.includes(Number(variant))
+      ? Number(variant)
+      : null;
+
+  const allPairs = [];
+  if (forcedVariant !== null) {
+    for (const arch of preferred) {
+      allPairs.push({ archetype: arch, variant: forcedVariant });
+    }
+  } else {
+    for (let v = 0; v < RECIPE_VARIANTS.length; v++) {
+      for (const arch of preferred) {
+        allPairs.push({ archetype: arch, variant: v });
+      }
+    }
+  }
+
+  const seedString = `${text}|${instruction || ''}|${seed ?? ''}`;
+  const baseSeed = hashSeed(seedString);
+
+  const avoids = (Array.isArray(avoidRecipeIds) ? avoidRecipeIds : [avoidRecipeIds].filter(Boolean))
+    .map((id) => String(id).trim())
+    .filter(Boolean);
+
+  const avoidArchetypes = new Set();
+  const avoidExactPairs = new Set();
+  for (const item of avoids) {
+    const parts = item.split(':');
+    avoidArchetypes.add(parts[0].trim().toLowerCase());
+    if (parts.length > 1) {
+      avoidExactPairs.add(`${parts[0].trim().toLowerCase()}:${Number(parts[1])}`);
+    } else {
+      avoidExactPairs.add(`${parts[0].trim().toLowerCase()}:0`);
+    }
+  }
+
+  // 1. First, avoid archetypes that have already been seen
+  let available = allPairs.filter((p) => !avoidArchetypes.has(p.archetype.toLowerCase()));
+
+  // 2. If all preferred archetypes were avoided (e.g. single-archetype category like awards, or user cycled through),
+  // avoid the exact pairs already seen
+  if (available.length === 0) {
+    available = allPairs.filter((p) => !avoidExactPairs.has(`${p.archetype.toLowerCase()}:${p.variant}`));
+  }
+
+  // 3. If all pairs were exhausted, fall back to all pairs
+  if (available.length === 0) {
+    available = allPairs;
+  }
+
+  // If instruction indicates regeneration or avoids exist, advance index so it never repeats the previous
+  const isRegen = instruction && /regen/i.test(instruction);
+  const offset = (avoids.length > 0 || isRegen) ? Math.max(1, avoids.length) : 0;
+  const pickIndex = (baseSeed + offset) % available.length;
+  return available[pickIndex] || allPairs[0];
+}
+
+export function resolveArchetype(givenArchetype, promptText = '') {
+  const allowed = recipeIds();
+  const clean = typeof givenArchetype === 'string' ? givenArchetype.trim().toLowerCase() : '';
+  const match = allowed.find((id) => id.toLowerCase() === clean);
+  if (match) return match;
+  return selectArchetypeAndVariant({ text: promptText }).archetype;
+}
+
+export function stripInstructionWords(phrase) {
+  let s = String(phrase || '').trim();
+  s = s.replace(/^(?:please\s+)?(?:be\s+sure\s+to\s+)?(?:include|including|add|make|create|featuring|with|have)\s+/i, '');
+  if (/^registration\s+desk\b/i.test(s) && !/on\s+site|open|at/i.test(s)) {
+    s = 'Registration desk on site';
+  } else if (/^medals\b/i.test(s) && !/for|to/i.test(s)) {
+    s = 'Medals for every winner';
+  }
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
 }
 
 /**
  * Clean one design answer: HTML stripped, every line cut at a word boundary, a design that
- * is unknown or avoided exchanged for the first allowed one. The shape is always complete,
- * so what comes out is what the recipe gets.
+ * is unknown or avoided exchanged for the first allowed one.
  */
-export function sanitizeAndTruncateDesign(raw, { avoidRecipeIds = [], variant = null } = {}) {
+export function sanitizeAndTruncateDesign(raw, { avoidRecipeIds = [], variant = null, prompt = '', instruction = '' } = {}) {
   if (!raw || typeof raw !== 'object') return null;
-  const L = DESIGN_ANSWER_LIMITS;
+
+  const isFieldsFormat = Boolean(raw.fields || raw.archetype);
+  const rawFields = raw.fields && typeof raw.fields === 'object' ? raw.fields : {};
+
+  const givenArchetype = raw.archetype || raw.recipeId;
   const allowed = recipeIds();
-  const avoided = (Array.isArray(avoidRecipeIds) ? avoidRecipeIds : [])
-    .map((id) => String(id).trim())
-    .filter((id) => allowed.includes(id));
+  const cleanGiven = typeof givenArchetype === 'string' ? givenArchetype.trim().toLowerCase() : '';
+  const isRegistryMatch = allowed.some((id) => id.toLowerCase() === cleanGiven);
 
-  const part = (value, max) => truncateAtWordBoundary(sanitizeString(value), max);
-  const object = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? value : {});
+  let archetype;
+  let cleanVariant;
 
-  const title = object(raw.title);
-  const slogan = object(raw.slogan);
-  const info = object(raw.info);
-  const cta = object(raw.cta);
-  /* An assistant that names a mark this app cannot draw is not left with a plain star: the words
-     of its own design say what the event is, so an awards night still gets a trophy. */
-  const spoken = [title.main, title.sub, raw.tagline, raw.imageQuery].filter(Boolean).join(' ');
+  if (isRegistryMatch) {
+    archetype = allowed.find((id) => id.toLowerCase() === cleanGiven);
+    let forcedVariant = variant;
+    if (forcedVariant === null || forcedVariant === undefined) {
+      forcedVariant = raw.variant;
+    }
+    cleanVariant = RECIPE_VARIANTS.includes(Number(forcedVariant)) ? Number(forcedVariant) : 0;
 
-  return {
-    recipeId: pickRecipeId(raw.recipeId, allowed, avoided),
-    variant: pickVariant(raw.variant, variant),
-    title: { main: part(title.main, L.main), sub: part(title.sub, L.sub) },
-    tagline: part(raw.tagline, L.tagline),
-    slogan: { line1: part(slogan.line1, L.sloganLine1), line2: part(slogan.line2, L.sloganLine2) },
-    bullets: (Array.isArray(raw.bullets) ? raw.bullets : [])
-      .slice(0, 3)
-      .map((line) => trimToWords(part(line, L.bullet), 6))
-      .filter((line) => line.length > 0),
-    info: {
-      date: part(info.date, L.date),
-      time: part(info.time, L.time),
-      venue: part(info.venue, L.venue) || 'Venue to be announced',
-    },
-    cta: { line: part(cta.line, L.ctaLine), button: part(cta.button, L.ctaButton) },
-    icon: normalizeIconName(sanitizeString(raw.icon)) || iconForWords(spoken),
-    imageQuery: part(raw.imageQuery, L.imageQuery),
+    // Check if this pair is in avoidRecipeIds; if so, pick an alternative pair
+    const avoids = (Array.isArray(avoidRecipeIds) ? avoidRecipeIds : [avoidRecipeIds].filter(Boolean))
+      .map((id) => String(id).trim().toLowerCase());
+    const isAvoided = avoids.includes(archetype.toLowerCase()) || avoids.includes(`${archetype.toLowerCase()}:${cleanVariant}`);
+    if (isAvoided) {
+      const alt = selectArchetypeAndVariant({ text: prompt, avoidRecipeIds, variant, instruction });
+      archetype = alt.archetype;
+      cleanVariant = alt.variant;
+    }
+  } else {
+    // If invalid archetype, fall back to keyword match and seeded selection
+    const fallbackSelection = selectArchetypeAndVariant({ text: prompt, avoidRecipeIds, variant, instruction });
+    archetype = fallbackSelection.archetype;
+    cleanVariant = fallbackSelection.variant;
+  }
+
+  const kicker = isFieldsFormat ? rawFields.kicker : raw.title?.sub;
+  const title = isFieldsFormat ? rawFields.title : (raw.title?.main || raw.title);
+  const subtitle = isFieldsFormat ? rawFields.subtitle : raw.tagline;
+  const bullets = isFieldsFormat ? rawFields.bullets : raw.bullets;
+  const date = isFieldsFormat ? rawFields.date : raw.info?.date;
+  const time = isFieldsFormat ? rawFields.time : raw.info?.time;
+  const venue = isFieldsFormat ? rawFields.venue : raw.info?.venue;
+  const cta = isFieldsFormat ? rawFields.cta : (raw.cta?.button || raw.cta?.line);
+  const photoKeywords = isFieldsFormat ? rawFields.photoKeywords : raw.imageQuery;
+
+  const kickerClean = trimToWords(stripInstructionWords(sanitizeString(kicker)), 4);
+  const titleClean = truncateAtWordBoundary(sanitizeString(title), 60);
+  const subtitleClean = trimToWords(sanitizeString(subtitle), 10);
+  const bulletsClean = (Array.isArray(bullets) ? bullets : [])
+    .slice(0, 3)
+    .map((b) => trimToWords(stripInstructionWords(sanitizeString(b)), 6))
+    .filter((b) => b.length > 0);
+
+  const dateClean = truncateAtWordBoundary(sanitizeString(date), 30);
+  const timeClean = truncateAtWordBoundary(sanitizeString(time), 20);
+  let venueClean = sanitizeString(venue);
+  if (!venueClean || /no\s+venue/i.test(venueClean)) {
+    venueClean = 'Venue to be announced';
+  } else {
+    venueClean = truncateAtWordBoundary(venueClean, 80);
+  }
+
+  let ctaClean = sanitizeString(typeof cta === 'object' ? (cta.button || cta.line) : cta);
+  if (!ctaClean || /^(?:join\s+us|come\s+celebrate|find\s+out\s+more|click\s+here)\b/i.test(ctaClean)) {
+    ctaClean = 'Open to all';
+  } else {
+    ctaClean = truncateAtWordBoundary(ctaClean, 40);
+  }
+
+  const photoKeywordsClean = trimToWords(sanitizeString(photoKeywords), 4);
+
+  const fields = {
+    kicker: kickerClean,
+    title: titleClean,
+    subtitle: subtitleClean,
+    bullets: bulletsClean,
+    date: dateClean,
+    time: timeClean,
+    venue: venueClean,
+    cta: ctaClean,
+    photoKeywords: photoKeywordsClean,
   };
+
+  const words = [titleClean, subtitleClean, photoKeywordsClean, venueClean].filter(Boolean).join(' ');
+  const icon = normalizeIconName(sanitizeString(raw.icon)) || iconForWords(words);
+
+  const result = {
+    archetype,
+    variant: cleanVariant,
+    fields,
+  };
+
+  // Compatibility helpers for consumers expecting legacy fields or icon
+  Object.defineProperties(result, {
+    recipeId: { get() { return this.archetype; }, enumerable: false, configurable: true },
+    icon: { value: icon, writable: true, enumerable: false, configurable: true },
+    title: { get() { return { main: this.fields.title, sub: this.fields.kicker }; }, enumerable: false, configurable: true },
+    tagline: { get() { return this.fields.subtitle; }, enumerable: false, configurable: true },
+    slogan: { get() { return { line1: '', line2: '' }; }, enumerable: false, configurable: true },
+    bullets: { get() { return this.fields.bullets; }, enumerable: false, configurable: true },
+    info: { get() { return { date: this.fields.date, time: this.fields.time, venue: this.fields.venue }; }, enumerable: false, configurable: true },
+    cta: { get() { return { line: this.fields.cta, button: this.fields.cta }; }, enumerable: false, configurable: true },
+    imageQuery: { get() { return this.fields.photoKeywords; }, enumerable: false, configurable: true },
+  });
+
+  return result;
 }
 
 export function validateDesignAnswer(data) {
+  if (!data || typeof data !== 'object') return { valid: false, errors: ['not an object'] };
   const valid = validateDesignCompiled(data);
   return {
     valid: Boolean(valid),
@@ -333,13 +508,41 @@ export function validateDesignAnswer(data) {
 
 /**
  * The words a design answer puts on the poster, in the shape the poster content already
- * uses. Each fill-in line is cut to the room that line has on the poster, so the stored
- * answers always fit the blanks the recipe offered.
+ * uses.
  */
 export function designToContent(design) {
   const source = design && typeof design === 'object' ? design : {};
+  const fields = source.fields && typeof source.fields === 'object' ? source.fields : null;
+
+  if (fields) {
+    const extras = {};
+    if (fields.kicker) {
+      extras.title_sub = truncateAtWordBoundary(sanitizeString(fields.kicker), DESIGN_BLANKS.title_sub?.maxLength || 40);
+    }
+    if (fields.subtitle) {
+      extras.slogan_1 = truncateAtWordBoundary(sanitizeString(fields.subtitle), DESIGN_BLANKS.slogan_1?.maxLength || 34);
+    }
+    if (fields.cta) {
+      extras.cta_line = truncateAtWordBoundary(sanitizeString(fields.cta), DESIGN_BLANKS.cta_line?.maxLength || 48);
+      extras.cta_button = truncateAtWordBoundary(sanitizeString(fields.cta), DESIGN_BLANKS.cta_button?.maxLength || 20);
+    }
+    return {
+      title: truncateAtWordBoundary(sanitizeString(fields.title), 60),
+      tagline: truncateAtWordBoundary(sanitizeString(fields.subtitle), 100),
+      date: truncateAtWordBoundary(sanitizeString(fields.date), 30),
+      time: truncateAtWordBoundary(sanitizeString(fields.time), 20),
+      venue: truncateAtWordBoundary(sanitizeString(fields.venue), 80) || 'Venue to be announced',
+      details: (Array.isArray(fields.bullets) ? fields.bullets : [])
+        .slice(0, 3)
+        .map((line) => trimToWords(truncateAtWordBoundary(sanitizeString(line), 90), 6))
+        .filter((line) => line.length > 0),
+      imageQuery: truncateAtWordBoundary(sanitizeString(fields.photoKeywords), 60),
+      extras,
+    };
+  }
+
   const room = (key, value) =>
-    truncateAtWordBoundary(sanitizeString(value), DESIGN_BLANKS[key].maxLength);
+    truncateAtWordBoundary(sanitizeString(value), DESIGN_BLANKS[key]?.maxLength || 40);
   const extras = {};
   for (const key of Object.keys(DESIGN_BLANKS)) {
     const value =
@@ -357,12 +560,12 @@ export function designToContent(design) {
   }
 
   return {
-    title: truncateAtWordBoundary(sanitizeString(source.title?.main), 60),
+    title: truncateAtWordBoundary(sanitizeString(source.title?.main || source.title), 60),
     tagline: truncateAtWordBoundary(sanitizeString(source.tagline), 100),
-    date: truncateAtWordBoundary(sanitizeString(source.info?.date), 30),
-    time: truncateAtWordBoundary(sanitizeString(source.info?.time), 20),
-    venue: truncateAtWordBoundary(sanitizeString(source.info?.venue), 80) || 'Venue to be announced',
-    details: (Array.isArray(source.bullets) ? source.bullets : [])
+    date: truncateAtWordBoundary(sanitizeString(source.info?.date || source.date), 30),
+    time: truncateAtWordBoundary(sanitizeString(source.info?.time || source.time), 20),
+    venue: truncateAtWordBoundary(sanitizeString(source.info?.venue || source.venue), 80) || 'Venue to be announced',
+    details: (Array.isArray(source.bullets || source.details) ? (source.bullets || source.details) : [])
       .slice(0, 3)
       .map((line) => trimToWords(truncateAtWordBoundary(sanitizeString(line), 90), 6))
       .filter((line) => line.length > 0),

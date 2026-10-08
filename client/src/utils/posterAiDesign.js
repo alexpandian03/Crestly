@@ -92,7 +92,8 @@ export function aiDesignOf(answer, size) {
       zones: [],
       layout: { ...LAYOUT_BASE },
       elements: items,
-      recipeId: answer?.recipeId,
+      archetype: answer?.archetype || answer?.recipeId,
+      recipeId: answer?.recipeId || answer?.archetype,
       variant: Number.isFinite(Number(answer?.variant)) ? Number(answer.variant) : 0,
       recipeVersion: Number.isFinite(Number(answer?.recipeVersion))
         ? Number(answer.recipeVersion)
@@ -104,13 +105,17 @@ export function aiDesignOf(answer, size) {
 
 /** True when this design came from the assistant rather than from an organization layout. */
 export function isAiDesign(template) {
-  return Boolean(template?.recipeId) && Array.isArray(template?.elements) && template.elements.length > 0;
+  return Boolean(template?.recipeId || template?.archetype) && Array.isArray(template?.elements) && template.elements.length > 0;
 }
 
 /** The three values that rebuild this design: the field POST /posters expects. */
 export function recipeOf(template) {
-  if (!template?.recipeId) return null;
-  const recipe = { recipeId: String(template.recipeId) };
+  const id = template?.archetype || template?.recipeId;
+  if (!id) return null;
+  const recipe = {
+    archetype: String(id),
+    recipeId: String(id),
+  };
   if (Number.isFinite(Number(template.variant))) recipe.variant = Number(template.variant);
   if (typeof template.icon === 'string' && template.icon) recipe.icon = template.icon;
   return recipe;
@@ -118,7 +123,8 @@ export function recipeOf(template) {
 
 export function recipeKeyOf(template) {
   const recipe = recipeOf(template);
-  return recipe ? `${recipe.recipeId}|${recipe.variant ?? 0}|${recipe.icon || ''}` : '';
+  const id = recipe?.archetype || recipe?.recipeId || '';
+  return recipe ? `${id}|${recipe.variant ?? 0}|${recipe.icon || ''}` : '';
 }
 
 /**

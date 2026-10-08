@@ -1,5 +1,13 @@
 import { designsFor, recipeIds, RECIPE_VARIANTS } from '../../../../shared/designRecipes.js';
 import { iconForWords } from '../../../../shared/templateElements.js';
+import {
+  matchCategoryFromText,
+  preferredArchetypesFor,
+  sanitizeAndTruncateDesign,
+  selectArchetypeAndVariant,
+  stripInstructionWords,
+  trimToWords,
+} from '../schema.js';
 
 /**
  * Mock LLM Provider
@@ -155,7 +163,7 @@ export function extractVenue(text) {
 /** Turn phrases like "Include registration desk and medals" into up to 3 short bullets (<=6 words). */
 export function extractBullets(text, fallbackBullets = []) {
   const t = String(text || '').trim();
-  const includeMatch = t.match(/\b(?:include|including|featuring|with)\s+([A-Za-z0-9\s,'&/-]+?)(?:\.|$|(?:\s+on\s+\d+)|\s+at\s+[A-Z])/i);
+  const includeMatch = t.match(/\b(?:include|including|featuring|with|add|make|create|have)\s+([A-Za-z0-9\s,'&/-]+?)(?:\.|$|(?:\s+on\s+\d+)|\s+at\s+[A-Z])/i);
   if (includeMatch) {
     const rawPhrase = includeMatch[1].trim();
     const parts = rawPhrase
@@ -164,120 +172,143 @@ export function extractBullets(text, fallbackBullets = []) {
       .filter((p) => p.length > 2 && !/^(?:on|at|from)\s+/i.test(p));
     if (parts.length > 0) {
       return parts.slice(0, 3).map((part) => {
-        let p = part;
-        if (/^medals\b/i.test(p) && !/for/i.test(p)) {
-          p = 'Medals for winners';
-        }
-        const words = p.split(/\s+/).filter(Boolean);
-        const capped = words.map((w, i) => (i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w)).join(' ');
-        return capped.split(/\s+/).slice(0, 6).join(' ');
-      });
+        const cleaned = stripInstructionWords(part);
+        return trimToWords(cleaned, 6);
+      }).filter(Boolean);
     }
   }
   return (fallbackBullets || []).slice(0, 3).map((b) => {
-    const w = String(b || '').trim().split(/\s+/).filter(Boolean);
-    return w.slice(0, 6).join(' ');
-  });
+    const cleaned = stripInstructionWords(b);
+    return trimToWords(cleaned, 6);
+  }).filter(Boolean);
 }
 
 /** Extract CTA text from the description, never using "JOIN US", "COME CELEBRATE" or "FIND OUT MORE". */
 export function extractCta(text) {
   const t = String(text || '').trim();
-  const deskMatch = t.match(/\b([A-Za-z\s]*?desk[A-Za-z0-9\s]*?(?:from\s+\d+\s*(?:AM|PM|am|pm))?)\b/i);
+  const deskMatch = t.match(/\b([A-Za-z\s]*?desk\s+(?:open\s+)?(?:from|at)\s+\d+\s*(?:AM|PM|am|pm)?)\b/i);
   if (deskMatch) {
     const w = deskMatch[1].trim();
-    const cap = w.charAt(0).toUpperCase() + w.slice(1);
-    return { line: '', button: cap };
+    return w.charAt(0).toUpperCase() + w.slice(1);
   }
-  const regMatch = t.match(/\b(registration\s+[A-Za-z0-9\s]+?(?:from\s+\d+\s*(?:AM|PM|am|pm))?)\b/i);
+  const regMatch = t.match(/\b(registration\s+(?:desk\s+)?(?:open\s+)?(?:from|at)\s+\d+\s*(?:AM|PM|am|pm)?)\b/i);
   if (regMatch) {
     const w = regMatch[1].trim();
-    const cap = w.charAt(0).toUpperCase() + w.slice(1);
-    return { line: '', button: cap };
+    return w.charAt(0).toUpperCase() + w.slice(1);
   }
-  const lower = t.toLowerCase();
-  if (lower.includes('sport') || lower.includes('athletic')) {
-    return { line: 'Registration desk open from 7 AM', button: 'Registration desk open from 7 AM' };
+  const doorMatch = t.match(/\b(tickets?\s+(?:available\s+)?at\s+(?:the\s+)?door)\b/i);
+  if (doorMatch) {
+    return 'Tickets at the door';
   }
-  if (lower.includes('diwali') || lower.includes('market') || lower.includes('festival')) {
-    return { line: 'Stalls and entry open for all', button: 'Stalls open from 5 PM' };
+  const stallsMatch = t.match(/\b(stalls?\s+open\s+(?:from|at)\s+\d+\s*(?:AM|PM|am|pm)?)\b/i);
+  if (stallsMatch) {
+    const w = stallsMatch[1].trim();
+    return w.charAt(0).toUpperCase() + w.slice(1);
   }
-  if (lower.includes('blood') || lower.includes('donation')) {
-    return { line: 'Registration desk at front entrance', button: 'Register at the front desk' };
+  return 'Open to all';
+}
+
+function defaultKicker(category) {
+  switch (category) {
+    case 'sports': return 'Annual Sports';
+    case 'festival': return 'Festival Celebration';
+    case 'health': return 'Community Health';
+    case 'awards': return 'Staff Recognition';
+    case 'workshop': return 'Training Workshop';
+    case 'notice': return 'Official Notice';
+    default: return 'Featured Event';
   }
-  if (lower.includes('award')) {
-    return { line: 'Reception and seating from 6 PM', button: 'Reception starts at 6 PM' };
+}
+
+function defaultSubtitle(category) {
+  switch (category) {
+    case 'sports': return 'Celebrating athletic excellence and community spirit';
+    case 'festival': return 'Celebrate the season with festive joy and community';
+    case 'health': return 'Promoting wellness and care for every neighbor';
+    case 'awards': return 'Honouring dedication and outstanding achievement';
+    case 'workshop': return 'Gain practical skills and hands-on experience';
+    case 'notice': return 'Important operational updates and schedule details';
+    default: return 'Empowering communities and transforming futures together';
   }
-  if (lower.includes('cultural') || lower.includes('fest')) {
-    return { line: 'Registration desk open from 9 AM', button: 'Registration desk open from 9 AM' };
+}
+
+function defaultKeywords(category, sampleKeywords) {
+  if (sampleKeywords) return trimToWords(sampleKeywords, 4);
+  switch (category) {
+    case 'sports': return 'athletics sports competition';
+    case 'festival': return 'cultural festival celebration';
+    case 'health': return 'community health wellness';
+    case 'awards': return 'ceremony award trophy';
+    case 'workshop': return 'workshop seminar team';
+    case 'notice': return 'official notice sign';
+    default: return 'community celebration event';
   }
-  if (lower.includes('pongal')) {
-    return { line: 'Community celebrations begin at sunrise', button: 'Entry open for all families' };
-  }
-  if (lower.includes('yoga')) {
-    return { line: 'Morning session begins at 6 AM', button: 'Entry open for all participants' };
-  }
-  return { line: 'Registration desk open at entrance', button: 'Registration desk open at entrance' };
 }
 
 /** Deterministic by keyword: the same description always gives the same design and words. */
-function designAnswer({ text, date, time, venue, avoidRecipeIds, variant }) {
+function designAnswer({ text, date, time, venue, avoidRecipeIds, variant, instruction }) {
   const lower = text.toLowerCase();
   const sample = sampleFor(lower);
-  const category = sample ? sample.category : 'general';
-  const avoided = avoidSet(avoidRecipeIds);
-  const suited = designsFor(category).filter((design) => !avoided.has(design.id));
+  const category = sample ? sample.category : (matchCategoryFromText(text) || 'general');
 
-  // For events with photos (sports, cultural fest, festival, harvest/pongal, or having image query), prioritize photo recipes
-  const wantsPhoto = lower.includes('sport') || lower.includes('fest') || lower.includes('pongal') || lower.includes('cultural') || lower.includes('blood') || lower.includes('diwali') || Boolean(sample?.imageQuery);
-  let design;
-  if (wantsPhoto) {
-    const photoDesign = suited.find((d) => d.needsPhoto);
-    design = photoDesign || (suited.length > 0 ? suited[0] : designsFor(category)[0]);
-  } else {
-    design = suited.length > 0 ? suited[0] : designsFor(category)[0];
-  }
+  const selection = selectArchetypeAndVariant({
+    text,
+    avoidRecipeIds,
+    variant,
+    instruction,
+  });
+  const archetype = selection.archetype;
+  const forcedVariant = selection.variant;
 
-  const forced = RECIPE_VARIANTS.includes(Number(variant)) ? Number(variant) : 0;
   const words = [text, venue].filter(Boolean).join(' ');
   const venueVal = venue || 'Venue to be announced';
   const cta = extractCta(text);
 
-  if (!sample) {
+  const kicker = sample?.title?.sub
+    ? trimToWords(sample.title.sub, 4)
+    : defaultKicker(category);
+
+  let title = '';
+  if (sample?.title?.main) {
+    title = sample.title.main;
+  } else {
     const headline = firstClauseOf(text);
-    const bullets = extractBullets(text, ['Everyone is welcome to join']);
-    return {
-      recipeId: design.id,
-      variant: forced,
-      title: { main: headline.length > 5 ? headline : 'Featured Community Event', sub: '' },
-      tagline: 'Empowering communities, transforming futures',
-      slogan: { line1: '', line2: '' },
-      bullets,
-      info: { date, time, venue: venueVal },
-      cta,
-      icon: iconForWords(words, category),
-      imageQuery: lower.includes('pongal')
-        ? 'pongal harvest celebration festival'
-        : lower.includes('cultural')
-          ? 'cultural festival celebration stage'
-          : 'community event celebration',
-    };
+    title = headline.length > 5 ? headline : 'Featured Community Event';
   }
 
-  const bullets = extractBullets(text, sample.bullets);
+  const subtitle = sample?.tagline
+    ? trimToWords(sample.tagline, 10)
+    : defaultSubtitle(category);
 
-  return {
-    recipeId: design.id,
-    variant: forced,
-    title: { main: sample.title.main, sub: sample.title.sub },
-    tagline: sample.tagline,
-    slogan: sample.slogan || { line1: '', line2: '' },
-    bullets,
-    info: { date, time, venue: venueVal },
-    cta,
-    icon: iconForWords([words, sample.title.main, sample.imageQuery].join(' '), category),
-    imageQuery: sample.imageQuery,
+  const bullets = extractBullets(text, sample?.bullets || ['Everyone is welcome to join']);
+  const photoKeywords = defaultKeywords(category, sample?.imageQuery);
+
+  const iconWords = [words, title, photoKeywords].filter(Boolean).join(' ');
+  const icon = iconForWords(iconWords, category);
+
+  const rawAnswer = {
+    archetype,
+    variant: forcedVariant,
+    fields: {
+      kicker,
+      title,
+      subtitle,
+      bullets,
+      date: date || '',
+      time: time || '',
+      venue: venueVal,
+      cta,
+      photoKeywords,
+    },
+    icon,
   };
+
+  return sanitizeAndTruncateDesign(rawAnswer, {
+    avoidRecipeIds,
+    variant: forcedVariant,
+    prompt: text,
+    instruction,
+  });
 }
 
 export async function generateWithMock({
@@ -324,7 +355,7 @@ export async function generateWithMock({
 
   // 3b. Mode "ai": one ready design, written from the same extracted facts.
   if (mode === 'design') {
-    return designAnswer({ text, date, time, venue, avoidRecipeIds, variant });
+    return designAnswer({ text, date, time, venue, avoidRecipeIds, variant, instruction });
   }
 
   // 4. Extract or derive Title
@@ -434,19 +465,25 @@ export async function generateWithMock({
     }
   }
 
-  return {
+  const contentResult = {
     title,
     tagline: subtitle,
-    subtitle,
-    kicker,
     date,
     time,
     venue,
     details,
-    cta,
     imageQuery,
     ...(Object.keys(extras).length ? { extras } : {}),
   };
+
+  const ctaVal = typeof cta === 'string' ? cta : (cta?.button || 'Open to all');
+  Object.defineProperties(contentResult, {
+    cta: { value: { line: ctaVal, button: ctaVal }, writable: true, enumerable: false, configurable: true },
+    subtitle: { value: subtitle, writable: true, enumerable: false, configurable: true },
+    kicker: { value: kicker, writable: true, enumerable: false, configurable: true },
+  });
+
+  return contentResult;
 }
 
 export default { generateWithMock };
