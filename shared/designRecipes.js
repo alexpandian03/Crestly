@@ -153,10 +153,10 @@ export const DESIGN_BLANKS = {
 
 /** The words a design may give up when the poster is too full, least important first. These are
  *  the line keys `line()` gives its entries, plus the block key of the round mark. */
-const DROP_ORDER = ['title_sub', 'slogan_2', 'details', 'cta_line', 'tagline', 'artwork'];
+const DROP_ORDER = ['title_sub', 'slogan_2', 'details', 'cta_line', 'tagline', 'artwork', 'photo'];
 /** Tried in order before anything is given up, so the words keep their lines. A poster with room
  *  to spare is set larger first, so its blocks reach from the top band to the bottom one. */
-const SCALES = [1.6, 1.45, 1.3, 1.15, 1, 0.94, 0.88, 0.82, 0.76, 0.7, 0.64];
+const SCALES = [1.6, 1.45, 1.3, 1.15, 1, 0.94, 0.88, 0.82, 0.76, 0.7, 0.64, 0.58, 0.52];
 
 /* ------------------------------------------------------------------------- *
  * Colour: everything comes from the brand kit
@@ -269,6 +269,13 @@ export function readableColorOn(fill, candidates, min = TEXT_CONTRAST_MIN) {
 }
 
 /**
+ * Pick the best readable color from candidates against a background (WCAG contrast).
+ */
+export function pickReadableColor(candidates, background, min = TEXT_CONTRAST_MIN) {
+  return readableColorOn(background, candidates, min);
+}
+
+/**
  * What a design assumes it is writing on: the brand's own background plate.
  *
  * The poster paints its surface from the brand kit, which a recipe may not read beyond the six
@@ -297,7 +304,8 @@ function drawsWords(item) {
 
 /** True for the shape a set of words stands on: a pill, a button, a band. */
 function isPlate(item) {
-  return item?.kind === 'shape' && item?.shape?.type === 'rect' && Boolean(item?.shape?.fill);
+  const fill = item?.shape?.fill;
+  return item?.kind === 'shape' && item?.shape?.type === 'rect' && Boolean(fill) && fill !== 'transparent';
 }
 
 function covers(outer, inner, tolerance = 2) {
@@ -367,6 +375,27 @@ export function brandOf(brandKit) {
   };
 }
 
+/**
+ * Standard brand tokens extracted from the brand kit:
+ * primary, dark, accent, text, background, headingFont, bodyFont.
+ */
+export function brandTokensOf(brandKit) {
+  const b = brandOf(brandKit);
+  const kit = brandKit && typeof brandKit === 'object' && !Array.isArray(brandKit) ? brandKit : {};
+  const colors = kit.colors && typeof kit.colors === 'object' ? kit.colors : {};
+  const bg = colorOf(colors.background, '#FFFFFF');
+  const txt = colorOf(colors.text, BRAND_DEFAULTS.text);
+  return {
+    primary: b.primary,
+    dark: b.secondary || b.dark || '#0F172A',
+    accent: b.accent,
+    text: txt,
+    background: bg,
+    headingFont: b.headingFont,
+    bodyFont: b.bodyFont,
+  };
+}
+
 /** Every colour a design may write words in, in the order it prefers them. */
 function inkOptions(brand) {
   return [brand.ink, brand.body, brand.light, tint(brand.primary, 0.85), shade(brand.primary, 0.55), '#ffffff', '#000000'];
@@ -422,6 +451,7 @@ function paletteOf(brand, name) {
   const make = PALETTES[RECIPE_PALETTES.includes(name) ? name : RECIPE_OPTIONS_DEFAULT.palette];
   const roles = make(brand);
   return {
+    primary: brand.primary,
     ...roles,
     /* The edge of a plate and the wash of a decoration: the same brand colours, softer. */
     edge: brand.line,
@@ -483,7 +513,15 @@ export function fitWordSize(text, width, initialSize, face = {}, minSize = 22) {
     .filter(Boolean);
   if (words.length === 0) return size;
   const maxWordLen = Math.max(...words.map((w) => w.length));
-  while (size > minSize && Math.ceil(maxWordLen * charWidthOf(size, face)) > width) {
+  let iter = 0;
+  const startTime = Date.now();
+  while (
+    size > minSize &&
+    iter < 200 &&
+    Date.now() - startTime <= 1500 &&
+    Math.ceil(maxWordLen * charWidthOf(size, face)) > width
+  ) {
+    iter += 1;
     size = Math.max(minSize, size - 1);
   }
   return size;
@@ -541,7 +579,9 @@ export function fitTextSize({
   const floor = Math.max(MIN_RECIPE_FONT, toIntOr(min, MIN_RECIPE_FONT));
   const cap = Math.max(floor, toIntOr(size, floor));
   let chosen = cap;
-  for (let step = 0; step < 40; step += 1) {
+  const startTime = Date.now();
+  for (let step = 0; step < 200; step += 1) {
+    if (Date.now() - startTime > 1500) break;
     const lines = linesOfWords(text, width, chosen, face);
     const height = lines * chosen * numberOr(lineHeight, 1.05);
     if (lines <= maxLines && (!room || height <= room)) break;
@@ -803,6 +843,13 @@ function blankItem(c, key, rect, { style, z = 11 } = {}) {
   return item;
 }
 
+function textItem(c, id, text, rect, { style, z = 10 } = {}) {
+  const item = makeItem(c, id, 'text', rect, { style: style || textStyle(c, 'regular'), z });
+  item.text = text;
+  item.variable = false;
+  return item;
+}
+
 function shapeItem(c, id, rect, { fill = '', stroke = '', strokeWidth = 0, radius = 0, opacity = 1, z = 2 } = {}) {
   /* A shape paints from its own fill and stroke; the style colour only carries the brand edge
      colour so the item never asks for a colour the brand kit does not have. */
@@ -920,7 +967,10 @@ function headlineLine(room) {
 }
 
 function isDropped(c, key) {
-  return c.dropped.has(key);
+  if (c.dropped.has(key)) return true;
+  if ((key === 'kicker' || key === 'badge' || key === 'overline') && c.dropped.has('title_sub')) return true;
+  if (key === 'schedule' && c.dropped.has('details')) return true;
+  return false;
 }
 
 function hasEntryText(c, entry) {
@@ -935,7 +985,7 @@ function hasEntryText(c, entry) {
 function groupHeight(c, entries, width, innerGapOverride = 0) {
   const kept = entries.filter((entry) => hasEntryText(c, entry));
   if (kept.length === 0) return 0;
-  const gap = innerGapOverride || c.inner;
+  const gap = Math.max(16, innerGapOverride || c.inner);
   const heights = kept.map((entry) => resolveLine(c, entry, width).height);
   return heights.reduce((acc, height) => acc + height, 0) + gap * (kept.length - 1);
 }
@@ -944,7 +994,7 @@ function groupHeight(c, entries, width, innerGapOverride = 0) {
 function groupLines(c, entries, rect, { centre = false, innerGap = 0 } = {}) {
   const kept = entries.filter((entry) => hasEntryText(c, entry));
   if (kept.length === 0) return [];
-  const gap = innerGap || c.inner;
+  const gap = Math.max(16, innerGap || c.inner);
   const resolved = kept.map((entry) => ({ entry, ...resolveLine(c, entry, rect.w) }));
   const heights = resolved.map((item) => item.height);
   const used = heights.reduce((acc, height) => acc + height, 0) + gap * (kept.length - 1);
@@ -1031,37 +1081,79 @@ function factPlan(c, width, options) {
   return { keys, columns: true, gap, inner: width, textWidth: cellWidth, height: 110 };
 }
 
-function factHeight(c, width, options) {
-  return 110;
+function factHeight(c, width, { keysOverride = null } = {}) {
+  const keys = keysOverride || ['date', 'time', 'venue'];
+  const activeKeys = keys.filter((k) => Boolean(String(c.words[k] || '').trim()));
+  if (activeKeys.length === 0) return 0;
+  const gap = 16;
+  const padX = 8;
+  const cellWidth = Math.max(MIN_TEXT_WIDTH, Math.floor((width - (activeKeys.length - 1) * gap) / activeKeys.length));
+  const textWidth = cellWidth - padX * 2;
+  let maxTextH = 0;
+  for (const k of activeKeys) {
+    const val = String(c.words[k] || '').trim();
+    const style = textStyle(c, 'strong', { align: c.align || 'center' });
+    const h = estimatedTextHeight({ w: textWidth, style, kind: 'field', field: k }, val);
+    if (h > maxTextH) maxTextH = h;
+  }
+  return Math.max(110, maxTextH + 24);
 }
 
-function factBlock(c, rect, { plate = false } = {}) {
-  const keys = ['date', 'time', 'venue'];
+function factBlock(c, rect, { plate = false, fillOverride = null, strokeOverride = null, align = null, keysOverride = null } = {}) {
+  const keys = keysOverride || ['date', 'time', 'venue'];
+  const activeKeys = keys.filter((k) => Boolean(String(c.words[k] || '').trim()));
+  if (activeKeys.length === 0) return [];
   const gap = 16;
-  const cellWidth = Math.floor((rect.w - (keys.length - 1) * gap) / keys.length);
+  const cellWidth = Math.floor((rect.w - (activeKeys.length - 1) * gap) / activeKeys.length);
   const items = [];
 
-  const fill = tint(c.palette.primary, 0.94);
-  const stroke = tint(c.palette.primary, 0.72);
+  const tokens = c.tokens || brandTokensOf(c.brand);
+  const primary = tokens.primary || c.brand.primary;
+  const dark = tokens.dark || c.brand.dark || '#0F172A';
+  const fill = fillOverride || tint(primary, 0.94);
+  const stroke = strokeOverride || tint(primary, 0.72);
+  const cardAlign = align || c.align || 'center';
 
-  keys.forEach((key, index) => {
-    const cardX = rect.x + index * (cellWidth + gap);
-    const cardRect = { x: cardX, y: rect.y, w: cellWidth, h: rect.h };
-
-    // 1. Separate card shape (1px border, 12px radius, light tint of primary)
+  if (plate) {
     items.push(
-      shapeItem(c, `card-${key}`, cardRect, {
+      shapeItem(c, 'fact-plate', rect, {
         fill,
         stroke,
         strokeWidth: 1,
-        radius: 12,
+        radius: 16,
         z: 2,
       })
     );
+    const ruleH = Math.round(rect.h * PILL_DIVIDER_RATIO);
+    const ruleY = rect.y + Math.round((rect.h - ruleH) / 2);
+    for (let i = 0; i < activeKeys.length - 1; i += 1) {
+      const ruleX = rect.x + (i + 1) * cellWidth + i * gap + Math.round((gap - 4) / 2);
+      items.push(
+        shapeItem(c, `rule-${i + 1}`, { x: ruleX, y: ruleY, w: 4, h: ruleH }, {
+          fill: stroke,
+          stroke: stroke,
+          strokeWidth: 2,
+          z: 3,
+        })
+      );
+    }
+  }
 
-    const val = String(c.words[key] || (key === 'venue' ? 'Venue to be announced' : '')).trim();
-    const isLongVenue = key === 'venue' && val.length > 18;
-    const valueSize = isLongVenue ? 24 : 32;
+  activeKeys.forEach((key, index) => {
+    const cardX = rect.x + index * (cellWidth + gap);
+    const cardRect = { x: cardX, y: rect.y, w: cellWidth, h: rect.h };
+
+    if (!plate) {
+      items.push(
+        shapeItem(c, `card-${key}`, cardRect, {
+          fill,
+          stroke,
+          strokeWidth: 1,
+          radius: 12,
+          z: 2,
+        })
+      );
+    }
 
     const padX = 8;
     const padY = 8;
@@ -1072,17 +1164,107 @@ function factBlock(c, rect, { plate = false } = {}) {
       h: rect.h - padY * 2,
     };
 
+    const textColor = pickReadableColor(
+      [primary ? shade(primary, 0.45) : '#0f172a', dark, c.brand.ink, c.brand.body, '#111827', '#000000', '#ffffff'],
+      fill,
+      4.5
+    );
+
+    const style = textStyle(c, 'strong', {
+      align: cardAlign,
+      color: textColor,
+    });
+
+    items.push(fieldItem(c, key, textRect, { style, z: 11 }));
+  });
+
+  return items;
+}
+
+function factRowsHeight(c, width, { keysOverride = null } = {}) {
+  const keys = keysOverride || ['date', 'time', 'venue'];
+  const gap = 12;
+  const padX = 12;
+  const textWidth = Math.max(MIN_TEXT_WIDTH, width - padX * 2);
+  let totalH = 0;
+  const activeKeys = keys.filter((k) => Boolean(String(c.words[k] || '').trim()));
+  if (activeKeys.length === 0) return 0;
+  for (const k of activeKeys) {
+    const val = String(c.words[k] || '').trim();
+    const face = ROLE_LOOK.strong(c);
+    const size = fitWordSize(val, textWidth, c.sizes.strong, face, 20);
+    const style = { ...textStyle(c, 'strong', { align: 'left' }), size };
+    const h = Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: textWidth, style, kind: 'field', field: k }, val));
+    totalH += h + 16;
+  }
+  return totalH + (activeKeys.length > 1 ? gap * (activeKeys.length - 1) : 0);
+}
+
+function factRowsBlock(c, rect, { fillOverride = null, strokeOverride = null, keysOverride = null } = {}) {
+  const keys = keysOverride || ['date', 'time', 'venue'];
+  const gap = 12;
+  const padX = 12;
+  const padY = 8;
+  const textWidth = Math.max(MIN_TEXT_WIDTH, rect.w - padX * 2);
+  const items = [];
+  const tokens = c.tokens || brandTokensOf(c.brand);
+  const primary = tokens.primary || c.brand.primary;
+  const dark = tokens.dark || c.brand.dark || '#0F172A';
+  const fill = fillOverride || tint(primary, 0.94);
+  const stroke = strokeOverride || tint(primary, 0.72);
+
+  const activeKeys = keys.filter((k) => Boolean(String(c.words[k] || '').trim()));
+  if (activeKeys.length === 0) return [];
+
+  const heights = activeKeys.map((k) => {
+    const val = String(c.words[k] || '').trim();
+    const face = ROLE_LOOK.strong(c);
+    const size = fitWordSize(val, textWidth, c.sizes.strong, face, 20);
+    const style = { ...textStyle(c, 'strong', { align: 'left' }), size };
+    const textH = Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: textWidth, style, kind: 'field', field: k }, val));
+    return textH + padY * 2;
+  });
+
+  let cursor = rect.y;
+  activeKeys.forEach((key, index) => {
+    const cardH = heights[index];
+    const cardRect = { x: rect.x, y: cursor, w: rect.w, h: cardH };
+    items.push(
+      shapeItem(c, `card-${key}`, cardRect, {
+        fill,
+        stroke,
+        strokeWidth: 1,
+        radius: 12,
+        z: 2,
+      })
+    );
+
+    const textRect = {
+      x: rect.x + padX,
+      y: cursor + padY,
+      w: textWidth,
+      h: cardH - padY * 2,
+    };
+
+    const textColor = pickReadableColor(
+      ['#ffffff', '#000000', dark, primary, c.brand.ink],
+      fill,
+      4.5
+    );
+
+    const val = String(c.words[key] || '').trim();
+    const face = ROLE_LOOK.strong(c);
+    const size = fitWordSize(val, textWidth, c.sizes.strong, face, 20);
     const style = {
-      ...textStyle(c, 'regular'),
-      size: valueSize,
-      weight: 700,
-      align: 'center',
-      showLabel: true,
-      showIcon: false,
-      color: c.palette.primary ? shade(c.palette.primary, 0.45) : '#0f172a',
+      ...textStyle(c, 'strong', {
+        align: 'left',
+        color: textColor,
+      }),
+      size,
     };
 
     items.push(fieldItem(c, key, textRect, { style, z: 11 }));
+    cursor += cardH + gap;
   });
 
   return items;
@@ -1116,51 +1298,50 @@ function buttonWords(c) {
 
 function ctaHeight(c, width) {
   const hasLine = Boolean(c.words.cta_line && String(c.words.cta_line).trim() && !isDropped(c, 'cta_line'));
-  return (hasLine ? 32 + 16 : 0) + 54;
+  const lineH = hasLine
+    ? Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style: textStyle(c, 'strong') }, c.words.cta_line)) + 16
+    : 0;
+  return lineH + 54;
 }
 
-function ctaBlock(c, rect, { centre = false } = {}) {
+function ctaBlock(c, rect, { centre = false, fillOverride = null } = {}) {
   const items = [];
   let cursor = rect.y;
   const align = centre || c.align === 'center' ? 'center' : 'left';
 
   const hasLine = Boolean(c.words.cta_line && String(c.words.cta_line).trim() && !isDropped(c, 'cta_line'));
   if (hasLine) {
-    const lineBox = { x: rect.x, y: cursor, w: rect.w, h: 32 };
+    const lineStyle = textStyle(c, 'strong');
+    const lineH = Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: rect.w, style: lineStyle }, c.words.cta_line));
+    const lineBox = { x: rect.x, y: cursor, w: rect.w, h: lineH };
     items.push(
       blankItem(c, 'cta_line', lineBox, {
-        style: { ...textStyle(c, 'strong'), align, size: 20 },
+        style: { ...lineStyle, align },
         z: 11,
       })
     );
-    cursor += 32 + 16;
+    cursor += lineH + 16;
   }
 
   const barH = 54;
   const barBox = { x: rect.x, y: cursor, w: rect.w, h: barH };
+  const plateFill = fillOverride || c.tokens?.primary || c.palette.primary || c.palette.accent;
 
   // Full-width solid label bar
   items.push(
     plateItem(c, 'button-plate', barBox, {
-      fill: c.palette.primary || c.palette.accent,
+      fill: plateFill,
       radius: 12,
       z: 5,
     })
   );
 
-  const barText = buttonWords(c);
-  const face = { weight: 700, uppercase: false, letterSpacing: 0 };
-  let barSize = 22;
-  while (barSize > 16 && Math.ceil(barText.length * charWidthOf(barSize, face)) > rect.w - 32) {
-    barSize -= 1;
-  }
+  const textColor = pickReadableColor(['#ffffff', '#000000', c.tokens?.dark || '#0f172a'], plateFill, 4.5);
 
   const barStyle = {
     ...textStyle(c, 'button'),
-    size: barSize,
-    weight: 700,
     align,
-    color: '#ffffff',
+    color: textColor,
   };
   items.push(blankItem(c, 'cta_button', barBox, { style: barStyle, z: 12 }));
 
@@ -1306,6 +1487,56 @@ function optionsOf(options = {}) {
   };
 }
 
+function fitContextSizes(c) {
+  const boxW = c.box.w;
+  const faceHead = ROLE_LOOK.heading(c);
+  const fitHead = fitTextSize({
+    text: c.words.headline,
+    width: boxW - 40,
+    size: c.sizes.heading,
+    min: MIN_RECIPE_FONT,
+    face: faceHead,
+  });
+  c.sizes.heading = fitWordSize(
+    c.words.headline,
+    boxW - 40,
+    fitHead,
+    faceHead,
+    MIN_RECIPE_FONT
+  );
+
+  const strongWords = [
+    c.words.date,
+    c.words.time,
+    c.words.venue,
+    c.words.slogan_1,
+    c.words.cta_line,
+  ].filter(Boolean).join(' ');
+  const minCardWidth = Math.max(MIN_TEXT_WIDTH, Math.floor((boxW - 32) / 3) - 16);
+  const faceStrong = ROLE_LOOK.strong(c);
+  c.sizes.strong = fitWordSize(
+    strongWords,
+    minCardWidth,
+    c.sizes.strong,
+    faceStrong,
+    MIN_RECIPE_FONT
+  );
+
+  const regWords = [
+    c.words.tagline,
+    c.words.slogan_2,
+    ...(Array.isArray(c.words.details) ? c.words.details : []),
+  ].filter(Boolean).join(' ');
+  const faceReg = ROLE_LOOK.regular(c);
+  c.sizes.regular = fitWordSize(
+    regWords,
+    Math.max(MIN_TEXT_WIDTH, Math.floor(boxW * 0.45)),
+    c.sizes.regular,
+    faceReg,
+    MIN_RECIPE_FONT
+  );
+}
+
 /**
  * Everything a block needs, worked out once per design.
  *
@@ -1314,19 +1545,21 @@ function optionsOf(options = {}) {
  */
 function contextOf(area, brandKit, slots, options, design = null) {
   const brand = brandOf(brandKit);
+  const tokens = brandTokensOf(brandKit);
   const box = frameOf(area);
   const unit = spacingUnit(area.w);
   const c = {
     area,
     box,
     brand,
+    tokens,
     slots,
     options,
     type: typeOf(options.typeStyle),
     palette: paletteOf(brand, options.palette),
     words: slots,
     facts: FACT_FIELDS.filter((key) => Boolean(slots[key])),
-    align: options.variant % 2 === 1 ? 'center' : 'left',
+    align: options.align || (options.variant % 2 === 1 ? 'center' : 'left'),
     surface: posterSurface(brandKit),
     inks: inkOptions(brand),
     unit,
@@ -1340,10 +1573,11 @@ function contextOf(area, brandKit, slots, options, design = null) {
     hasWords: (key) => (key === 'details' ? slots.details.length > 0 : Boolean(slots[key])),
   };
   c.sizes = sizesOf(c.type, area.w, box.h, 1);
+  fitContextSizes(c);
   c.icon =
     slots.icon ||
     iconForWords(
-      [slots.headline, slots.tagline, slots.venue, ...slots.details].filter(Boolean).join(' '),
+      [slots.headline, slots.tagline, slots.venue, ...(Array.isArray(slots?.details) ? slots.details : [])].filter(Boolean).join(' '),
       design?.suits?.[0] || 'general'
     );
   return c;
@@ -1353,6 +1587,7 @@ function contextOf(area, brandKit, slots, options, design = null) {
 function planOf(c, scale, dropped) {
   const next = { ...c, scale, dropped: dropped || c.dropped };
   next.sizes = sizesOf(c.type, c.area.w, c.box.h, scale);
+  fitContextSizes(next);
   next.accentInk = readableColorOn(c.surface, inkOptions(c.brand));
   return next;
 }
@@ -1368,11 +1603,15 @@ function present(c, specs) {
 function minGapBetweenSpecs(a, b) {
   const kA = a?.key;
   const kB = b?.key;
-  if (kA === 'photo' && (kB === 'title' || kB === 'kicker')) return 32;
-  if (kA === 'title' && (kB === 'pill' || kB === 'facts' || kB === 'fact')) return 48;
-  if ((kA === 'pill' || kA === 'facts' || kA === 'fact') && (kB === 'words' || kB === 'cta')) return 40;
-  if (kA === 'words' && kB === 'cta') return 40;
-  if (kA === 'artwork' && (kB === 'pill' || kB === 'facts')) return 48;
+  if ((kA === 'photo' || kA === 'hero-photo') && (kB === 'title' || kB === 'kicker' || kB === 'band' || kB === 'badge' || kB === 'title_sub')) return 32;
+  if ((kA === 'kicker' || kA === 'badge' || kA === 'overline' || kA === 'title_sub') && kB === 'title') return 16;
+  if (kA === 'title' && (kB === 'subtitle' || kB === 'tagline' || kB === 'rule')) return 16;
+  if (kA === 'rule' && (kB === 'subtitle' || kB === 'tagline')) return 16;
+  if ((kA === 'tagline' || kB === 'tagline') && (kB === 'slogans' || kA === 'slogans')) return 16;
+  if ((kA === 'title' || kA === 'subtitle' || kA === 'tagline' || kA === 'rule' || kA === 'band' || kA === 'slogans') && (kB === 'pill' || kB === 'facts' || kB === 'fact' || kB === 'cards')) return 48;
+  if ((kA === 'pill' || kA === 'facts' || kA === 'fact' || kA === 'cards') && (kB === 'words' || kB === 'details' || kB === 'cta' || kB === 'schedule' || kB === 'button')) return 40;
+  if ((kA === 'words' || kA === 'details' || kA === 'schedule' || kA === 'slogans') && (kB === 'cta' || kB === 'button')) return 40;
+  if (kA === 'artwork' && (kB === 'pill' || kB === 'facts' || kB === 'cards')) return 48;
   if (kA === 'title' && kB === 'artwork') return 32;
   return 32;
 }
@@ -1402,10 +1641,19 @@ function layoutOf(c, box, specs) {
 
   let total = heights.reduce((acc, height) => acc + height, 0) + gaps.reduce((acc, g) => acc + g, 0);
 
-  while (total > box.h && gaps.some((g, i) => g > minGapBetweenSpecs(live[i], live[i + 1]) * 0.7)) {
+  let shrinkIterations = 0;
+  const shrinkStart = Date.now();
+  while (total > box.h && shrinkIterations < 200 && Date.now() - shrinkStart <= 1500) {
+    shrinkIterations += 1;
+    let changed = false;
     for (let i = 0; i < gaps.length; i += 1) {
-      if (gaps[i] > 16) gaps[i] -= 2;
+      const minG = Math.max(16, Math.round(minGapBetweenSpecs(live[i], live[i + 1]) * 0.7));
+      if (gaps[i] > minG) {
+        gaps[i] = Math.max(minG, gaps[i] - 2);
+        changed = true;
+      }
     }
+    if (!changed) break;
     total = heights.reduce((acc, height) => acc + height, 0) + gaps.reduce((acc, g) => acc + g, 0);
   }
 
@@ -1419,10 +1667,20 @@ function layoutOf(c, box, specs) {
   }
 
   let leftover = Math.max(0, box.h - total);
+  const flexes = live.map((spec, index) => (spec.flex ? index : -1)).filter((index) => index >= 0);
+  if (leftover > 0 && flexes.length > 0) {
+    const share = Math.floor(leftover / flexes.length);
+    flexes.forEach((index) => {
+      heights[index] += share;
+      leftover -= share;
+    });
+  }
   if (leftover > 0 && gaps.length > 0) {
-    const extraPerGap = Math.floor(leftover / gaps.length);
     for (let i = 0; i < gaps.length; i += 1) {
-      gaps[i] += extraPerGap;
+      const maxAdd = Math.max(0, 48 - gaps[i]);
+      const add = Math.min(Math.floor(leftover / (gaps.length - i)), maxAdd);
+      gaps[i] += add;
+      leftover -= add;
     }
   }
 
@@ -1443,423 +1701,1690 @@ function holdsColumns(c, spec, width) {
  * Lay the blocks out, giving up words in order until they fit.
  */
 function stack(c, box, specs, gapOverride = 0) {
+  let iter = 0;
+  const startTime = Date.now();
+  let bestPlan = null;
+  let bestLaid = null;
+  let minOverflow = Infinity;
+
+  const buildItems = (plan, laid) => {
+    const items = [];
+    let cursor = box.y + Math.max(0, Math.round(laid.spare / 2));
+    laid.live.forEach((spec, index) => {
+      const rect = { x: box.x, y: cursor, w: box.w, h: laid.heights[index] };
+      const made = spec.make(plan, rect);
+      items.push(...(Array.isArray(made) ? made : [made]));
+      cursor += laid.heights[index] + (laid.gaps[index] || 0);
+    });
+    return items;
+  };
+
+  for (let dropCount = 0; dropCount <= DROP_ORDER.length; dropCount += 1) {
+    if (iter >= 200 || Date.now() - startTime > 1500) break;
+    const dropped = new Set(DROP_ORDER.slice(0, dropCount));
+    for (const scale of SCALES) {
+      iter += 1;
+      const plan = planOf(c, scale, dropped);
+      const laid = layoutOf(plan, box, specs);
+      const keepsShape = scale <= 1 || laid.live.every((spec) => holdsColumns(plan, spec, box.w));
+
+      const totalH = laid.heights.reduce((acc, height) => acc + height, 0) + laid.gaps.reduce((acc, g) => acc + g, 0);
+      const overflow = Math.max(0, totalH - box.h);
+      if (overflow < minOverflow || !bestPlan) {
+        minOverflow = overflow;
+        bestPlan = plan;
+        bestLaid = laid;
+      }
+
+      if ((laid.fits && keepsShape) || (dropCount === DROP_ORDER.length && scale === SCALES[SCALES.length - 1])) {
+        return buildItems(plan, laid);
+      }
+
+      if (iter >= 200 || Date.now() - startTime > 1500) {
+        return buildItems(bestPlan || plan, bestLaid || laid);
+      }
+    }
+  }
+
+  if (bestPlan && bestLaid) {
+    return buildItems(bestPlan, bestLaid);
+  }
+  return [];
+}
+
+function slogansSpec(c, { align = 'left' } = {}) {
+  return {
+    key: 'slogans',
+    when: (ctx) => {
+      const s1 = !ctx.dropped.has('slogan_1') && String(ctx.words.slogan_1 || '').trim();
+      const s2 = !ctx.dropped.has('slogan_2') && String(ctx.words.slogan_2 || '').trim();
+      return Boolean(s1 || s2);
+    },
+    height: (ctx, width) => {
+      let h = 0;
+      const s1 = !ctx.dropped.has('slogan_1') && String(ctx.words.slogan_1 || '').trim();
+      const s2 = !ctx.dropped.has('slogan_2') && String(ctx.words.slogan_2 || '').trim();
+      if (s1) {
+        h += Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style: textStyle(ctx, 'strong') }, s1));
+      }
+      if (s2) {
+        if (h > 0) h += 8;
+        h += Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style: textStyle(ctx, 'regular') }, s2));
+      }
+      return h;
+    },
+    make: (ctx, rect) => {
+      const items = [];
+      let cursor = rect.y;
+      const s1 = !ctx.dropped.has('slogan_1') && String(ctx.words.slogan_1 || '').trim();
+      const s2 = !ctx.dropped.has('slogan_2') && String(ctx.words.slogan_2 || '').trim();
+      if (s1) {
+        const style1 = { ...textStyle(ctx, 'strong'), align };
+        const h1 = Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: rect.w, style: style1 }, s1));
+        items.push(blankItem(ctx, 'slogan_1', { x: rect.x, y: cursor, w: rect.w, h: h1 }, { style: style1, z: 11 }));
+        cursor += h1 + 8;
+      }
+      if (s2) {
+        const style2 = { ...textStyle(ctx, 'regular'), align };
+        const h2 = Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: rect.w, style: style2 }, s2));
+        items.push(blankItem(ctx, 'slogan_2', { x: rect.x, y: cursor, w: rect.w, h: h2 }, { style: style2, z: 11 }));
+      }
+      return items;
+    },
+  };
+}
+
+/* ------------------------------------------------------------------------- *
+ * The 8 layout archetype recipes
+ * ------------------------------------------------------------------------- */
+
+/**
+ * 1. Bold Type Archetype (Notice / General)
+ * Giant headline, accent rule, tagline, details, 3 equal info cards, left-aligned.
+ */
+export function boldTypeRecipe(area, brandKit, slots, options = {}, design = null) {
+  const c = contextOf(area, brandKit, slots, { ...options, align: 'left' }, design);
+  const tokens = c.tokens;
+  const isReordered = c.options.variant === 1;
+  const isDarkEmphasis = c.options.variant === 2;
+
+  const cardFill = isDarkEmphasis ? tokens.dark : tint(tokens.primary, 0.94);
+  const cardStroke = isDarkEmphasis ? tokens.accent : tint(tokens.primary, 0.72);
+
+  const artworkSpec = {
+    key: 'artwork',
+    when: (ctx) => ctx.options.artwork === 'medallion',
+    height: () => 70,
+    make: (ctx, rect) => [
+      iconItem(ctx, 'bold-icon', {
+        x: rect.x,
+        y: rect.y,
+        w: 70,
+        h: 70,
+      }, { name: ctx.icon || 'trophy', color: tokens.accent, strokeWidth: 2, z: 8 }),
+    ],
+  };
+
+  const badgeSpec = {
+    key: 'badge',
+    when: (ctx) => Boolean(ctx.words.title_sub || ctx.words.kicker),
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'lead');
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.title_sub || ctx.words.kicker));
+    },
+    make: (ctx, rect) => [
+      blankItem(ctx, 'title_sub', rect, {
+        style: {
+          ...textStyle(ctx, 'lead'),
+          align: 'left',
+          color: tokens.accent,
+        },
+        z: 11,
+      }),
+    ],
+  };
+
+  const titleSpec = {
+    key: 'title',
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'heading');
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.headline));
+    },
+    make: (ctx, rect) => [
+      fieldItem(ctx, 'headline', rect, {
+        style: {
+          ...textStyle(ctx, 'heading'),
+          align: 'left',
+          color: isDarkEmphasis ? '#ffffff' : tokens.primary,
+        },
+        z: 11,
+      }),
+    ],
+  };
+
+  const ruleSpec = {
+    key: 'rule',
+    thin: true,
+    height: () => 8,
+    make: (ctx, rect) => [
+      shapeItem(ctx, 'bold-rule', { x: rect.x, y: rect.y, w: Math.min(rect.w, 260), h: 8 }, {
+        fill: tokens.accent,
+        stroke: tokens.accent,
+        strokeWidth: 4,
+        z: 3,
+      }),
+    ],
+  };
+
+  const taglineSpec = {
+    key: 'tagline',
+    when: (ctx) => Boolean(ctx.words.tagline && String(ctx.words.tagline).trim()),
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'regular');
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.tagline));
+    },
+    make: (ctx, rect) => [
+      fieldItem(ctx, 'tagline', rect, {
+        style: {
+          ...textStyle(ctx, 'regular'),
+          align: 'left',
+          color: tokens.text,
+        },
+        z: 11,
+      }),
+    ],
+  };
+
+  const slogans = slogansSpec(c, { align: 'left' });
+
+  const detailsSpec = {
+    key: 'details',
+    when: (ctx) => Array.isArray(ctx.words.details) && ctx.words.details.length > 0,
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'regular');
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.details));
+    },
+    make: (ctx, rect) => [
+      fieldItem(ctx, 'details', rect, {
+        style: {
+          ...textStyle(ctx, 'regular'),
+          align: 'left',
+          color: tokens.text,
+        },
+        z: 11,
+      }),
+    ],
+  };
+
+  const factsSpec = {
+    key: 'facts',
+    height: (ctx, width) => factHeight(ctx, width),
+    make: (ctx, rect) => factBlock(ctx, rect, { fillOverride: cardFill, strokeOverride: cardStroke, align: 'left' }),
+  };
+
+  const ctaSpec = {
+    key: 'cta',
+    height: (ctx, width) => ctaHeight(ctx, width),
+    make: (ctx, rect) => ctaBlock(ctx, rect, { centre: false, fillOverride: tokens.primary }),
+  };
+
+  const specs = isReordered
+    ? [artworkSpec, badgeSpec, titleSpec, ruleSpec, taglineSpec, slogans, detailsSpec, ctaSpec, factsSpec]
+    : [artworkSpec, badgeSpec, titleSpec, ruleSpec, taglineSpec, slogans, detailsSpec, factsSpec, ctaSpec];
+
+  return collect(c, stack(c, c.box, specs));
+}
+
+/**
+ * 2. Photo Hero Archetype (Health / Awareness / Festival)
+ * Large photo hero, headline on solid band, tagline, details, 3 equal info cards, center-aligned.
+ */
+export function photoHeroRecipe(area, brandKit, slots, options = {}, design = null) {
+  const c = contextOf(area, brandKit, slots, { ...options, align: 'center' }, design);
+  const tokens = c.tokens;
+  const isPhotoBelow = c.options.variant === 1;
+  const isDarkEmphasis = c.options.variant === 2;
+  const isTitleScale = c.options.variant === 3;
+
+  const cardFill = isDarkEmphasis ? tokens.dark : tint(tokens.primary, 0.94);
+  const cardStroke = isDarkEmphasis ? tokens.accent : tint(tokens.primary, 0.72);
+  const bandFill = isDarkEmphasis ? tokens.dark : tokens.primary;
+  const titleColor = pickReadableColor(['#ffffff', '#000000', tokens.accent], bandFill, 4.5);
+
+  const photoH = isTitleScale ? 240 : 280;
+
+  const photoSpec = {
+    key: 'photo',
+    flex: true,
+    min: () => 140,
+    height: () => photoH,
+    make: (ctx, rect) => [
+      fieldItem(ctx, 'photo', rect, {
+        style: {
+          ...textStyle(ctx, 'regular'),
+          radius: 16,
+          fit: 'cover',
+          fill: tint(tokens.primary, 0.92),
+          color: tokens.primary,
+        },
+        z: 4,
+      }),
+    ],
+  };
+
+  const titleBandSpec = {
+    key: 'title',
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'heading');
+      const textH = estimatedTextHeight({ w: width - 40, style }, ctx.words.headline);
+      return Math.max(90, textH + 32);
+    },
+    make: (ctx, rect) => {
+      const plate = shapeItem(ctx, 'hero-band-plate', rect, {
+        fill: bandFill,
+        radius: 12,
+        z: 2,
+      });
+      const title = fieldItem(ctx, 'headline', { x: rect.x + 20, y: rect.y + 16, w: rect.w - 40, h: rect.h - 32 }, {
+        style: {
+          ...textStyle(ctx, 'heading'),
+          align: 'center',
+          color: titleColor,
+        },
+        z: 11,
+      });
+      return [plate, title];
+    },
+  };
+
+  const kickerSpec = {
+    key: 'kicker',
+    when: (ctx) => Boolean(ctx.words.title_sub || ctx.words.kicker),
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'lead');
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.title_sub || ctx.words.kicker));
+    },
+    make: (ctx, rect) => [
+      blankItem(ctx, 'title_sub', rect, {
+        style: {
+          ...textStyle(ctx, 'lead'),
+          align: 'center',
+          color: tokens.accent,
+        },
+        z: 11,
+      }),
+    ],
+  };
+
+  const taglineSpec = {
+    key: 'tagline',
+    when: (ctx) => Boolean(ctx.words.tagline && String(ctx.words.tagline).trim()),
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'regular');
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.tagline));
+    },
+    make: (ctx, rect) => [
+      fieldItem(ctx, 'tagline', rect, {
+        style: {
+          ...textStyle(ctx, 'regular'),
+          align: 'center',
+          color: tokens.text,
+        },
+        z: 11,
+      }),
+    ],
+  };
+
+  const slogans = slogansSpec(c, { align: 'center' });
+
+  const detailsSpec = {
+    key: 'details',
+    when: (ctx) => Array.isArray(ctx.words.details) && ctx.words.details.length > 0,
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'regular');
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.details));
+    },
+    make: (ctx, rect) => [
+      fieldItem(ctx, 'details', rect, {
+        style: {
+          ...textStyle(ctx, 'regular'),
+          align: 'center',
+          color: tokens.text,
+        },
+        z: 11,
+      }),
+    ],
+  };
+
+  const factsSpec = {
+    key: 'facts',
+    height: (ctx, width) => factHeight(ctx, width),
+    make: (ctx, rect) => factBlock(ctx, rect, { fillOverride: cardFill, strokeOverride: cardStroke, align: 'center' }),
+  };
+
+  const ctaSpec = {
+    key: 'cta',
+    height: (ctx, width) => ctaHeight(ctx, width),
+    make: (ctx, rect) => ctaBlock(ctx, rect, { centre: true, fillOverride: bandFill }),
+  };
+
+  const specs = isPhotoBelow
+    ? [kickerSpec, titleBandSpec, taglineSpec, photoSpec, slogans, detailsSpec, factsSpec, ctaSpec]
+    : [photoSpec, kickerSpec, titleBandSpec, taglineSpec, slogans, detailsSpec, factsSpec, ctaSpec];
+
+  return collect(c, stack(c, c.box, specs));
+}
+
+/**
+ * 3. Date Block Archetype (Sports / Festival / Meeting)
+ * Prominent side date block with big day & month numbers, content column, left-aligned.
+ */
+export function dateBlockRecipe(area, brandKit, slots, options = {}, design = null) {
+  const c = contextOf(area, brandKit, slots, { ...options, align: 'left' }, design);
+  const tokens = c.tokens;
+  const isReordered = c.options.variant === 1;
+  const isDarkEmphasis = c.options.variant === 2;
+
+  const panelFill = isDarkEmphasis ? tokens.dark : tokens.primary;
+  const panelText = pickReadableColor(['#ffffff', '#000000', tokens.accent], panelFill, 4.5);
+  const cardFill = isDarkEmphasis ? tokens.dark : tint(tokens.primary, 0.94);
+  const cardStroke = isDarkEmphasis ? tokens.accent : tint(tokens.primary, 0.72);
+
+  const dateBannerSpec = {
+    key: 'banner',
+    height: (ctx, width) => {
+      const textW = width - 96;
+      const textH = Math.max(48, estimatedTextHeight({ w: textW, style: textStyle(ctx, 'strong') }, ctx.words.date || 'Event Date'));
+      return textH + 32;
+    },
+    make: (ctx, rect) => {
+      const plate = shapeItem(ctx, 'date-panel-bg', rect, {
+        fill: panelFill,
+        stroke: tokens.accent,
+        strokeWidth: 2,
+        radius: 16,
+        z: 2,
+      });
+      const icon = iconItem(ctx, 'date-panel-icon', {
+        x: rect.x + 20,
+        y: rect.y + Math.round((rect.h - 50) / 2),
+        w: 50,
+        h: 50,
+      }, { name: ctx.icon || 'trophy', color: tokens.accent, strokeWidth: 2, z: 8 });
+      const textW = rect.w - 96;
+      const textH = Math.max(ELEMENT_LIMITS.minHeight, rect.h - 32);
+      const dateText = fieldItem(ctx, 'date', {
+        x: rect.x + 80,
+        y: rect.y + 16,
+        w: textW,
+        h: textH,
+      }, {
+        style: {
+          ...textStyle(ctx, 'strong'),
+          align: 'left',
+          color: panelText,
+        },
+        z: 11,
+      });
+      return [plate, icon, dateText];
+    },
+  };
+
+  const kickerSpec = {
+    key: 'kicker',
+    when: (ctx) => Boolean(ctx.words.title_sub || ctx.words.kicker),
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'lead');
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.title_sub || ctx.words.kicker));
+    },
+    make: (ctx, rect) => [
+      blankItem(ctx, 'title_sub', rect, {
+        style: {
+          ...textStyle(ctx, 'lead'),
+          align: 'left',
+          color: tokens.accent,
+        },
+        z: 11,
+      }),
+    ],
+  };
+
+  const titleSpec = {
+    key: 'title',
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'heading');
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.headline));
+    },
+    make: (ctx, rect) => [
+      fieldItem(ctx, 'headline', rect, {
+        style: {
+          ...textStyle(ctx, 'heading'),
+          align: 'left',
+          color: isDarkEmphasis ? '#ffffff' : tokens.primary,
+        },
+        z: 11,
+      }),
+    ],
+  };
+
+  const taglineSpec = {
+    key: 'tagline',
+    when: (ctx) => Boolean(ctx.words.tagline && String(ctx.words.tagline).trim()),
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'regular');
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.tagline));
+    },
+    make: (ctx, rect) => [
+      fieldItem(ctx, 'tagline', rect, {
+        style: {
+          ...textStyle(ctx, 'regular'),
+          align: 'left',
+          color: tokens.text,
+        },
+        z: 11,
+      }),
+    ],
+  };
+
+  const ruleSpec = {
+    key: 'rule',
+    thin: true,
+    height: () => 4,
+    make: (ctx, rect) => [
+      shapeItem(ctx, 'date-main-rule', { x: rect.x, y: rect.y, w: Math.min(rect.w, 240), h: 4 }, {
+        fill: tokens.accent,
+        stroke: tokens.accent,
+        strokeWidth: 2,
+        z: 3,
+      }),
+    ],
+  };
+
+  const slogans = slogansSpec(c, { align: 'left' });
+
+  const detailsSpec = {
+    key: 'details',
+    when: (ctx) => Array.isArray(ctx.words.details) && ctx.words.details.length > 0,
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'regular');
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.details));
+    },
+    make: (ctx, rect) => [
+      fieldItem(ctx, 'details', rect, {
+        style: {
+          ...textStyle(ctx, 'regular'),
+          align: 'left',
+          color: tokens.text,
+        },
+        z: 11,
+      }),
+    ],
+  };
+
+  const factsSpec = {
+    key: 'facts',
+    when: (ctx) => ['time', 'venue'].some((k) => Boolean(String(ctx.words[k] || '').trim())),
+    height: (ctx, width) => factHeight(ctx, width, { keysOverride: ['time', 'venue'] }),
+    make: (ctx, rect) => factBlock(ctx, rect, { fillOverride: cardFill, strokeOverride: cardStroke, align: 'left', keysOverride: ['time', 'venue'] }),
+  };
+
+  const ctaSpec = {
+    key: 'cta',
+    height: (ctx, width) => ctaHeight(ctx, width),
+    make: (ctx, rect) => ctaBlock(ctx, rect, { centre: false, fillOverride: panelFill }),
+  };
+
+  const specs = isReordered
+    ? [kickerSpec, titleSpec, taglineSpec, ruleSpec, dateBannerSpec, slogans, detailsSpec, factsSpec, ctaSpec]
+    : [dateBannerSpec, kickerSpec, titleSpec, taglineSpec, ruleSpec, slogans, detailsSpec, factsSpec, ctaSpec];
+
+  return collect(c, stack(c, c.box, specs));
+}
+
+/**
+ * 4. Ticket Archetype (Festival / Celebration / Event)
+ * Framed ticket with side notches, centered icon, title, details, divider line, info cards, center-aligned.
+ */
+export function ticketRecipe(area, brandKit, slots, options = {}, design = null) {
+  const c = contextOf(area, brandKit, slots, { ...options, align: 'center' }, design);
+  const tokens = c.tokens;
+  const isStubTop = c.options.variant === 1;
+  const isDarkEmphasis = c.options.variant === 2;
+
+  const ticketFill = isDarkEmphasis ? tokens.dark : tint(tokens.primary, 0.96);
+  const ticketBorder = tokens.accent;
+  const cardFill = isDarkEmphasis ? shade(tokens.dark, 0.2) : tint(tokens.primary, 0.92);
+  const cardStroke = tokens.accent;
+
+  const outerPad = 12;
+  const ticketRect = {
+    x: c.box.x + outerPad,
+    y: c.box.y + outerPad,
+    w: c.box.w - outerPad * 2,
+    h: c.box.h - outerPad * 2,
+  };
+  const innerPad = 24;
+  const innerBox = {
+    x: ticketRect.x + innerPad,
+    y: ticketRect.y + innerPad,
+    w: ticketRect.w - innerPad * 2,
+    h: ticketRect.h - innerPad * 2,
+  };
+
+  const frameItems = [
+    shapeItem(c, 'ticket-outer', ticketRect, {
+      fill: ticketFill,
+      stroke: ticketBorder,
+      strokeWidth: 3,
+      radius: 24,
+      z: 1,
+    }),
+  ];
+
+  const artworkSpec = {
+    key: 'artwork',
+    height: () => 70,
+    make: (ctx, rect) => [
+      iconItem(ctx, 'ticket-icon', {
+        x: rect.x + Math.round((rect.w - 70) / 2),
+        y: rect.y,
+        w: 70,
+        h: 70,
+      }, { name: ctx.icon || 'sparkles', color: tokens.accent, strokeWidth: 2, z: 8 }),
+    ],
+  };
+
+  const badgeSpec = {
+    key: 'badge',
+    when: (ctx) => Boolean(ctx.words.title_sub || ctx.words.kicker),
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'lead');
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.title_sub || ctx.words.kicker));
+    },
+    make: (ctx, rect) => [
+      blankItem(ctx, 'title_sub', rect, {
+        style: {
+          ...textStyle(ctx, 'lead'),
+          align: 'center',
+          color: tokens.accent,
+        },
+        z: 11,
+      }),
+    ],
+  };
+
+  const titleSpec = {
+    key: 'title',
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'heading');
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.headline));
+    },
+    make: (ctx, rect) => [
+      fieldItem(ctx, 'headline', rect, {
+        style: {
+          ...textStyle(ctx, 'heading'),
+          align: 'center',
+          color: isDarkEmphasis ? '#ffffff' : tokens.primary,
+        },
+        z: 11,
+      }),
+    ],
+  };
+
+  const taglineSpec = {
+    key: 'tagline',
+    when: (ctx) => Boolean(ctx.words.tagline && String(ctx.words.tagline).trim()),
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'regular');
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.tagline));
+    },
+    make: (ctx, rect) => [
+      fieldItem(ctx, 'tagline', rect, {
+        style: {
+          ...textStyle(ctx, 'regular'),
+          align: 'center',
+          color: tokens.text,
+        },
+        z: 11,
+      }),
+    ],
+  };
+
+  const slogans = slogansSpec(c, { align: 'center' });
+
+  const detailsSpec = {
+    key: 'details',
+    when: (ctx) => Array.isArray(ctx.words.details) && ctx.words.details.length > 0,
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'regular');
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.details));
+    },
+    make: (ctx, rect) => [
+      fieldItem(ctx, 'details', rect, {
+        style: {
+          ...textStyle(ctx, 'regular'),
+          align: 'center',
+          color: tokens.text,
+        },
+        z: 11,
+      }),
+    ],
+  };
+
+  const ruleSpec = {
+    key: 'rule',
+    thin: true,
+    height: () => 4,
+    make: (ctx, rect) => [
+      shapeItem(ctx, 'ticket-divider', { x: rect.x, y: rect.y, w: rect.w, h: 4 }, {
+        fill: tokens.accent,
+        stroke: tokens.accent,
+        strokeWidth: 3,
+        z: 3,
+      }),
+    ],
+  };
+
+  const factsSpec = {
+    key: 'facts',
+    height: (ctx, width) => factHeight(ctx, width),
+    make: (ctx, rect) => factBlock(ctx, rect, { plate: true, fillOverride: cardFill, strokeOverride: cardStroke, align: 'center' }),
+  };
+
+  const ctaSpec = {
+    key: 'cta',
+    height: (ctx, width) => ctaHeight(ctx, width),
+    make: (ctx, rect) => ctaBlock(ctx, rect, { centre: true, fillOverride: tokens.primary }),
+  };
+
+  const ordered = isStubTop
+    ? [factsSpec, ruleSpec, artworkSpec, badgeSpec, titleSpec, taglineSpec, slogans, detailsSpec, ctaSpec]
+    : [artworkSpec, badgeSpec, titleSpec, taglineSpec, ruleSpec, slogans, detailsSpec, factsSpec, ctaSpec];
+
+  const innerItems = stack(c, innerBox, ordered);
+  return collect(c, [...frameItems, ...innerItems]);
+}
+
+/**
+ * 5. Centered Award Archetype (Celebration / Achievement / Gala)
+ * Elegant double frame, circular medal badge, overline, title, rule, tagline, details, center-aligned.
+ */
+export function centeredAwardRecipe(area, brandKit, slots, options = {}, design = null) {
+  const c = contextOf(area, brandKit, slots, { ...options, align: 'center' }, design);
+  const tokens = c.tokens;
+  const isBadgeBelow = c.options.variant === 1;
+  const isDarkEmphasis = c.options.variant === 2;
+
+  const plateFill = isDarkEmphasis ? tokens.dark : tint(tokens.primary, 0.97);
+  const borderStroke = tokens.accent;
+  const cardFill = isDarkEmphasis ? shade(tokens.dark, 0.2) : tint(tokens.primary, 0.94);
+  const cardStroke = tokens.accent;
+
+  const outerPad = 10;
+  const outerFrame = {
+    x: c.box.x + outerPad,
+    y: c.box.y + outerPad,
+    w: c.box.w - outerPad * 2,
+    h: c.box.h - outerPad * 2,
+  };
+  const innerPad = 20;
+  const innerBox = {
+    x: outerFrame.x + innerPad,
+    y: outerFrame.y + innerPad,
+    w: outerFrame.w - innerPad * 2,
+    h: outerFrame.h - innerPad * 2,
+  };
+
+  const frames = [
+    shapeItem(c, 'award-frame-outer', outerFrame, {
+      fill: plateFill,
+      stroke: borderStroke,
+      strokeWidth: 3,
+      radius: 6,
+      z: 1,
+    }),
+    shapeItem(c, 'award-frame-inner', {
+      x: outerFrame.x + 12,
+      y: outerFrame.y + 12,
+      w: outerFrame.w - 24,
+      h: outerFrame.h - 24,
+    }, {
+      fill: '',
+      stroke: tint(borderStroke, 0.4),
+      strokeWidth: 1,
+      radius: 4,
+      z: 2,
+    }),
+  ];
+
+  const badgeSpec = {
+    key: 'artwork',
+    height: () => 100,
+    make: (ctx, rect) => {
+      const circleW = 90;
+      const circleRect = {
+        x: rect.x + Math.round((rect.w - circleW) / 2),
+        y: rect.y,
+        w: circleW,
+        h: circleW,
+      };
+      const circlePlate = shapeItem(ctx, 'award-badge-plate', circleRect, {
+        fill: isDarkEmphasis ? tokens.dark : tint(tokens.primary, 0.92),
+        stroke: borderStroke,
+        strokeWidth: 3,
+        radius: Math.round(circleW / 2),
+        z: 3,
+      });
+      const icon = iconItem(ctx, 'award-badge-icon', {
+        x: circleRect.x + 15,
+        y: circleRect.y + 15,
+        w: circleW - 30,
+        h: circleW - 30,
+      }, { name: ctx.icon || 'award', color: borderStroke, strokeWidth: 2, z: 8 });
+      return [circlePlate, icon];
+    },
+  };
+
+  const overlineSpec = {
+    key: 'badge',
+    when: (ctx) => Boolean(ctx.words.title_sub || ctx.words.kicker),
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'lead');
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.title_sub || ctx.words.kicker));
+    },
+    make: (ctx, rect) => [
+      blankItem(ctx, 'title_sub', rect, {
+        style: {
+          ...textStyle(ctx, 'lead'),
+          align: 'center',
+          color: borderStroke,
+        },
+        z: 11,
+      }),
+    ],
+  };
+
+  const titleSpec = {
+    key: 'title',
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'heading');
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.headline));
+    },
+    make: (ctx, rect) => [
+      fieldItem(ctx, 'headline', rect, {
+        style: {
+          ...textStyle(ctx, 'heading'),
+          align: 'center',
+          color: isDarkEmphasis ? '#ffffff' : tokens.primary,
+        },
+        z: 11,
+      }),
+    ],
+  };
+
+  const ruleSpec = {
+    key: 'rule',
+    thin: true,
+    height: () => 4,
+    make: (ctx, rect) => [
+      shapeItem(ctx, 'award-rule', {
+        x: rect.x + Math.round((rect.w - Math.min(rect.w, 360)) / 2),
+        y: rect.y,
+        w: Math.min(rect.w, 360),
+        h: 4,
+      }, {
+        fill: borderStroke,
+        stroke: borderStroke,
+        strokeWidth: 2,
+        z: 3,
+      }),
+    ],
+  };
+
+  const taglineSpec = {
+    key: 'tagline',
+    when: (ctx) => Boolean(ctx.words.tagline && String(ctx.words.tagline).trim()),
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'regular');
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.tagline));
+    },
+    make: (ctx, rect) => [
+      fieldItem(ctx, 'tagline', rect, {
+        style: {
+          ...textStyle(ctx, 'regular'),
+          align: 'center',
+          color: tokens.text,
+        },
+        z: 11,
+      }),
+    ],
+  };
+
+  const slogans = slogansSpec(c, { align: 'center' });
+
+  const detailsSpec = {
+    key: 'details',
+    when: (ctx) => Array.isArray(ctx.words.details) && ctx.words.details.length > 0,
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'regular');
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.details));
+    },
+    make: (ctx, rect) => [
+      fieldItem(ctx, 'details', rect, {
+        style: {
+          ...textStyle(ctx, 'regular'),
+          align: 'center',
+          color: tokens.text,
+        },
+        z: 11,
+      }),
+    ],
+  };
+
+  const factsSpec = {
+    key: 'facts',
+    height: (ctx, width) => factHeight(ctx, width),
+    make: (ctx, rect) => factBlock(ctx, rect, { fillOverride: cardFill, strokeOverride: cardStroke, align: 'center' }),
+  };
+
+  const ctaSpec = {
+    key: 'cta',
+    height: (ctx, width) => ctaHeight(ctx, width),
+    make: (ctx, rect) => ctaBlock(ctx, rect, { centre: true, fillOverride: tokens.primary }),
+  };
+
+  const specs = isBadgeBelow
+    ? [overlineSpec, titleSpec, badgeSpec, ruleSpec, taglineSpec, slogans, detailsSpec, factsSpec, ctaSpec]
+    : [badgeSpec, overlineSpec, titleSpec, ruleSpec, taglineSpec, slogans, detailsSpec, factsSpec, ctaSpec];
+
+  const innerItems = stack(c, innerBox, specs);
+  return collect(c, [...frames, ...innerItems]);
+}
+
+/**
+ * 6. Agenda Archetype (Education / Workshop / Corporate)
+ * Kicker, headline, tagline, divider rule, schedule plate with details, 3 equal info cards, left-aligned.
+ */
+export function agendaRecipe(area, brandKit, slots, options = {}, design = null) {
+  const c = contextOf(area, brandKit, slots, { ...options, align: 'left' }, design);
+  const tokens = c.tokens;
+  const isReordered = c.options.variant === 1;
+  const isDarkEmphasis = c.options.variant === 2;
+  const isTitleScale = c.options.variant === 3;
+
+  const cardFill = isDarkEmphasis ? tokens.dark : tint(tokens.primary, 0.94);
+  const cardStroke = isDarkEmphasis ? tokens.accent : tint(tokens.primary, 0.72);
+  const headlineSize = isTitleScale ? 120 : 100;
+
+  const kickerSpec = {
+    key: 'kicker',
+    when: (ctx) => Boolean(ctx.words.title_sub || ctx.words.kicker),
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'lead');
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.title_sub || ctx.words.kicker));
+    },
+    make: (ctx, rect) => [
+      blankItem(ctx, 'title_sub', rect, {
+        style: {
+          ...textStyle(ctx, 'lead'),
+          align: 'left',
+          color: tokens.primary,
+        },
+        z: 11,
+      }),
+    ],
+  };
+
+  const titleSpec = {
+    key: 'title',
+    height: (ctx, width) => {
+      const face = ROLE_LOOK.heading(ctx);
+      const fitSize = fitWordSize(
+        ctx.words.headline,
+        width,
+        fitTextSize({ text: ctx.words.headline, width, size: headlineSize, min: 48, face }),
+        face,
+        MIN_RECIPE_FONT
+      );
+      const style = { ...textStyle(ctx, 'heading'), size: fitSize };
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.headline));
+    },
+    make: (ctx, rect) => {
+      const face = ROLE_LOOK.heading(ctx);
+      const fitSize = fitWordSize(
+        ctx.words.headline,
+        rect.w,
+        fitTextSize({ text: ctx.words.headline, width: rect.w, size: headlineSize, min: 48, face }),
+        face,
+        MIN_RECIPE_FONT
+      );
+      return [
+        fieldItem(ctx, 'headline', rect, {
+          style: {
+            ...textStyle(ctx, 'heading'),
+            fontFamily: tokens.headingFont,
+            size: fitSize,
+            align: 'left',
+            color: tokens.primary,
+          },
+          z: 11,
+        }),
+      ];
+    },
+  };
+
+  const taglineSpec = {
+    key: 'tagline',
+    when: (ctx) => Boolean(ctx.words.tagline && String(ctx.words.tagline).trim()),
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'regular');
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.tagline));
+    },
+    make: (ctx, rect) => [
+      fieldItem(ctx, 'tagline', rect, {
+        style: {
+          ...textStyle(ctx, 'regular'),
+          align: 'left',
+          color: tokens.text,
+        },
+        z: 11,
+      }),
+    ],
+  };
+
+  const ruleSpec = {
+    key: 'rule',
+    thin: true,
+    height: () => 4,
+    make: (ctx, rect) => [
+      shapeItem(ctx, 'agenda-rule', { x: rect.x, y: rect.y, w: rect.w, h: 4 }, {
+        fill: tokens.accent,
+        stroke: tokens.accent,
+        strokeWidth: 2,
+        z: 3,
+      }),
+    ],
+  };
+
+  const slogans = slogansSpec(c, { align: 'left' });
+
+  const scheduleSpec = {
+    key: 'schedule',
+    when: (ctx) => Array.isArray(ctx.words.details) && ctx.words.details.length > 0,
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'regular');
+      const textH = estimatedTextHeight({ w: width - 40, style }, ctx.words.details);
+      return Math.max(160, textH + 80);
+    },
+    make: (ctx, rect) => {
+      const plate = shapeItem(ctx, 'agenda-sched-plate', rect, {
+        fill: cardFill,
+        stroke: cardStroke,
+        strokeWidth: 1,
+        radius: 16,
+        z: 2,
+      });
+      const schedTitle = textItem(ctx, 'agenda-sched-title', 'SCHEDULE & AGENDA', {
+        x: rect.x + 20,
+        y: rect.y + 16,
+        w: rect.w - 40,
+        h: 28,
+      }, {
+        style: {
+          ...textStyle(ctx, 'lead'),
+          align: 'left',
+          color: tokens.primary,
+        },
+        z: 11,
+      });
+      const details = fieldItem(ctx, 'details', {
+        x: rect.x + 20,
+        y: rect.y + 54,
+        w: rect.w - 40,
+        h: rect.h - 70,
+      }, {
+        style: {
+          ...textStyle(ctx, 'regular'),
+          align: 'left',
+          color: tokens.text,
+        },
+        z: 11,
+      });
+      return [plate, schedTitle, details];
+    },
+  };
+
+  const factsSpec = {
+    key: 'facts',
+    height: () => factHeight(c, c.box.w),
+    make: (ctx, rect) => factBlock(ctx, rect, { fillOverride: cardFill, strokeOverride: cardStroke, align: 'left' }),
+  };
+
+  const ctaSpec = {
+    key: 'cta',
+    height: (ctx, width) => ctaHeight(ctx, width),
+    make: (ctx, rect) => ctaBlock(ctx, rect, { centre: false, fillOverride: tokens.primary }),
+  };
+
+  const ordered = isReordered
+    ? [scheduleSpec, factsSpec, kickerSpec, titleSpec, taglineSpec, ruleSpec, slogans, ctaSpec]
+    : [kickerSpec, titleSpec, taglineSpec, ruleSpec, slogans, scheduleSpec, factsSpec, ctaSpec];
+
+  return collect(c, stack(c, c.box, ordered));
+}
+
+/**
+ * 7. Notice Archetype (Official Notice / Announcement)
+ * Double frame border, official notice header banner, headline, tagline, details, center-aligned.
+ */
+export function noticeRecipe(area, brandKit, slots, options = {}, design = null) {
+  const c = contextOf(area, brandKit, slots, { ...options, align: 'center' }, design);
+  const tokens = c.tokens;
+  const isFrameless = c.options.variant === 1;
+  const isDarkEmphasis = c.options.variant === 2;
+  const isTitleScale = c.options.variant === 3;
+
+  const bannerFill = isDarkEmphasis ? tokens.dark : tokens.primary;
+  const bannerText = pickReadableColor(['#ffffff', '#000000', tokens.accent], bannerFill, 4.5);
+  const cardFill = isDarkEmphasis ? shade(tokens.dark, 0.2) : tint(tokens.primary, 0.94);
+  const cardStroke = isDarkEmphasis ? tokens.accent : tint(tokens.primary, 0.72);
+  const headlineSize = isTitleScale ? 120 : 100;
+
+  const outerPad = isFrameless ? 0 : 10;
+  const outerFrame = {
+    x: c.box.x + outerPad,
+    y: c.box.y + outerPad,
+    w: c.box.w - outerPad * 2,
+    h: c.box.h - outerPad * 2,
+  };
+  const innerPad = isFrameless ? 0 : 20;
+  const innerBox = {
+    x: outerFrame.x + innerPad,
+    y: outerFrame.y + innerPad,
+    w: outerFrame.w - innerPad * 2,
+    h: outerFrame.h - innerPad * 2,
+  };
+
+  const frames = isFrameless
+    ? []
+    : [
+        shapeItem(c, 'notice-border-outer', outerFrame, {
+          fill: '',
+          stroke: tokens.primary,
+          strokeWidth: 4,
+          radius: 8,
+          z: 1,
+        }),
+        shapeItem(c, 'notice-border-inner', {
+          x: outerFrame.x + 12,
+          y: outerFrame.y + 12,
+          w: outerFrame.w - 24,
+          h: outerFrame.h - 24,
+        }, {
+          fill: '',
+          stroke: tint(tokens.primary, 0.5),
+          strokeWidth: 1,
+          radius: 4,
+          z: 2,
+        }),
+      ];
+
+  const bandSpec = {
+    key: 'band',
+    height: () => 54,
+    make: (ctx, rect) => {
+      const plate = shapeItem(ctx, 'notice-band-plate', rect, {
+        fill: bannerFill,
+        radius: 6,
+        z: 3,
+      });
+      const text = textItem(ctx, 'notice-band-text', 'OFFICIAL ADMINISTRATIVE NOTICE', {
+        x: rect.x + 16,
+        y: rect.y + 12,
+        w: rect.w - 32,
+        h: 30,
+      }, {
+        style: {
+          ...textStyle(ctx, 'lead'),
+          align: 'center',
+          color: bannerText,
+        },
+        z: 11,
+      });
+      return [plate, text];
+    },
+  };
+
+  const kickerSpec = {
+    key: 'kicker',
+    when: (ctx) => Boolean(ctx.words.title_sub || ctx.words.kicker),
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'lead');
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.title_sub || ctx.words.kicker));
+    },
+    make: (ctx, rect) => [
+      blankItem(ctx, 'title_sub', rect, {
+        style: {
+          ...textStyle(ctx, 'lead'),
+          align: 'center',
+          color: tokens.accent,
+        },
+        z: 11,
+      }),
+    ],
+  };
+
+  const titleSpec = {
+    key: 'title',
+    height: (ctx, width) => {
+      const face = ROLE_LOOK.heading(ctx);
+      const fitSize = fitWordSize(
+        ctx.words.headline,
+        width,
+        fitTextSize({ text: ctx.words.headline, width, size: headlineSize, min: 48, face }),
+        face,
+        MIN_RECIPE_FONT
+      );
+      const style = { ...textStyle(ctx, 'heading'), size: fitSize };
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.headline));
+    },
+    make: (ctx, rect) => {
+      const face = ROLE_LOOK.heading(ctx);
+      const fitSize = fitWordSize(
+        ctx.words.headline,
+        rect.w,
+        fitTextSize({ text: ctx.words.headline, width: rect.w, size: headlineSize, min: 48, face }),
+        face,
+        MIN_RECIPE_FONT
+      );
+      return [
+        fieldItem(ctx, 'headline', rect, {
+          style: {
+            ...textStyle(ctx, 'heading'),
+            fontFamily: tokens.headingFont,
+            size: fitSize,
+            align: 'center',
+            color: tokens.primary,
+          },
+          z: 11,
+        }),
+      ];
+    },
+  };
+
+  const taglineSpec = {
+    key: 'tagline',
+    when: (ctx) => Boolean(ctx.words.tagline && String(ctx.words.tagline).trim()),
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'regular');
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.tagline));
+    },
+    make: (ctx, rect) => [
+      fieldItem(ctx, 'tagline', rect, {
+        style: {
+          ...textStyle(ctx, 'regular'),
+          align: 'center',
+          color: tokens.text,
+        },
+        z: 11,
+      }),
+    ],
+  };
+
+  const ruleSpec = {
+    key: 'rule',
+    thin: true,
+    height: () => 4,
+    make: (ctx, rect) => [
+      shapeItem(ctx, 'notice-rule', { x: rect.x, y: rect.y, w: rect.w, h: 4 }, {
+        fill: tokens.accent,
+        stroke: tokens.accent,
+        strokeWidth: 2,
+        z: 3,
+      }),
+    ],
+  };
+
+  const slogans = {
+    key: 'slogans',
+    when: (ctx) => {
+      const s1 = ctx.words.slogan_1 && String(ctx.words.slogan_1).trim() && !ctx.dropped.has('slogan_1');
+      const s2 = ctx.words.slogan_2 && String(ctx.words.slogan_2).trim() && !ctx.dropped.has('slogan_2');
+      return Boolean(s1 || s2);
+    },
+    height: (ctx, width) => {
+      let h = 0;
+      const s1 = ctx.words.slogan_1 && String(ctx.words.slogan_1).trim() && !ctx.dropped.has('slogan_1');
+      const s2 = ctx.words.slogan_2 && String(ctx.words.slogan_2).trim() && !ctx.dropped.has('slogan_2');
+      if (s1) h += Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style: textStyle(ctx, 'lead') }, ctx.words.slogan_1));
+      if (s2) {
+        if (h > 0) h += 8;
+        h += Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style: textStyle(ctx, 'regular') }, ctx.words.slogan_2));
+      }
+      return h;
+    },
+    make: (ctx, rect) => {
+      const items = [];
+      let cursor = rect.y;
+      const s1 = ctx.words.slogan_1 && String(ctx.words.slogan_1).trim() && !ctx.dropped.has('slogan_1');
+      const s2 = ctx.words.slogan_2 && String(ctx.words.slogan_2).trim() && !ctx.dropped.has('slogan_2');
+      if (s1) {
+        const style1 = { ...textStyle(ctx, 'lead'), align: 'center' };
+        const h1 = Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: rect.w, style: style1 }, s1));
+        items.push(blankItem(ctx, 'slogan_1', { x: rect.x, y: cursor, w: rect.w, h: h1 }, { style: style1, z: 11 }));
+        cursor += h1 + 8;
+      }
+      if (s2) {
+        const style2 = { ...textStyle(ctx, 'regular'), align: 'center' };
+        const h2 = Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: rect.w, style: style2 }, s2));
+        items.push(blankItem(ctx, 'slogan_2', { x: rect.x, y: cursor, w: rect.w, h: h2 }, { style: style2, z: 11 }));
+      }
+      return items;
+    },
+  };
+
+  const detailsSpec = {
+    key: 'details',
+    when: (ctx) => Array.isArray(ctx.words.details) && ctx.words.details.length > 0,
+    height: (ctx, width) => {
+      const style = textStyle(ctx, 'regular');
+      return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.details));
+    },
+    make: (ctx, rect) => [
+      fieldItem(ctx, 'details', rect, {
+        style: {
+          ...textStyle(ctx, 'regular'),
+          align: 'center',
+          color: tokens.text,
+        },
+        z: 11,
+      }),
+    ],
+  };
+
+  const factsSpec = {
+    key: 'facts',
+    height: (ctx, width) => {
+      const keys = ['date', 'time', 'venue'];
+      const gap = 16;
+      const padX = 8;
+      const cellWidth = Math.max(MIN_TEXT_WIDTH, Math.floor((width - (keys.length - 1) * gap) / keys.length));
+      const textWidth = cellWidth - padX * 2;
+      const face = ROLE_LOOK.strong(ctx);
+      let factSize = ctx.sizes.strong;
+      for (const k of keys) {
+        const val = String(ctx.words[k] || '').trim();
+        if (!val) continue;
+        factSize = fitWordSize(val, textWidth, factSize, face, 20);
+      }
+      let maxTextH = 0;
+      for (const k of keys) {
+        const val = String(ctx.words[k] || '').trim();
+        if (!val) continue;
+        const style = { ...textStyle(ctx, 'strong'), size: factSize };
+        const h = estimatedTextHeight({ w: textWidth, style, kind: 'field', field: k }, val);
+        if (h > maxTextH) maxTextH = h;
+      }
+      return Math.max(110, maxTextH + 24);
+    },
+    make: (ctx, rect) => {
+      const keys = ['date', 'time', 'venue'];
+      const gap = 16;
+      const cellWidth = Math.floor((rect.w - (keys.length - 1) * gap) / keys.length);
+      const padX = 8;
+      const padY = 8;
+      const textWidth = cellWidth - padX * 2;
+      const textHeight = rect.h - padY * 2;
+      const face = ROLE_LOOK.strong(ctx);
+
+      let factSize = ctx.sizes.strong;
+      for (const k of keys) {
+        const val = String(ctx.words[k] || '').trim();
+        if (!val) continue;
+        factSize = fitWordSize(val, textWidth, factSize, face, 20);
+        while (factSize > 20) {
+          const need = estimatedTextHeight({ w: textWidth, kind: 'field', field: k, style: { size: factSize, ...face } }, val);
+          if (need <= textHeight) break;
+          factSize -= 1;
+        }
+      }
+
+      const items = [];
+      const primary = tokens.primary || ctx.brand.primary;
+      const dark = tokens.dark || ctx.brand.dark || '#0F172A';
+      const textColor = pickReadableColor(
+        [primary ? shade(primary, 0.45) : '#0f172a', dark, ctx.brand.ink, ctx.brand.body, '#111827', '#000000', '#ffffff'],
+        cardFill,
+        4.5
+      );
+      const style = {
+        ...textStyle(ctx, 'strong', { align: 'center', color: textColor }),
+        size: factSize,
+      };
+
+      keys.forEach((key, index) => {
+        const cardX = rect.x + index * (cellWidth + gap);
+        const cardRect = { x: cardX, y: rect.y, w: cellWidth, h: rect.h };
+
+        items.push(
+          shapeItem(ctx, `card-${key}`, cardRect, {
+            fill: cardFill,
+            stroke: cardStroke,
+            strokeWidth: 1,
+            radius: 12,
+            z: 2,
+          })
+        );
+
+        const textRect = {
+          x: cardX + padX,
+          y: rect.y + padY,
+          w: textWidth,
+          h: textHeight,
+        };
+
+        items.push(fieldItem(ctx, key, textRect, { style, z: 11 }));
+      });
+
+      return items;
+    },
+  };
+
+  const ctaSpec = {
+    key: 'cta',
+    height: (ctx, width) => {
+      const hasLine = Boolean(ctx.words.cta_line && String(ctx.words.cta_line).trim() && !isDropped(ctx, 'cta_line'));
+      const lineH = hasLine
+        ? Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style: textStyle(ctx, 'lead') }, ctx.words.cta_line)) + 16
+        : 0;
+      const btnStyle = textStyle(ctx, 'button');
+      const btnWords = buttonWords(ctx);
+      const measured = estimatedTextHeight({ w: width - 32, style: btnStyle }, btnWords);
+      const btnH = Math.max(54, measured + 20);
+      return lineH + btnH;
+    },
+    make: (ctx, rect) => {
+      const items = [];
+      let cursor = rect.y;
+      const hasLine = Boolean(ctx.words.cta_line && String(ctx.words.cta_line).trim() && !isDropped(ctx, 'cta_line'));
+      if (hasLine) {
+        const lineStyle = textStyle(ctx, 'lead');
+        const lineH = Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: rect.w, style: lineStyle }, ctx.words.cta_line));
+        items.push(
+          blankItem(ctx, 'cta_line', { x: rect.x, y: cursor, w: rect.w, h: lineH }, {
+            style: { ...lineStyle, align: 'center' },
+            z: 11,
+          })
+        );
+        cursor += lineH + 16;
+      }
+      const btnStyle = textStyle(ctx, 'button');
+      const btnWords = buttonWords(ctx);
+      const measured = estimatedTextHeight({ w: rect.w - 32, style: btnStyle }, btnWords);
+      const btnH = Math.max(54, measured + 20);
+      const barBox = { x: rect.x, y: cursor, w: rect.w, h: btnH };
+      items.push(
+        plateItem(ctx, 'button-plate', barBox, {
+          fill: bannerFill,
+          radius: 12,
+          z: 5,
+        })
+      );
+      items.push(
+        blankItem(ctx, 'cta_button', barBox, {
+          style: {
+            ...btnStyle,
+            align: 'center',
+            color: pickReadableColor(['#ffffff', '#000000', tokens.dark], bannerFill, 4.5),
+          },
+          z: 12,
+        })
+      );
+      return items;
+    },
+  };
+
+  const specs = [bandSpec, kickerSpec, titleSpec, taglineSpec, ruleSpec, slogans, detailsSpec, factsSpec, ctaSpec];
+
+  const innerItems = stack(c, innerBox, specs);
+  return collect(c, [...frames, ...innerItems]);
+}
+
+/**
+ * 8. Split Color Archetype (Awareness / Health / Sports / Community)
+ * Split two-column layout: colored left panel, light right panel with details & CTA, left-aligned.
+ */
+export function splitColorRecipe(area, brandKit, slots, options = {}, design = null) {
+  const c = contextOf(area, brandKit, slots, { ...options, align: 'left' }, design);
+  const tokens = c.tokens;
+  const isMirrored = c.options.variant === 1;
+  const isDarkEmphasis = c.options.variant === 2;
+  const isTitleScale = c.options.variant === 3;
+
+  const leftFill = isDarkEmphasis ? tokens.dark : tokens.primary;
+  const leftText = pickReadableColor(['#ffffff', '#000000', tokens.accent], leftFill, 4.5);
+  const leftMuted = pickReadableColor([tint(leftText, 0.25), '#ffffff', '#000000'], leftFill, 4.5);
+
+  const rightFill = isDarkEmphasis ? shade(tokens.dark, 0.25) : tint(tokens.primary, 0.96);
+  const rightBorder = tokens.accent;
+  const rightText = pickReadableColor([tokens.text, tokens.dark, '#000000', '#ffffff'], rightFill, 4.5);
+
+  const colGap = 20;
+  const leftW = Math.floor((c.box.w - colGap) * 0.48);
+  const rightW = c.box.w - leftW - colGap;
+
+  const leftX = isMirrored ? c.box.x + rightW + colGap : c.box.x;
+  const rightX = isMirrored ? c.box.x : c.box.x + leftW + colGap;
+
+  const leftBox = { x: leftX, y: c.box.y, w: leftW, h: c.box.h };
+  const rightBox = { x: rightX, y: c.box.y, w: rightW, h: c.box.h };
+
+  const leftPlate = shapeItem(c, 'split-left-plate', leftBox, {
+    fill: leftFill,
+    stroke: isDarkEmphasis ? tokens.accent : '',
+    strokeWidth: isDarkEmphasis ? 1 : 0,
+    radius: 20,
+    z: 1,
+  });
+
+  const rightPlate = shapeItem(c, 'split-right-plate', rightBox, {
+    fill: rightFill,
+    stroke: rightBorder,
+    strokeWidth: 1,
+    radius: 20,
+    z: 1,
+  });
+
+  const leftPad = 24;
+  const leftInner = {
+    x: leftBox.x + leftPad,
+    y: leftBox.y + leftPad,
+    w: leftBox.w - leftPad * 2,
+    h: leftBox.h - leftPad * 2,
+  };
+
+  const rightPad = 24;
+  const rightInner = {
+    x: rightBox.x + rightPad,
+    y: rightBox.y + rightPad,
+    w: rightBox.w - rightPad * 2,
+    h: rightBox.h - rightPad * 2,
+  };
+
+  const headlineSize = isTitleScale ? 88 : 96;
+
+  const leftSpecs = [
+    {
+      key: 'artwork',
+      height: () => 60,
+      make: (ctx, rect) => [
+        iconItem(ctx, 'split-left-icon', {
+          x: rect.x,
+          y: rect.y,
+          w: 60,
+          h: 60,
+        }, { name: ctx.icon || 'leaf', color: tokens.accent, strokeWidth: 2, z: 8 }),
+      ],
+    },
+    {
+      key: 'badge',
+      when: (ctx) => Boolean(ctx.words.title_sub || ctx.words.kicker),
+      height: (ctx, width) => {
+        const style = textStyle(ctx, 'lead');
+        return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.title_sub || ctx.words.kicker));
+      },
+      make: (ctx, rect) => [
+        blankItem(ctx, 'title_sub', rect, {
+          style: {
+            ...textStyle(ctx, 'lead'),
+            align: 'left',
+            color: leftMuted,
+          },
+          z: 11,
+        }),
+      ],
+    },
+    {
+      key: 'title',
+      height: (ctx, width) => {
+        const face = ROLE_LOOK.heading(ctx);
+        const baseSize = isTitleScale ? 88 : 96;
+        const targetSize = Math.min(ctx.sizes.heading, baseSize);
+        const size = fitWordSize(ctx.words.headline, width, targetSize, face, 20);
+        const style = { ...textStyle(ctx, 'heading'), size };
+        return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.headline));
+      },
+      make: (ctx, rect) => {
+        const face = ROLE_LOOK.heading(ctx);
+        const baseSize = isTitleScale ? 88 : 96;
+        const targetSize = Math.min(ctx.sizes.heading, baseSize);
+        const size = fitWordSize(ctx.words.headline, rect.w, targetSize, face, 20);
+        const style = {
+          ...textStyle(ctx, 'heading'),
+          align: 'left',
+          color: leftText,
+          size,
+        };
+        return [
+          fieldItem(ctx, 'headline', rect, {
+            style,
+            z: 11,
+          }),
+        ];
+      },
+    },
+    {
+      key: 'tagline',
+      when: (ctx) => Boolean(ctx.words.tagline && String(ctx.words.tagline).trim()),
+      height: (ctx, width) => {
+        const style = textStyle(ctx, 'regular');
+        return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.tagline));
+      },
+      make: (ctx, rect) => [
+        fieldItem(ctx, 'tagline', rect, {
+          style: {
+            ...textStyle(ctx, 'regular'),
+            align: 'left',
+            color: leftMuted,
+          },
+          z: 11,
+        }),
+      ],
+    },
+    {
+      key: 'facts',
+      height: (ctx, width) => factRowsHeight(ctx, width),
+      make: (ctx, rect) => factRowsBlock(ctx, rect, { fillOverride: shade(leftFill, 0.2), strokeOverride: tokens.accent }),
+    },
+  ];
+
+  const rightSpecs = [
+    slogansSpec(c, { align: 'left' }),
+    {
+      key: 'details',
+      when: (ctx) => Array.isArray(ctx.words.details) && ctx.words.details.length > 0,
+      height: (ctx, width) => {
+        const style = textStyle(ctx, 'regular');
+        return Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style }, ctx.words.details));
+      },
+      make: (ctx, rect) => [
+        fieldItem(ctx, 'details', rect, {
+          style: {
+            ...textStyle(ctx, 'regular'),
+            align: 'left',
+            color: rightText,
+          },
+          z: 11,
+        }),
+      ],
+    },
+    {
+      key: 'cta',
+      height: (ctx, width) => ctaHeight(ctx, width),
+      make: (ctx, rect) => ctaBlock(ctx, rect, { centre: false, fillOverride: leftFill }),
+    },
+  ];
+
+  let chosenPlan = c;
+  let leftLaid = null;
+  let rightLaid = null;
+
   for (let dropCount = 0; dropCount <= DROP_ORDER.length; dropCount += 1) {
     const dropped = new Set(DROP_ORDER.slice(0, dropCount));
     for (const scale of SCALES) {
       const plan = planOf(c, scale, dropped);
-      const laid = layoutOf(plan, box, specs);
-      const keepsShape = scale <= 1 || laid.live.every((spec) => holdsColumns(plan, spec, box.w));
-      if ((laid.fits && keepsShape) || (dropCount === DROP_ORDER.length && scale === SCALES[SCALES.length - 1])) {
-        const items = [];
-        let cursor = box.y;
-        laid.live.forEach((spec, index) => {
-          const rect = { x: box.x, y: cursor, w: box.w, h: laid.heights[index] };
-          const made = spec.make(plan, rect);
-          items.push(...(Array.isArray(made) ? made : [made]));
-          cursor += laid.heights[index] + (laid.gaps[index] || 0);
-        });
-        return items;
+      const lLaid = layoutOf(plan, leftInner, leftSpecs);
+      const rLaid = layoutOf(plan, rightInner, rightSpecs);
+      if ((lLaid.fits && rLaid.fits) || (dropCount === DROP_ORDER.length && scale === SCALES[SCALES.length - 1])) {
+        chosenPlan = plan;
+        leftLaid = lLaid;
+        rightLaid = rLaid;
+        break;
       }
     }
+    if (leftLaid && rightLaid) break;
   }
-  return [];
+
+  const buildItems = (plan, box, laid) => {
+    const items = [];
+    let cursor = box.y + Math.max(0, Math.round(laid.spare / 2));
+    laid.live.forEach((spec, index) => {
+      const rect = { x: box.x, y: cursor, w: box.w, h: laid.heights[index] };
+      const made = spec.make(plan, rect);
+      items.push(...(Array.isArray(made) ? made : [made]));
+      cursor += laid.heights[index] + (laid.gaps[index] || 0);
+    });
+    return items;
+  };
+
+  const leftItems = buildItems(chosenPlan, leftInner, leftLaid);
+  const rightItems = buildItems(chosenPlan, rightInner, rightLaid);
+
+  return collect(c, [leftPlate, rightPlate, ...leftItems, ...rightItems]);
 }
 
 /* ------------------------------------------------------------------------- *
- * The recipes
+ * Backward-compatible legacy recipe aliases
  * ------------------------------------------------------------------------- */
 
-/**
- * The poster the brief asks for: a two-tier title, one round mark with a large picture on one
- * side and one slogan block beside it, a pill of facts, and a call to action with a button.
- *
- * The line under the title and the list of extra lines are not drawn here at all - other designs
- * carry them.
- */
-function heroRecipe(area, brandKit, slots, options = {}, design = null) {
-  const c = contextOf(area, brandKit, slots, options, design);
-  const stacked = c.options.variant >= 2;
-  const artLeft = c.options.variant % 2 === 1;
-
-  return collect(
-    c,
-    stack(c, c.box, [
-      {
-        key: 'title',
-        height: (ctx, width) => titleHeight(ctx, width, { includeTagline: false }),
-        make: (ctx, rect) => titleBlock(ctx, rect, { includeTagline: false }),
-      },
-      {
-        key: 'artwork',
-        flex: true,
-        /* The middle is as tall as its own words: it may grow with the space left over, but it is
-           never cut, because cutting it would push the slogan lines into the pill below. */
-        min: (ctx, width) => heroMiddleHeight(ctx, width, { stacked }),
-        height: (ctx, width) => heroMiddleHeight(ctx, width, { stacked }),
-        /* The round mark is a circle, so past its own width the block would only be empty. */
-        ceiling: (ctx) => (ctx.options.variant >= 2 ? 0 : heroArtWidth(ctx, ctx.box.w)),
-        height: (ctx, width) => heroMiddleHeight(ctx, width, { stacked }),
-        make: (ctx, rect) => heroMiddle(ctx, rect, { stacked, artLeft }),
-      },
-      {
-        key: 'pill',
-        columns: { plate: true },
-        when: (ctx) => ctx.facts.length > 0,
-        height: (ctx, width) => factHeight(ctx, width, { plate: true }),
-        make: (ctx, rect) => factBlock(ctx, rect, { plate: true }),
-      },
-      {
-        key: 'cta',
-        height: (ctx, width) => ctaHeight(ctx, width),
-        make: (ctx, rect) => ctaBlock(ctx, rect, { centre: true }),
-      },
-    ])
-  );
+export function heroRecipe(area, brandKit, slots, options = {}, design = null) {
+  return ticketRecipe(area, brandKit, slots, options, design);
 }
 
-/**
- * How the middle of a hero is split. Worked out from the width alone, so the height the block is
- * given and the boxes the words are placed in can never disagree.
- */
-const HERO_ART_SHARE = 0.36;
-
-function heroWordsWidth(c, width, { stacked }) {
-  if (stacked) return Math.max(MIN_TEXT_WIDTH, width);
-  const art = heroArtWidth(c, width);
-  return Math.max(MIN_TEXT_WIDTH, width - art - ruleThicknessOf(c.area.w) - heroSplitPad(c) * 2);
+export function photoTopRecipe(area, brandKit, slots, options = {}, design = null) {
+  return photoHeroRecipe(area, brandKit, slots, options, design);
 }
 
-function heroArtWidth(c, width) {
-  return Math.max(ELEMENT_LIMITS.minWidth, Math.round(width * HERO_ART_SHARE));
+export function splitPhotoRecipe(area, brandKit, slots, options = {}, design = null) {
+  return splitColorRecipe(area, brandKit, slots, options, design);
 }
 
-function heroSplitPad(c) {
-  return Math.max(8, Math.round(c.unit * 0.9));
+export function typographicRecipe(area, brandKit, slots, options = {}, design = null) {
+  return boldTypeRecipe(area, brandKit, slots, options, design);
 }
 
-/** The round mark is never smaller than this, and never wider than a fifth of the poster. */
-function heroMiddleMin(c) {
-  return Math.max(60, Math.min(Math.round(c.box.h * 0.34), Math.round(c.box.w * 0.2)));
-}
-
-/** When the mark sits above the slogan instead of beside it, that is the square it takes. */
-function heroStackedSide(c) {
-  return Math.max(60, Math.round(heroMiddleMin(c) * 0.7));
-}
-
-function heroWordsEntries(c) {
-  const slogans = sloganEntries(c).filter((e) => hasEntryText(c, e));
-  if (slogans.length > 0) return slogans;
-  if (c.hasWords('details')) {
-    return [fieldLine('details', 'details', 'regular')];
-  }
-  return [];
-}
-
-function heroMiddleHeight(c, width, { stacked }) {
-  const words = heroWordsEntries(c);
-  if (words.length === 0) {
-    return heroMiddleMin(c);
-  }
-  const wordsH = groupHeight(c, words, heroWordsWidth(c, width, { stacked }));
-  return Math.max(heroMiddleMin(c), wordsH + (stacked ? heroStackedSide(c) + c.inner : 0));
-}
-
-/** The middle of a hero: round mark and text, or full-width centered mark when text is empty. */
-function heroMiddle(c, rect, { stacked, artLeft }) {
-  const words = heroWordsEntries(c);
-  if (words.length === 0) {
-    return artBlock(c, rect, { centre: true });
-  }
-
-  if (stacked) {
-    const side = Math.min(rect.w, heroStackedSide(c));
-    const art = { x: rect.x + Math.round((rect.w - side) / 2), y: rect.y, w: side, h: side };
-    const wordsRect = {
-      x: rect.x,
-      y: art.y + side + c.inner,
-      w: rect.w,
-      h: Math.max(ELEMENT_LIMITS.minHeight, rect.y + rect.h - (art.y + side + c.inner)),
-    };
-    return [...artBlock(c, art, { centre: false }), ...groupLines(c, words, wordsRect, { centre: true })];
-  }
-
-  const rule = ruleThicknessOf(c.area.w);
-  const pad = heroSplitPad(c);
-  const artW = heroArtWidth(c, rect.w);
-  const wordsW = heroWordsWidth(c, rect.w, { stacked });
-  const art = {
-    x: artLeft ? rect.x : rect.x + rect.w - artW,
-    y: rect.y,
-    w: artW,
-    h: rect.h,
-  };
-  const wordsRect = {
-    x: artLeft ? rect.x + artW + rule + pad * 2 : rect.x,
-    y: rect.y,
-    w: wordsW,
-    h: rect.h,
-  };
-  const ruleX = artLeft ? rect.x + artW + pad : rect.x + wordsW + pad;
-  const divider = Math.round(rect.h * PILL_DIVIDER_RATIO);
-  const square = squareIn(art);
-  const items = artBlock(c, square, { centre: false });
-  items.push(ruleItem(c, 'middle-rule', { x: ruleX, y: rect.y + Math.round((rect.h - divider) / 2), w: rule, h: divider }));
-  items.push(...groupLines(c, words, wordsRect, { centre: true }));
-  return items;
-}
-
-/** The picture itself, as one block of the design. */
-function photoSpec(c, { radius = 24 } = {}) {
-  return {
-    key: 'photo',
-    flex: true,
-    min: () => Math.max(120, Math.round(c.box.h * 0.26)),
-    height: (ctx, width) => Math.max(120, Math.round(Math.min(ctx.box.h * 0.34, width * 0.6))),
-    make: (ctx, rect) => [
-      fieldItem(ctx, 'photo', rect, { style: { ...textStyle(ctx, 'regular'), radius, fit: 'cover' }, z: 4 }),
-    ],
-  };
-}
-
-function photoTopRecipe(area, brandKit, slots, options = {}, design = null) {
-  const c = contextOf(area, brandKit, slots, options, design);
-  const factsFirst = c.options.variant >= 2;
-  const words = wordsEntries();
-
-  const specs = [
-    photoSpec(c, { radius: 24 }),
-    {
-      key: 'title',
-      height: (ctx, width) => titleHeight(ctx, width, {}),
-      make: (ctx, rect) => titleBlock(ctx, rect, {}),
-    },
-    {
-      key: 'pill',
-      columns: { plate: false },
-      when: (ctx) => ctx.facts.length > 0,
-      height: (ctx, width) => factHeight(ctx, width, { plate: false }),
-      make: (ctx, rect) => factBlock(ctx, rect, { plate: false }),
-    },
-    {
-      key: 'words',
-      when: (ctx) => wordsEntries(ctx).some((e) => hasEntryText(ctx, e)),
-      height: (ctx, width) => wordsHeight(ctx, width, words),
-      make: (ctx, rect) => wordsBlock(ctx, rect, words),
-    },
-    {
-      key: 'cta',
-      height: (ctx, width) => ctaHeight(ctx, width),
-      make: (ctx, rect) => ctaBlock(ctx, rect),
-    },
-  ];
-
-  const ordered = factsFirst ? [specs[2], ...specs.filter((spec) => spec !== specs[2])] : specs;
-  const items = collect(c, stack(c, c.box, ordered));
-  /* Variant 3 lets the picture run edge to edge; its row keeps the same height and place. */
-  if (c.options.variant === 3) {
-    const art = items.find((item) => item.id === 'field-photo');
-    if (art) {
-      art.x = c.area.x;
-      art.w = c.area.w;
-      art.style.radius = 0;
-    }
-  }
-  return items;
-}
-
-function splitPhotoRecipe(area, brandKit, slots, options = {}, design = null) {
-  const c = contextOf(area, brandKit, slots, options, design);
-  const sideways = c.options.variant < 2;
-  const secondSide = c.options.variant % 2 === 1;
-  const words = wordsEntries();
-
-  /* Inside a column the blocks are measured against the column, not the whole poster, and stand
-     a little closer together than the blocks of the poster itself. */
-  const wordsCol = (rect) =>
-    stack(
-      c,
-      rect,
-      [
-        {
-          key: 'title',
-          height: (ctx, width) => titleHeight(ctx, width, {}),
-          make: (ctx, inner) => titleBlock(ctx, inner, {}),
-        },
-        {
-          key: 'pill',
-          columns: { plate: false },
-          when: (ctx) => ctx.facts.length > 0,
-          height: (ctx, width) => factHeight(ctx, width, { plate: false }),
-          make: (ctx, inner) => factBlock(ctx, inner, { plate: false }),
-        },
-        {
-          key: 'words',
-          when: (ctx) => wordsEntries(ctx).some((e) => hasEntryText(ctx, e)),
-          height: (ctx, width) => wordsHeight(ctx, width, words),
-          make: (ctx, inner) => wordsBlock(ctx, inner, words),
-        },
-        {
-          key: 'cta',
-          height: (ctx, width) => ctaHeight(ctx, width),
-          make: (ctx, inner) => ctaBlock(ctx, inner),
-        },
-      ],
-      Math.max(6, Math.round(c.gap * 0.8))
-    );
-
-  const gap = Math.round(sideways ? c.box.w * COL_GAP_RATIO : c.gap);
-  const parts = sideways
-    ? colsIn(c.box, [0.44, 0.56], gap)
-    : rowsIn(c.box, [0.4, 0.6], c.gap);
-  const artIndex = secondSide ? 1 : 0;
-  const art = parts[artIndex];
-  const column = parts[secondSide ? 0 : 1];
-
-  const items = collect(c, [
-    fieldItem(c, 'photo', art, { style: { ...textStyle(c, 'regular'), radius: 24, fit: 'cover' }, z: 4 }),
-    ...wordsCol(column),
-  ]);
-  if (c.options.variant === 3) {
-    const side = Math.max(ELEMENT_LIMITS.minWidth, Math.round(Math.min(art.w, art.h) * 0.3));
-    items.push(
-      iconItem(
-        c,
-        'art-icon',
-        { x: art.x + Math.round((art.w - side) / 2), y: art.y + Math.round((art.h - side) / 2), w: side, h: side },
-        { name: c.icon, color: c.palette.accent, z: 8 }
-      )
-    );
-  }
-  return items;
-}
-
-function typographicRecipe(area, brandKit, slots, options = {}, design = null) {
-  const c = contextOf(area, brandKit, slots, options, design);
-  const words = wordsEntries();
-
-  return collect(
-    c,
-    stack(c, c.box, [
-      {
-        key: 'artwork',
-        when: (ctx) => ctx.options.artwork !== 'none',
-        min: () => Math.max(60, Math.round(c.box.w * 0.1)),
-        height: (ctx, width) => Math.max(60, Math.round(Math.min(ctx.box.h * 0.16, width * 0.3))),
-        make: (ctx, rect) => artBlock(ctx, rect, { centre: true }),
-      },
-      {
-        key: 'title',
-        height: (ctx, width) => titleHeight(ctx, width, {}),
-        make: (ctx, rect) => titleBlock(ctx, rect, {}),
-      },
-      {
-        key: 'rule',
-        thin: true,
-        height: () => ruleThicknessOf(c.area.w),
-        make: (ctx, rect) => {
-          const side = ruleThicknessOf(ctx.area.w);
-          return [ruleItem(ctx, 'title-rule', { ...rect, h: side })];
-        },
-      },
-      {
-        key: 'pill',
-        columns: { plate: true },
-        when: (ctx) => ctx.facts.length > 0,
-        height: (ctx, width) => factHeight(ctx, width, { plate: true }),
-        make: (ctx, rect) => factBlock(ctx, rect, { plate: true }),
-      },
-      {
-        key: 'words',
-        when: (ctx) => wordsEntries(ctx).some((e) => hasEntryText(ctx, e)),
-        height: (ctx, width) => wordsHeight(ctx, width, words),
-        make: (ctx, rect) => wordsBlock(ctx, rect, words),
-      },
-      {
-        key: 'cta',
-        height: (ctx, width) => ctaHeight(ctx, width),
-        make: (ctx, rect) => ctaBlock(ctx, rect),
-      },
-    ])
-  );
-}
-
-function boldBandRecipe(area, brandKit, slots, options = {}, design = null) {
-  const c = contextOf(area, brandKit, slots, options, design);
-  const full = c.options.variant >= 2;
-  const words = wordsEntries();
-  const bandPad = () => Math.max(8, Math.round(c.unit * 0.8));
-  const bandHeight = (ctx, width) => {
-    const inner = Math.max(MIN_TEXT_WIDTH, width - bandPad() * 2);
-    const art = ctx.options.artwork === 'none' ? 0 : Math.round(inner * 0.24);
-    return titleHeight(ctx, art > 0 ? inner - art - ctx.inner : inner, {}) + bandPad() * 2;
-  };
-
-  const specs = [
-    {
-      key: 'band',
-      flex: true,
-      min: bandHeight,
-      height: bandHeight,
-      make: (ctx, rect) => {
-        const plate = shapeItem(ctx, 'title-band', rect, {
-          fill: ctx.palette.band,
-          radius: full ? 0 : 16,
-          z: 2,
-        });
-        const inner = inset(rect, bandPad(), bandPad());
-        const parts =
-          ctx.options.artwork === 'none'
-            ? [inner, null]
-            : colsIn(inner, [0.72, 0.28], Math.round(inner.w * 0.03));
-        /* The band owns its words' colour: whatever brand colour reads on it. */
-        const onBand = readableColorOn(ctx.palette.band, ctx.inks);
-        const banded = {
-          ...ctx,
-          titleColor: onBand,
-          align: 'left',
-          inks: [ctx.brand.ink, ctx.brand.body, ctx.brand.light, onBand, ...ctx.inks.slice(3)],
-        };
-        const title = titleBlock(banded, parts[0], {});
-        for (const item of title) {
-          if (drawsWords(item)) item.style = { ...item.style, color: onBand };
-        }
-        const art = parts[1] ? artBlock({ ...banded, align: 'center' }, parts[1], { centre: true }) : [];
-        return [plate, ...title, ...art];
-      },
-    },
-    {
-      key: 'pill',
-      columns: { plate: false },
-      when: (ctx) => ctx.facts.length > 0,
-      height: (ctx, width) => factHeight(ctx, width, { plate: false }),
-      make: (ctx, rect) => factBlock(ctx, rect, { plate: false }),
-    },
-    {
-      key: 'words',
-      when: (ctx) => wordsEntries(ctx).some((e) => hasEntryText(ctx, e)),
-      height: (ctx, width) => wordsHeight(ctx, width, words),
-      make: (ctx, rect) => wordsBlock(ctx, rect, words),
-    },
-    {
-      key: 'cta',
-      height: (ctx, width) => ctaHeight(ctx, width),
-      make: (ctx, rect) => ctaBlock(ctx, rect),
-    },
-  ];
-
-  /* Variants 1 and 3 put the date and place above the band. */
-  const ordered = c.options.variant % 2 === 1 ? [specs[1], specs[0], specs[2], specs[3]] : specs;
-  const items = collect(c, stack(c, c.box, ordered));
-  /* Variants 2 and 3 run the band edge to edge; its row keeps its own height and place. */
-  if (full) {
-    const plate = items.find((item) => item.id === 'title-band');
-    if (plate) {
-      plate.x = c.area.x;
-      plate.w = c.area.w;
-    }
-  }
-  return items;
+export function boldBandRecipe(area, brandKit, slots, options = {}, design = null) {
+  return splitColorRecipe(area, brandKit, slots, options, design);
 }
 
 /** Decorations go behind the design; the words then take the colour that reads on them. */
@@ -1881,58 +3406,86 @@ function collect(c, items) {
 
 export const DESIGN_RECIPES = [
   {
-    id: 'hero',
-    name: 'Big title with a round mark',
+    id: 'bold-type',
+    name: 'Bold Type',
+    suits: ['notice', 'education', 'corporate', 'meeting', 'general', 'awareness'],
+    needsPhoto: false,
+    recipeVersion: RECIPE_VERSION,
+    recipe: boldTypeRecipe,
+  },
+  {
+    id: 'photo-hero',
+    name: 'Photo Hero',
+    suits: ['sports', 'festival', 'celebration', 'health', 'awareness', 'education', 'general'],
+    needsPhoto: true,
+    recipeVersion: RECIPE_VERSION,
+    recipe: photoHeroRecipe,
+  },
+  {
+    id: 'date-block',
+    name: 'Date Block',
+    suits: ['sports', 'festival', 'celebration', 'meeting', 'general'],
+    needsPhoto: false,
+    recipeVersion: RECIPE_VERSION,
+    recipe: dateBlockRecipe,
+  },
+  {
+    id: 'ticket',
+    name: 'Ticket',
     suits: ['festival', 'celebration', 'sports', 'corporate', 'general'],
     needsPhoto: false,
     recipeVersion: RECIPE_VERSION,
-    recipe: heroRecipe,
+    recipe: ticketRecipe,
   },
   {
-    id: 'photoTop',
-    name: 'Photo on top',
-    suits: ['sports', 'festival', 'celebration', 'health', 'awareness', 'education', 'corporate', 'general'],
-    needsPhoto: true,
-    recipeVersion: RECIPE_VERSION,
-    recipe: photoTopRecipe,
-  },
-  {
-    id: 'splitPhoto',
-    name: 'Photo beside the words',
-    suits: ['sports', 'festival', 'celebration', 'health', 'education', 'meeting', 'corporate', 'notice', 'general'],
-    needsPhoto: true,
-    recipeVersion: RECIPE_VERSION,
-    recipe: splitPhotoRecipe,
-  },
-  {
-    id: 'typographic',
-    name: 'Words only',
-    suits: ['notice', 'meeting', 'awareness', 'corporate', 'general'],
+    id: 'centered-award',
+    name: 'Centered Award',
+    suits: ['celebration', 'corporate', 'meeting', 'education', 'general'],
     needsPhoto: false,
     recipeVersion: RECIPE_VERSION,
-    recipe: typographicRecipe,
+    recipe: centeredAwardRecipe,
   },
   {
-    id: 'boldBand',
-    name: 'Title on a bold band',
-    suits: ['festival', 'celebration', 'sports', 'education', 'general'],
+    id: 'agenda',
+    name: 'Agenda',
+    suits: ['education', 'corporate', 'meeting', 'awareness', 'general'],
     needsPhoto: false,
     recipeVersion: RECIPE_VERSION,
-    recipe: boldBandRecipe,
+    recipe: agendaRecipe,
+  },
+  {
+    id: 'notice',
+    name: 'Official Notice',
+    suits: ['notice', 'corporate', 'awareness', 'education', 'general'],
+    needsPhoto: false,
+    recipeVersion: RECIPE_VERSION,
+    recipe: noticeRecipe,
+  },
+  {
+    id: 'split-color',
+    name: 'Split Color',
+    suits: ['awareness', 'health', 'sports', 'festival', 'corporate', 'general'],
+    needsPhoto: false,
+    recipeVersion: RECIPE_VERSION,
+    recipe: splitColorRecipe,
   },
 ];
 
-/** Ids keep their capitals (photoTop), so the match ignores case only. */
 export function designById(id) {
   const wanted = typeof id === 'string' ? id.trim().toLowerCase() : '';
-  return DESIGN_RECIPES.find((design) => design.id.toLowerCase() === wanted) || null;
+  const clean = wanted.replace(/[-_ ]/g, '');
+  if (clean === 'hero') return DESIGN_RECIPES.find((d) => d.id === 'ticket') || DESIGN_RECIPES[3];
+  if (clean === 'phototop') return DESIGN_RECIPES.find((d) => d.id === 'photo-hero') || DESIGN_RECIPES[1];
+  if (clean === 'splitphoto' || clean === 'boldband') return DESIGN_RECIPES.find((d) => d.id === 'split-color') || DESIGN_RECIPES[7];
+  if (clean === 'typographic') return DESIGN_RECIPES.find((d) => d.id === 'bold-type') || DESIGN_RECIPES[0];
+
+  return DESIGN_RECIPES.find((design) => design.id.toLowerCase() === wanted || design.id.replace(/[-_ ]/g, '') === clean) || null;
 }
 
 export function recipeIds() {
   return DESIGN_RECIPES.map((design) => design.id);
 }
 
-/** Designs that suit a kind of event; every design when nothing suits it. */
 export function designsFor(category) {
   const wanted = typeof category === 'string' ? category.trim().toLowerCase() : '';
   const suited = DESIGN_RECIPES.filter((design) => design.suits.includes(wanted));

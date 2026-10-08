@@ -58,7 +58,8 @@ export function recipeNeedsPhoto(id) {
  */
 export function readRecipe(value) {
   const source = value && typeof value === 'object' ? value : {};
-  const design = designById(source.recipeId);
+  const requested = source.archetype || source.recipeId;
+  const design = designById(requested);
   if (!design || !ALLOWED_RECIPES.includes(design.id)) {
     throw badRequest(`Choose one of the designs this app offers: ${ALLOWED_RECIPES.join(', ')}.`);
   }
@@ -66,7 +67,14 @@ export function readRecipe(value) {
   const icon =
     normalizeIconName(typeof source.icon === 'string' ? source.icon : '') ||
     iconForCategory(design.suits[0]);
-  return { recipeId: design.id, name: design.name, variant, icon, design };
+  return {
+    archetype: design.id,
+    recipeId: design.id,
+    name: design.name,
+    variant,
+    icon,
+    design,
+  };
 }
 
 /**
@@ -92,6 +100,7 @@ export function buildRecipeDesign({ recipe, content = {}, brandKit = null, size 
     layout: normalizeLayout(null, []),
     version: 1,
     elements: built.elements,
+    archetype: clean.recipeId,
     recipeId: clean.recipeId,
     variant: clean.variant,
     recipeVersion: clean.design.recipeVersion,
@@ -101,9 +110,11 @@ export function buildRecipeDesign({ recipe, content = {}, brandKit = null, size 
 
 /** The same design as the answer a client sees: the mode, the choice and the items. */
 export function recipePayload(template) {
+  const id = template.archetype || template.recipeId;
   return {
     mode: 'ai',
-    recipeId: template.recipeId,
+    archetype: id,
+    recipeId: id,
     variant: template.variant,
     recipeVersion: template.recipeVersion,
     /* The mark the design was drawn with, echoed so saving the same poster rebuilds the same
@@ -113,6 +124,9 @@ export function recipePayload(template) {
       name: template.name,
       editorVersion: template.editorVersion,
       elements: template.elements,
+      archetype: id,
+      recipeId: id,
+      variant: template.variant,
     },
   };
 }

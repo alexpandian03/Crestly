@@ -9,6 +9,7 @@ import {
   sanitizeAndTruncateContent,
   validateDesignAnswer,
   sanitizeAndTruncateDesign,
+  selectArchetypeAndVariant,
   sanitizeString,
   truncateAtWordBoundary,
 } from './schema.js';
@@ -178,18 +179,23 @@ function headlineFromPrompt(prompt) {
 
 /** The design used when the model answer stayed unusable after the retry. */
 function fallbackDesign(prompt, options) {
+  const selection = selectArchetypeAndVariant({ text: prompt, ...options });
+  const headline = headlineFromPrompt(prompt);
   return sanitizeAndTruncateDesign(
     {
-      recipeId: 'hero',
-      variant: options?.variant ?? null,
-      title: { main: headlineFromPrompt(prompt), sub: '' },
-      tagline: '',
-      slogan: { line1: '', line2: '' },
-      bullets: [],
-      info: { date: '', time: '', venue: '' },
-      cta: { line: '', button: '' },
-      icon: '',
-      imageQuery: '',
+      archetype: selection.archetype,
+      variant: selection.variant,
+      fields: {
+        kicker: 'Event',
+        title: headline,
+        subtitle: '',
+        bullets: [],
+        date: '',
+        time: '',
+        venue: 'Venue to be announced',
+        cta: 'Open to all',
+        photoKeywords: '',
+      },
     },
     options
   );
@@ -197,7 +203,7 @@ function fallbackDesign(prompt, options) {
 
 /**
  * Mode "ai": the model names one ready design and writes only its words. Same timeout, the same
- * single retry, then a plain "hero" design so a request never fails on a bad answer.
+ * single retry, then a plain design so a request never fails on a bad answer.
  *
  * @param {object} params
  * @param {string} params.prompt - User event description
@@ -215,7 +221,7 @@ export async function generateDesign({
   variant = null,
 }) {
   const provider = (process.env.LLM_PROVIDER || 'mock').toLowerCase().trim();
-  const options = { avoidRecipeIds, variant };
+  const options = { avoidRecipeIds, variant, prompt, instruction };
 
   // 20-second hard abort timeout (vercel maxDuration is 30s)
   const controller = new AbortController();
@@ -241,7 +247,7 @@ export async function generateDesign({
       });
 
     const keys =
-      'recipeId, variant, title { main, sub }, tagline, slogan { line1, line2 }, bullets (array of max 3), info { date, time, venue }, cta { line, button }, icon, imageQuery';
+      'archetype, variant, fields: { kicker, title, subtitle, bullets, date, time, venue, cta, photoKeywords }';
 
     let candidate = null;
     let errors = null;
@@ -271,9 +277,22 @@ export async function generateDesign({
     if (controller.signal.aborted) throw new Error('The AI took too long. Please try again.');
 
     if (!candidate || !validateDesignAnswer(candidate).valid) {
-      const fb = fallbackDesign(prompt, options);
-      fb.isAiGenerated = false;
-      return fb;
+      try {
+        const fb = await generateWithMock({
+          prompt,
+          brandKit,
+          instruction,
+          mode: 'design',
+          avoidRecipeIds,
+          variant,
+        });
+        fb.isAiGenerated = false;
+        return fb;
+      } catch {
+        const fb = fallbackDesign(prompt, options);
+        fb.isAiGenerated = false;
+        return fb;
+      }
     }
     candidate.isAiGenerated = provider !== 'mock';
     return candidate;
@@ -283,7 +302,22 @@ export async function generateDesign({
       timeoutErr.status = 504;
       throw timeoutErr;
     }
-    throw err;
+    try {
+      const fb = await generateWithMock({
+        prompt,
+        brandKit,
+        instruction,
+        mode: 'design',
+        avoidRecipeIds,
+        variant,
+      });
+      fb.isAiGenerated = false;
+      return fb;
+    } catch {
+      const fb = fallbackDesign(prompt, options);
+      fb.isAiGenerated = false;
+      return fb;
+    }
   } finally {
     clearTimeout(timeoutId);
   }

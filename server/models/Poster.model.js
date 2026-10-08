@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { designById } from '../../shared/designRecipes.js';
 
 const MAX_VERSIONS = 20;
 
@@ -16,6 +17,9 @@ const designSchema = new mongoose.Schema(
 
 const posterVersionSchema = new mongoose.Schema(
   {
+    recipeId: { type: String, trim: true },
+    archetype: { type: String, trim: true },
+    variant: { type: Number, min: 0 },
     content: {
       title: { type: String, required: true, trim: true, maxlength: 60 },
       tagline: { type: String, default: '', trim: true, maxlength: 100 },
@@ -68,6 +72,9 @@ const posterSchema = new mongoose.Schema(
     templateVersion: { type: Number, min: 1 },
     /* Frozen look captured server-side when the poster was saved. */
     design: { type: designSchema, default: undefined },
+    recipeId: { type: String, trim: true },
+    archetype: { type: String, trim: true },
+    variant: { type: Number, min: 0 },
     title: { type: String, required: [true, 'title is required'], trim: true, maxlength: 60 },
     prompt: { type: String, required: [true, 'prompt is required'], trim: true, maxlength: 1000 },
     content: {
@@ -114,9 +121,54 @@ posterSchema.pre('save', function capVersions(next) {
   next();
 });
 
+export function normalizePosterRecord(poster) {
+  if (!poster) return poster;
+  const target = typeof poster.toObject === 'function' ? poster.toObject() : poster;
+  const stored = target.design?.template;
+  const rawKey = target.archetype || target.recipeId || stored?.archetype || stored?.recipeId;
+  if (rawKey) {
+    const canonical = designById(rawKey)?.id || rawKey;
+    target.archetype = canonical;
+    target.recipeId = canonical;
+    if (stored) {
+      stored.archetype = canonical;
+      stored.recipeId = canonical;
+    }
+  }
+  if (Array.isArray(target.versions)) {
+    target.versions.forEach((ver) => {
+      const verStored = ver.design?.template;
+      const verKey = ver.archetype || ver.recipeId || verStored?.archetype || verStored?.recipeId;
+      if (verKey) {
+        const canonical = designById(verKey)?.id || verKey;
+        ver.archetype = canonical;
+        ver.recipeId = canonical;
+        if (verStored) {
+          verStored.archetype = canonical;
+          verStored.recipeId = canonical;
+        }
+      }
+    });
+  }
+  return target;
+}
+
+posterSchema.post('init', function () {
+  normalizePosterRecord(this);
+});
+
 posterSchema.set('toJSON', {
   transform: (doc, ret) => {
     delete ret.__v;
+    normalizePosterRecord(ret);
+    return ret;
+  },
+});
+
+posterSchema.set('toObject', {
+  transform: (doc, ret) => {
+    delete ret.__v;
+    normalizePosterRecord(ret);
     return ret;
   },
 });

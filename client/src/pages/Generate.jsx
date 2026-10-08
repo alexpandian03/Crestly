@@ -408,7 +408,7 @@ export default function Generate() {
             designSizeFor(selectedTemplate, brandKit),
           );
           if (nextDesign) {
-            const id = nextDesign.template.recipeId;
+            const id = nextDesign.template.archetype || nextDesign.template.recipeId;
             sameDesignAgain = avoid && seenRecipesRef.current.includes(id);
             seenRecipesRef.current = Array.from(
               new Set([...seenRecipesRef.current, id]),
@@ -606,7 +606,7 @@ export default function Generate() {
     ready &&
     designMode === MODE_AI &&
     hasPictureArea(drawTemplate) &&
-    Boolean(recipeOf(drawTemplate)?.recipeId) &&
+    Boolean(recipeOf(drawTemplate)?.recipeId || recipeOf(drawTemplate)?.archetype) &&
     String(posterContent?.title || "").trim().length >= 3;
 
   /* Words or a picture changed where the poster stands. A picture the user put in takes
@@ -687,7 +687,12 @@ export default function Generate() {
         seenRecipesRef.current = [];
         /* Opening a poster the assistant designed puts the page back on that card. */
         setDesignMode(
-          loaded.design?.template?.recipeId ? MODE_AI : MODE_TEMPLATE,
+          loaded.design?.template?.recipeId ||
+            loaded.design?.template?.archetype ||
+            loaded.recipeId ||
+            loaded.archetype
+            ? MODE_AI
+            : MODE_TEMPLATE,
         );
         markSaved(content);
         setSaveError(null);
@@ -1011,7 +1016,7 @@ export default function Generate() {
   const handleMakePicture = async () => {
     const recipe = recipeOf(drawTemplate);
     const title = String(posterContent?.title || "").trim();
-    if (!recipe?.recipeId || title.length < 3) return;
+    if ((!recipe?.recipeId && !recipe?.archetype) || title.length < 3) return;
     setPictureDialog({
       ...PICTURE_IDLE,
       open: true,
@@ -1021,7 +1026,11 @@ export default function Generate() {
     try {
       const res = await api.post(
         "/posters/image",
-        { recipeId: recipe.recipeId, title },
+        {
+          recipeId: recipe.recipeId || recipe.archetype,
+          archetype: recipe.archetype || recipe.recipeId,
+          title,
+        },
         { timeout: 60000 },
       );
       const made = res.data?.data || {};
