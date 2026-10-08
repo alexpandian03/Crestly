@@ -1,5 +1,6 @@
 import 'dotenv/config';
 process.env.LLM_PROVIDER = 'mock';
+process.env.IMAGE_SEARCH_PROVIDER = 'mock';
 
 import crypto from 'crypto';
 import http from 'http';

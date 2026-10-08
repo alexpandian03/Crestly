@@ -1282,7 +1282,7 @@ export function checkContentImageUrl(url, { cloudName, clientId } = {}) {
     return { ok: false, reason: 'That photo address is not a full web address.' };
   }
   if (parsed.protocol !== 'https:') return { ok: false, reason: 'A photo must come from a secure (https) web address.' };
-  if (parsed.hostname === 'images.pexels.com') return { ok: true };
+  if (parsed.hostname === 'images.pexels.com' || parsed.hostname === 'images.unsplash.com') return { ok: true };
   if (parsed.hostname === 'res.cloudinary.com') return checkElementImageUrl(value, { cloudName, clientId });
   return { ok: false, reason: 'Photos must come from your own image library.' };
 }
