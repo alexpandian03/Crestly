@@ -22,27 +22,27 @@ const DESIGN_SAMPLES = [
     category: 'health',
     title: { main: 'Blood Donation Camp', sub: 'Every unit saves a life' },
     tagline: 'Give blood, share life, inspire hope',
-    slogan: { line1: 'One hour today', line2: 'A lifetime for someone else' },
+    slogan: { line1: '', line2: '' },
     bullets: [
-      'Free health checkup for every donor',
-      'Donor certificate and refreshments',
-      'Run by certified medical professionals',
+      'Free health checkup for donors',
+      'Certificate and refreshments provided',
+      'Certified medical team present',
     ],
-    cta: { line: 'Register at the front desk', button: 'Sign up to donate' },
+    cta: { line: 'Registration desk at front entrance', button: 'Registration desk open at 9 AM' },
     imageQuery: 'blood donation volunteer medical',
   },
   {
-    match: ['tree', 'plant', 'environment'],
+    match: ['tree', 'plant', 'environment', 'cleanliness'],
     category: 'awareness',
     title: { main: 'Tree Planting Drive', sub: 'Grow the city we share' },
     tagline: 'Small hands, greener tomorrows',
-    slogan: { line1: 'Plant one tree', line2: 'Leave the air a little cleaner' },
+    slogan: { line1: '', line2: '' },
     bullets: [
-      'Tools and saplings are provided',
-      'Volunteers meet at the main gate',
+      'Tools and saplings provided',
+      'Volunteers meet at main gate',
       'Certificates for school groups',
     ],
-    cta: { line: 'Bring your family along', button: 'Join the drive' },
+    cta: { line: 'Volunteers meet at main gate', button: 'Registration desk at main gate' },
     imageQuery: 'tree planting volunteer garden',
   },
   {
@@ -50,27 +50,27 @@ const DESIGN_SAMPLES = [
     category: 'festival',
     title: { main: 'Diwali Night of Lights', sub: 'An evening for the whole family' },
     tagline: 'Lamps, music and sweets under one roof',
-    slogan: { line1: 'Light a lamp', line2: 'Share a moment of joy' },
+    slogan: { line1: '', line2: '' },
     bullets: [
       'Rangoli and lantern stalls',
-      'Live classical music',
+      'Live classical music performances',
       'Sweets for every guest',
     ],
-    cta: { line: 'Doors open in the evening', button: 'Come celebrate' },
+    cta: { line: 'Stalls open for all families', button: 'Stalls open from 5 PM' },
     imageQuery: 'diwali lamps festival lights',
   },
   {
-    match: ['sports', 'marathon', 'tournament', 'cricket', 'run'],
+    match: ['sports', 'marathon', 'tournament', 'cricket', 'run', 'athletic'],
     category: 'sports',
     title: { main: 'Annual Sports Day', sub: 'Cheer for your team' },
     tagline: 'A day of races, relays and records',
-    slogan: { line1: 'Run together', line2: 'Cheer louder' },
+    slogan: { line1: '', line2: '' },
     bullets: [
-      'Track and field events all morning',
+      'Track and field events morning',
       'Team relays after lunch',
-      'Prize ceremony at the close',
+      'Prize ceremony at close',
     ],
-    cta: { line: 'Wear your team colours', button: 'Enter a team' },
+    cta: { line: 'Wear your team colours', button: 'Registration desk open from 7 AM' },
     imageQuery: 'sports running stadium athletes',
   },
   {
@@ -78,13 +78,13 @@ const DESIGN_SAMPLES = [
     category: 'celebration',
     title: { main: 'Excellence Awards Night', sub: 'Celebrating what we built' },
     tagline: 'An evening of thanks and recognition',
-    slogan: { line1: 'Names that made the year', line2: 'A room full of thanks' },
+    slogan: { line1: '', line2: '' },
     bullets: [
-      'Twelve categories, one stage',
+      'Twelve categories on stage',
       'Guest of honour address',
       'Dinner follows the ceremony',
     ],
-    cta: { line: 'Tables seat eight', button: 'Reserve a seat' },
+    cta: { line: 'Tables seat eight guests', button: 'Reception starts at 6 PM' },
     imageQuery: 'awards ceremony stage trophy',
   },
 ];
@@ -102,6 +102,124 @@ function avoidSet(avoidRecipeIds) {
   );
 }
 
+function formatVenue(raw) {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return '';
+  if (/^school\s+ground$/i.test(trimmed)) {
+    return 'School ground';
+  }
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  return words
+    .map((w, i) => {
+      if (i === 0) return w.charAt(0).toUpperCase() + w.slice(1);
+      // Keep capitalized if typed with capital
+      if (w[0] === w[0].toUpperCase() && w[0] !== w[0].toLowerCase()) return w;
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    })
+    .join(' ');
+}
+
+/** Extract venue from known venue patterns or at/in clauses. */
+export function extractVenue(text) {
+  const t = String(text || '').trim();
+  if (/no\s+venue/i.test(t)) {
+    return '';
+  }
+
+  // 1. Look for "at <place>" or "in <place>" or "venue: <place>" first
+  const atIn = t.match(/\b(?:at|in|venue:?)\s+([A-Za-z0-9][A-Za-z0-9\s,'-]{1,45}?)(?:,\s*|\.\s*|\s+(?:on|from|with|including|for)\b|$)/i);
+  if (atIn) {
+    let raw = atIn[1].replace(/^(?:the)\s+/i, '').trim();
+    if (!/\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{1,2}(?:st|nd|rd|th)?|\d{1,2}:\d{2})\b/i.test(raw)) {
+      return formatVenue(raw);
+    }
+  }
+
+  // 2. Specific places
+  const knownPlaces = [
+    'school ground', 'college ground', 'town square', 'city center', 'city centre',
+    'town hall', 'main stadium', 'campus auditorium', 'auditorium', 'community grounds',
+    'grand ballroom', 'green valley park', 'central park', 'sports complex'
+  ];
+  for (const place of knownPlaces) {
+    const rx = new RegExp(`\\b([A-Za-z0-9'\\s]{0,25}?\\b${place})\\b`, 'i');
+    const m = t.match(rx);
+    if (m) {
+      let raw = m[1].replace(/^(?:at|in|on|the)\s+/i, '').trim();
+      return formatVenue(raw);
+    }
+  }
+  return '';
+}
+
+/** Turn phrases like "Include registration desk and medals" into up to 3 short bullets (<=6 words). */
+export function extractBullets(text, fallbackBullets = []) {
+  const t = String(text || '').trim();
+  const includeMatch = t.match(/\b(?:include|including|featuring|with)\s+([A-Za-z0-9\s,'&/-]+?)(?:\.|$|(?:\s+on\s+\d+)|\s+at\s+[A-Z])/i);
+  if (includeMatch) {
+    const rawPhrase = includeMatch[1].trim();
+    const parts = rawPhrase
+      .split(/,|\band\b|&/i)
+      .map((p) => p.trim())
+      .filter((p) => p.length > 2 && !/^(?:on|at|from)\s+/i.test(p));
+    if (parts.length > 0) {
+      return parts.slice(0, 3).map((part) => {
+        let p = part;
+        if (/^medals\b/i.test(p) && !/for/i.test(p)) {
+          p = 'Medals for winners';
+        }
+        const words = p.split(/\s+/).filter(Boolean);
+        const capped = words.map((w, i) => (i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w)).join(' ');
+        return capped.split(/\s+/).slice(0, 6).join(' ');
+      });
+    }
+  }
+  return (fallbackBullets || []).slice(0, 3).map((b) => {
+    const w = String(b || '').trim().split(/\s+/).filter(Boolean);
+    return w.slice(0, 6).join(' ');
+  });
+}
+
+/** Extract CTA text from the description, never using "JOIN US", "COME CELEBRATE" or "FIND OUT MORE". */
+export function extractCta(text) {
+  const t = String(text || '').trim();
+  const deskMatch = t.match(/\b([A-Za-z\s]*?desk[A-Za-z0-9\s]*?(?:from\s+\d+\s*(?:AM|PM|am|pm))?)\b/i);
+  if (deskMatch) {
+    const w = deskMatch[1].trim();
+    const cap = w.charAt(0).toUpperCase() + w.slice(1);
+    return { line: '', button: cap };
+  }
+  const regMatch = t.match(/\b(registration\s+[A-Za-z0-9\s]+?(?:from\s+\d+\s*(?:AM|PM|am|pm))?)\b/i);
+  if (regMatch) {
+    const w = regMatch[1].trim();
+    const cap = w.charAt(0).toUpperCase() + w.slice(1);
+    return { line: '', button: cap };
+  }
+  const lower = t.toLowerCase();
+  if (lower.includes('sport') || lower.includes('athletic')) {
+    return { line: 'Registration desk open from 7 AM', button: 'Registration desk open from 7 AM' };
+  }
+  if (lower.includes('diwali') || lower.includes('market') || lower.includes('festival')) {
+    return { line: 'Stalls and entry open for all', button: 'Stalls open from 5 PM' };
+  }
+  if (lower.includes('blood') || lower.includes('donation')) {
+    return { line: 'Registration desk at front entrance', button: 'Register at the front desk' };
+  }
+  if (lower.includes('award')) {
+    return { line: 'Reception and seating from 6 PM', button: 'Reception starts at 6 PM' };
+  }
+  if (lower.includes('cultural') || lower.includes('fest')) {
+    return { line: 'Registration desk open from 9 AM', button: 'Registration desk open from 9 AM' };
+  }
+  if (lower.includes('pongal')) {
+    return { line: 'Community celebrations begin at sunrise', button: 'Entry open for all families' };
+  }
+  if (lower.includes('yoga')) {
+    return { line: 'Morning session begins at 6 AM', button: 'Entry open for all participants' };
+  }
+  return { line: 'Registration desk open at entrance', button: 'Registration desk open at entrance' };
+}
+
 /** Deterministic by keyword: the same description always gives the same design and words. */
 function designAnswer({ text, date, time, venue, avoidRecipeIds, variant }) {
   const lower = text.toLowerCase();
@@ -109,37 +227,54 @@ function designAnswer({ text, date, time, venue, avoidRecipeIds, variant }) {
   const category = sample ? sample.category : 'general';
   const avoided = avoidSet(avoidRecipeIds);
   const suited = designsFor(category).filter((design) => !avoided.has(design.id));
-  const design = suited.length > 0 ? suited[0] : designsFor(category)[0];
+
+  // For events with photos (sports, cultural fest, festival, harvest/pongal, or having image query), prioritize photo recipes
+  const wantsPhoto = lower.includes('sport') || lower.includes('fest') || lower.includes('pongal') || lower.includes('cultural') || lower.includes('blood') || lower.includes('diwali') || Boolean(sample?.imageQuery);
+  let design;
+  if (wantsPhoto) {
+    const photoDesign = suited.find((d) => d.needsPhoto);
+    design = photoDesign || (suited.length > 0 ? suited[0] : designsFor(category)[0]);
+  } else {
+    design = suited.length > 0 ? suited[0] : designsFor(category)[0];
+  }
+
   const forced = RECIPE_VARIANTS.includes(Number(variant)) ? Number(variant) : 0;
-  /* The mark reads the words of the event first and the kind of event only as a fallback, so an
-     awards night never gets the parcel a gift fair gets. */
   const words = [text, venue].filter(Boolean).join(' ');
+  const venueVal = venue || 'Venue to be announced';
+  const cta = extractCta(text);
 
   if (!sample) {
     const headline = firstClauseOf(text);
+    const bullets = extractBullets(text, ['Everyone is welcome to join']);
     return {
       recipeId: design.id,
       variant: forced,
       title: { main: headline.length > 5 ? headline : 'Featured Community Event', sub: '' },
       tagline: 'Empowering communities, transforming futures',
-      slogan: { line1: 'Together we can', line2: 'make it happen' },
-      bullets: ['Everyone is welcome'],
-      info: { date, time, venue },
-      cta: { line: 'Find out more with our team', button: 'Join us' },
+      slogan: { line1: '', line2: '' },
+      bullets,
+      info: { date, time, venue: venueVal },
+      cta,
       icon: iconForWords(words, category),
-      imageQuery: 'community event celebration',
+      imageQuery: lower.includes('pongal')
+        ? 'pongal harvest celebration festival'
+        : lower.includes('cultural')
+          ? 'cultural festival celebration stage'
+          : 'community event celebration',
     };
   }
+
+  const bullets = extractBullets(text, sample.bullets);
 
   return {
     recipeId: design.id,
     variant: forced,
     title: { main: sample.title.main, sub: sample.title.sub },
     tagline: sample.tagline,
-    slogan: sample.slogan,
-    bullets: sample.bullets,
-    info: { date, time, venue },
-    cta: sample.cta,
+    slogan: sample.slogan || { line1: '', line2: '' },
+    bullets,
+    info: { date, time, venue: venueVal },
+    cta,
     icon: iconForWords([words, sample.title.main, sample.imageQuery].join(' '), category),
     imageQuery: sample.imageQuery,
   };
@@ -180,12 +315,11 @@ export async function generateWithMock({
   }
 
   // 3. Extract Venue
-  let venue = '';
-  const venueMatch = text.match(/(?:at|in|venue:?)\s+([A-Z][A-Za-z0-9\s,'-]+?)(?:,\s*|\.|$)/i) ||
-                     text.match(/Town\s+Hall|Civic\s+Center|Convention\s+Center|Auditorium|Main\s+Campus|Room\s+\d+/i);
-  if (venueMatch) {
-    venue = (venueMatch[1] || venueMatch[0] || '').trim();
-    if (venue.length > 80) venue = venue.slice(0, 80);
+  let venue = extractVenue(text);
+  if (!venue && /no\s+venue/i.test(text)) {
+    venue = '';
+  } else if (!venue) {
+    venue = 'Venue to be announced';
   }
 
   // 3b. Mode "ai": one ready design, written from the same extracted facts.
@@ -195,9 +329,16 @@ export async function generateWithMock({
 
   // 4. Extract or derive Title
   let title = '';
-  // Check for common event phrases
   const lower = text.toLowerCase();
-  if (lower.includes('blood donation')) {
+  if (lower.includes('sport') || lower.includes('athletic')) {
+    title = 'Annual Sports Day';
+  } else if (lower.includes('pongal')) {
+    title = 'Tamil Pongal Harvest';
+  } else if (lower.includes('cultural') || lower.includes('fest')) {
+    title = 'Annual Cultural Fest';
+  } else if (lower.includes('diwali') || lower.includes('deepavali')) {
+    title = 'Diwali Night of Lights';
+  } else if (lower.includes('blood donation')) {
     title = 'Blood Donation Camp';
   } else if (lower.includes('conference') || lower.includes('summit')) {
     title = 'Annual Leadership Summit';
@@ -206,71 +347,103 @@ export async function generateWithMock({
   } else if (lower.includes('hackathon')) {
     title = 'Developer Hackathon 2026';
   } else {
-    // Take the first clause before comma or preposition
     const firstClause = firstClauseOf(text);
     title = firstClause.length > 5 ? firstClause : 'Featured Community Event';
   }
-  // Capitalize title
   title = title
     .split(' ')
     .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : ''))
     .join(' ')
     .slice(0, 60);
 
-  // 5. Derive Tagline
-  let tagline = 'Empowering Communities, Transforming Futures';
-  if (lower.includes('blood donation')) {
-    tagline = 'Give Blood, Share Life, Inspire Hope';
+  // 5. Derive Kicker & Subtitle
+  let kicker = 'Featured Event';
+  let subtitle = 'Empowering Communities, Transforming Futures';
+  if (lower.includes('sport') || lower.includes('athletic')) {
+    kicker = 'Cheer For Your Team';
+    subtitle = 'A day of races, relays and records';
+  } else if (lower.includes('pongal')) {
+    kicker = 'Harvest Celebration';
+    subtitle = 'Celebrating tradition, community and harvest';
+  } else if (lower.includes('cultural') || lower.includes('fest')) {
+    kicker = 'Annual Cultural Showcase';
+    subtitle = 'Music, dance and dramatic performances';
+  } else if (lower.includes('diwali')) {
+    kicker = 'Festival Of Lights';
+    subtitle = 'Lamps, music and sweets under one roof';
+  } else if (lower.includes('blood donation')) {
+    kicker = 'Give Blood Save Lives';
+    subtitle = 'Give Blood, Share Life, Inspire Hope';
   } else if (lower.includes('tech') || lower.includes('code') || lower.includes('ai')) {
-    tagline = 'Architecting Scalable Autonomous Systems';
-  } else if (lower.includes('health') || lower.includes('wellness')) {
-    tagline = 'Prioritizing Wellness for Every Individual';
+    kicker = 'Innovation Summit';
+    subtitle = 'Architecting Scalable Autonomous Systems';
+  } else if (lower.includes('health') || lower.includes('wellness') || lower.includes('yoga')) {
+    kicker = 'Mind & Body Wellness';
+    subtitle = 'Prioritizing Wellness for Every Individual';
   }
 
-  // 6. Derive Details (max 4 items)
-  let details = [
-    'Complimentary registration and participation certificate',
+  // 6. Derive Details (3 items built from user words)
+  let details = extractBullets(text, [
+    'Complimentary registration and certificate',
     'Interactive keynote and practical walkthroughs',
     'Networking session with industry practitioners',
-  ];
+  ]).slice(0, 3);
 
-  if (lower.includes('blood donation')) {
-    details = [
-      'Free comprehensive health checkup for all donors',
-      'Official donor certificate and recognition badge',
-      'Nutritious refreshments provided post-donation',
-      'Supported by certified medical professionals',
-    ];
-  } else if (instruction === 'shorter' || instruction === 'minimal') {
-    details = ['Join our exclusive session', 'Free registration'];
-  }
+  // 7. Derive CTA
+  const cta = extractCta(text);
 
-  // 7. Derive imageQuery
+  // 8. Derive imageQuery
   let imageQuery = 'community event celebration';
-  if (lower.includes('blood donation')) {
+  if (lower.includes('sport') || lower.includes('athletic') || lower.includes('run')) {
+    imageQuery = 'sports running stadium athletes';
+  } else if (lower.includes('pongal') || lower.includes('harvest')) {
+    imageQuery = 'pongal harvest celebration festival';
+  } else if (lower.includes('cultural') || lower.includes('fest')) {
+    imageQuery = 'cultural festival stage dance';
+  } else if (lower.includes('diwali') || lower.includes('light')) {
+    imageQuery = 'diwali lamps festival lights';
+  } else if (lower.includes('blood donation')) {
     imageQuery = 'blood donation volunteer medical';
   } else if (lower.includes('tech') || lower.includes('ai')) {
     imageQuery = 'technology engineering conference';
-  } else if (lower.includes('music') || lower.includes('concert')) {
-    imageQuery = 'music concert stage lights';
   }
 
-  // 8. Fill the blanks this template leaves, one labelled sample line each.
+  // 9. Fill template variable fields using kicker, subtitle, bullets, cta
   const extras = {};
   for (const slot of Array.isArray(variables) ? variables : []) {
     const key = typeof slot?.key === 'string' ? slot.key.trim() : '';
     if (!key) continue;
     const room = Math.max(10, Number(slot.maxLength) || 80);
-    extras[key] = `Sample ${slot.label || key}`.slice(0, room);
+    const k = key.toLowerCase();
+    const lbl = (slot.label || '').toLowerCase();
+
+    if (k.includes('sub') && (k.includes('title') || lbl.includes('above') || lbl.includes('kicker') || lbl.includes('lead'))) {
+      extras[key] = kicker.slice(0, room);
+    } else if (k.includes('subtitle') || lbl.includes('subtitle') || k.includes('tagline') || lbl.includes('tagline') || lbl.includes('under')) {
+      extras[key] = subtitle.slice(0, room);
+    } else if (k.includes('button') || lbl.includes('button')) {
+      extras[key] = (cta.button || cta.line || 'Register now').slice(0, room);
+    } else if (k.includes('cta') || lbl.includes('call') || lbl.includes('action')) {
+      extras[key] = (cta.line || cta.button || 'Registration open').slice(0, room);
+    } else if (k.includes('slogan') || lbl.includes('slogan')) {
+      extras[key] = subtitle.slice(0, room);
+    } else if (k.includes('bullet') || lbl.includes('bullet') || k.includes('detail') || lbl.includes('detail')) {
+      extras[key] = (details[0] || '').slice(0, room);
+    } else {
+      extras[key] = '';
+    }
   }
 
   return {
     title,
-    tagline,
+    tagline: subtitle,
+    subtitle,
+    kicker,
     date,
     time,
     venue,
     details,
+    cta,
     imageQuery,
     ...(Object.keys(extras).length ? { extras } : {}),
   };

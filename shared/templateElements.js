@@ -24,6 +24,46 @@ export const TEXT_ALIGNS = ['left', 'center', 'right'];
 export const IMAGE_FITS = ['cover', 'contain'];
 export const SHAPE_TYPES = ['rect', 'circle', 'line'];
 
+export function isSamplePlaceholder(text) {
+  if (!text || typeof text !== 'string') return true;
+  const t = text.trim();
+  if (!t) return true;
+  if (/^sample\b/i.test(t) || /\bsample\b/i.test(t)) return true;
+  if (/^a heading of your own/i.test(t) || /^a smaller line under it/i.test(t) || /^a paragraph of plain words/i.test(t)) return true;
+  if (/^line above the title/i.test(t) || /^button words/i.test(t) || /^call to action/i.test(t)) return true;
+  if (/the person filling this in/i.test(t) || /chooses the picture/i.test(t)) return true;
+  return false;
+}
+
+/**
+ * Resolves the image URL to draw for an image item or photo field:
+ * 1. An explicit answer in content.images[item.key] takes priority.
+ * 2. If empty and it is the first user-filled slot, the poster photo (uploaded/pasted/Unsplash) is bound.
+ * 3. Fixed design images keep their own imageUrl.
+ * 4. Empty slots return empty string (causing the renderer to omit/hide them).
+ */
+export function resolveItemImage(item, content, photoUrl = '', isFirstUserSlot = false) {
+  if (!item) return '';
+  if (item.kind === 'image') {
+    let img = item.variable && content?.images ? String(content.images[item.key] || '').trim() : '';
+    if (!img && isFirstUserSlot) {
+      img = String(photoUrl || content?.imageUrl || content?.image || '').trim();
+    }
+    if (!img && !item.variable) {
+      img = String(item.imageUrl || '').trim();
+    }
+    return img;
+  }
+  if (item.field === 'photo') {
+    let img = item.variable && content?.images ? String(content.images[item.key] || '').trim() : '';
+    if (!img) {
+      img = String(photoUrl || content?.imageUrl || content?.image || '').trim();
+    }
+    return img;
+  }
+  return '';
+}
+
 /**
  * The only pictures an icon item may ask for.
  *

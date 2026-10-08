@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, memo, useRef, useState } from 'react';
 import { Calendar, Clock, MapPin } from 'lucide-react';
-import { ELEMENT_LIMITS } from '../../../shared/templateElements.js';
+import { ELEMENT_LIMITS, iconForWords, isSamplePlaceholder, resolveItemImage } from '../../../shared/templateElements.js';
 import { ownsPlate, platesUnder } from '../utils/templateRender.js';
 import { imageOfBlank, wordsOfBlank } from '../utils/posterVariables.js';
 import { posterIconComponent } from './posterIcons.js';
@@ -52,38 +52,62 @@ function fitsBox(el) {
   return el.scrollHeight <= el.clientHeight + 1 && el.scrollWidth <= el.clientWidth + 1;
 }
 
+export { isSamplePlaceholder, wordsFor };
+
 /** The words one item draws, or nothing at all when its part of the poster is empty. */
-function wordsFor(item, content, photoUrl) {
-  /* A blank a person or the assistant fills in draws its answer, and the words the designer
-     left in the box when there is no answer yet. */
+function wordsFor(item, content, photoUrl, isEditor = false, isFirstUserSlot = false) {
+  /* A blank a person or the assistant fills in draws its answer.
+     When not in the editor, never show sample text or example copy. */
   if (item.kind === 'text') {
-    return { text: (item.variable ? wordsOfBlank(content, item.key) : '') || (item.text || '').trim() };
+    let text = (item.variable ? wordsOfBlank(content, item.key) : '') || '';
+    if (!isEditor && isSamplePlaceholder(text)) {
+      text = '';
+    }
+    if (!text) {
+      if (isEditor) {
+        text = (item.text || '').trim();
+      } else if (!item.variable) {
+        const raw = (item.text || '').trim();
+        if (!isSamplePlaceholder(raw)) {
+          text = raw;
+        }
+      }
+    }
+    return { text: text.trim() };
   }
-  if (item.kind === 'image') {
-    return { image: (item.variable ? imageOfBlank(content, item.key) : '') || (item.imageUrl || '').trim() };
+  if (item.kind === 'image' || item.field === 'photo') {
+    return { image: resolveItemImage(item, content, photoUrl, isFirstUserSlot) };
   }
   if (item.kind === 'shape') return { shape: item.shape || {} };
 
   switch (item.field) {
     case 'headline':
       return { text: (content?.title || '').trim() };
-    case 'tagline':
-      return { text: (content?.tagline || '').trim() };
-    case 'date':
-    case 'time':
-    case 'venue':
-      return { text: String(content?.[item.field] ?? '').trim(), field: item.field };
+    case 'tagline': {
+      const tag = (content?.tagline || content?.subtitle || '').trim();
+      return { text: !isEditor && isSamplePlaceholder(tag) ? '' : tag };
+    }
+    case 'date': {
+      const d = String(content?.date || '').trim();
+      return { text: d || (isEditor ? (item.text || 'Date') : 'Date to be announced'), field: 'date' };
+    }
+    case 'time': {
+      const tm = String(content?.time || '').trim();
+      return { text: tm || (isEditor ? (item.text || 'Time') : ''), field: 'time' };
+    }
+    case 'venue': {
+      const v = String(content?.venue || '').trim();
+      return { text: v || (isEditor ? (item.text || 'Venue') : 'Venue to be announced'), field: 'venue' };
+    }
     case 'details': {
       const lines = (
         Array.isArray(content?.details) ? content.details : content?.details ? [content.details] : []
       )
         .map((line) => String(line).trim())
-        .filter(Boolean)
+        .filter((line) => Boolean(line) && (isEditor || !isSamplePlaceholder(line)))
         .slice(0, DETAIL_LIMIT);
       return { lines };
     }
-    case 'photo':
-      return { image: (photoUrl || '').trim() };
     default:
       return {};
   }
@@ -119,7 +143,7 @@ function TypeStyle({ style }) {
   };
 }
 
-function Photo({ url, style }) {
+function Photo({ url, style, onImageFail }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [url]);
   if (!url || failed) return null;
@@ -128,14 +152,17 @@ function Photo({ url, style }) {
       src={url}
       alt=""
       crossOrigin="anonymous"
-      onError={() => setFailed(true)}
+      onError={() => {
+        setFailed(true);
+        onImageFail?.();
+      }}
       style={{
         display: 'block',
         width: '100%',
         height: '100%',
-        objectFit: style.fit === 'contain' ? 'contain' : 'cover',
+        objectFit: style?.fit === 'contain' ? 'contain' : 'cover',
         objectPosition: 'center',
-        borderRadius: style.radius ? `${round(style.radius)}px` : undefined,
+        borderRadius: style?.radius ? `${round(style.radius)}px` : undefined,
         maxWidth: '100%',
         maxHeight: '100%',
       }}
@@ -209,16 +236,22 @@ const ElementBox = memo(function ElementBox({
   onActivity,
   onRow,
   plate = null,
+  isEditor = false,
+  isFirstUserSlot = false,
+  onImageFail = null,
 }) {
   const boxRef = useRef(null);
-  const words = useMemo(() => wordsFor(item, content, photoUrl), [item, content, photoUrl]);
+  const words = useMemo(
+    () => wordsFor(item, content, photoUrl, isEditor, isFirstUserSlot),
+    [item, content, photoUrl, isEditor, isFirstUserSlot]
+  );
   const [size, setSize] = useState(item.style.size);
   /* Words that still need more room than the box has at the smallest size allowed are
      painted outside it, so a line is never cut off. */
   const [spills, setSpills] = useState(false);
 
   const floor = useMemo(
-    () => Math.max(ELEMENT_LIMITS.fontSize.min, Math.min(item.style.size, item.style.minSize)),
+    () => Math.max(22, ELEMENT_LIMITS.fontSize.min, Math.min(item.style.size, item.style.minSize || 22)),
     [item.style.size, item.style.minSize]
   );
 
@@ -315,11 +348,39 @@ const ElementBox = memo(function ElementBox({
   }
 
   if (item.kind === 'image' || item.field === 'photo') {
-    /* An empty photo is not drawn at all - no box, no frame, in the poster and the export. */
-    if (!words.image) return null;
+    const radius = item.style?.radius ? `${round(item.style.radius)}px` : undefined;
+    if (!words.image) {
+      const FallbackIcon = posterIconComponent(item.icon || item.name || iconForWords(content?.title || item.field || 'image') || 'heart-pulse') || FIELD_ICONS.venue;
+      const fillColor = item.style?.fill || item.style?.background || (item.style?.color ? `${item.style.color}15` : 'rgba(0,0,0,0.06)');
+      const iconColor = item.style?.iconColor || item.style?.color || 'currentColor';
+      return (
+        <div
+          data-element={item.id}
+          style={boxStyle(item, {
+            borderRadius: radius,
+            background: fillColor,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          })}
+        >
+          {FallbackIcon && (
+            <FallbackIcon
+              aria-hidden="true"
+              style={{
+                width: `${Math.min(round(item.w * 0.35), round(item.h * 0.35), 96)}px`,
+                height: `${Math.min(round(item.w * 0.35), round(item.h * 0.35), 96)}px`,
+                color: iconColor,
+                opacity: 0.75,
+              }}
+            />
+          )}
+        </div>
+      );
+    }
     return (
-      <div data-element={item.id} style={boxStyle(item, { borderRadius: item.style.radius ? `${round(item.style.radius)}px` : undefined })}>
-        <Photo url={words.image} style={item.style} />
+      <div data-element={item.id} style={boxStyle(item, { borderRadius: radius })}>
+        <Photo url={words.image} style={item.style} onImageFail={onImageFail} />
       </div>
     );
   }
@@ -327,8 +388,13 @@ const ElementBox = memo(function ElementBox({
   if (!hasText) return null;
 
   const Icon = words.field ? FIELD_ICONS[words.field] : null;
-  const label = words.field && item.style.showLabel ? FIELD_LABELS[words.field] : '';
-  const showIcon = Boolean(Icon) && item.style.showIcon !== false;
+  const isFactField = words.field && ROW_FIELDS.includes(words.field);
+  const label = isFactField
+    ? words.field.toUpperCase()
+    : words.field && item.style.showLabel
+      ? FIELD_LABELS[words.field]
+      : '';
+  const showIcon = !isFactField && Boolean(Icon) && item.style.showIcon !== false;
   const lineHeight = item.style.lineHeight;
 
   if (Array.isArray(words.lines)) {
@@ -371,12 +437,16 @@ const ElementBox = memo(function ElementBox({
                 marginTop: `${Math.max(2, Math.round((size * lineHeight - mark) / 2))}px`,
               }}
             />
-            <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{line}</span>
+            <span style={{ minWidth: 0, overflowWrap: 'normal', wordBreak: 'normal', whiteSpace: 'normal' }}>{line}</span>
           </li>
         ))}
       </ul>
     );
   }
+
+  const labelSize = isFactField ? 20 : Math.max(8, Math.round(size * 0.42));
+  const isLongVenue = words.field === 'venue' && (words.text || '').length > 18;
+  const valSize = isFactField ? (isLongVenue ? 24 : 32) : size;
 
   const gap = `${Math.max(2, Math.round(size * (showIcon ? 0.4 : 0.12)))}px`;
   const iconNode = showIcon ? (
@@ -387,16 +457,19 @@ const ElementBox = memo(function ElementBox({
     />
   ) : null;
   const wordsNode = (
-    <div style={{ minWidth: 0, maxWidth: '100%' }}>
+    <div style={{ minWidth: 0, maxWidth: '100%', textAlign: isFactField ? 'center' : type.textAlign }}>
       {label ? (
         <div
           style={{
             ...type,
-            fontSize: `${Math.max(8, Math.round(size * 0.42))}px`,
+            fontSize: `${labelSize}px`,
+            fontWeight: 700,
             lineHeight: 1.1,
             letterSpacing: '0.08em',
             textTransform: 'uppercase',
-            opacity: 0.6,
+            opacity: 0.65,
+            marginBottom: '6px',
+            textAlign: isFactField ? 'center' : type.textAlign,
           }}
         >
           {label}
@@ -405,9 +478,13 @@ const ElementBox = memo(function ElementBox({
       <div
         style={{
           ...type,
-          fontSize: `${size}px`,
-          lineHeight,
-          overflowWrap: 'anywhere',
+          fontSize: `${valSize}px`,
+          fontWeight: isFactField ? 700 : type.fontWeight,
+          lineHeight: isFactField ? 1.18 : lineHeight,
+          textAlign: isFactField ? 'center' : type.textAlign,
+          overflowWrap: 'normal',
+          wordBreak: 'normal',
+          whiteSpace: 'normal',
         }}
       >
         {words.text}
@@ -415,10 +492,8 @@ const ElementBox = memo(function ElementBox({
     </div>
   );
 
-  /* Date, place and time of one info row stand on one line: each of them is its own box of
-     the same height, so the words are put at the bottom of their box instead of at the top -
-     unless the row sits on a pill, which holds them in its middle. */
-  if (onRow) {
+  /* Date, place and time of one info row stand on one line: each of them is its own card box */
+  if (onRow || isFactField) {
     return (
       <div
         ref={boxRef}
@@ -426,17 +501,17 @@ const ElementBox = memo(function ElementBox({
         style={boxStyle(item, {
           display: 'flex',
           flexDirection: 'column',
-          alignItems: halign,
-          justifyContent: onPlate ? 'center' : 'flex-end',
+          alignItems: 'center',
+          justifyContent: 'center',
           ...spill,
         })}
       >
         <div
           style={{
             display: 'flex',
-            flexDirection: 'row',
+            flexDirection: 'column',
             alignItems: 'center',
-            gap,
+            justifyContent: 'center',
             minWidth: 0,
             maxWidth: '100%',
           }}
@@ -525,6 +600,8 @@ export default function PosterElementLayer({
   fontsReady,
   onOverflow = null,
   onFitted = null,
+  isEditor = false,
+  onImageFail = null,
 }) {
   const overflowCbRef = useRef(onOverflow);
   overflowCbRef.current = onOverflow;
@@ -559,6 +636,19 @@ export default function PosterElementLayer({
     [elements]
   );
 
+  /* The first user-filled picture space in the template receives the event/user photo. */
+  const firstUserImageId = useMemo(() => {
+    const list = Array.isArray(elements) ? elements : [];
+    const first = list.find(
+      (el) =>
+        el &&
+        ((el.kind === 'image' && Boolean(el.variable)) ||
+          el.field === 'photo' ||
+          (el.kind === 'image' && !String(el.imageUrl || '').trim()))
+    );
+    return first?.id || null;
+  }, [elements]);
+
   /* Date, place and time of one row stand on one line, whatever each one says. */
   const rows = useMemo(() => rowItemIds(ordered), [ordered]);
 
@@ -576,6 +666,7 @@ export default function PosterElementLayer({
       )
       .join('|'),
     contentKeyOf(content, photoUrl),
+    isEditor ? 'editor' : 'preview',
   ].join('§');
 
   /* Which items cannot show their words at the smallest size they allow. */
@@ -618,6 +709,9 @@ export default function PosterElementLayer({
           onActivity={markResizing}
           onRow={rows.has(item.id)}
           plate={plates.get(item.id) || null}
+          isEditor={isEditor}
+          isFirstUserSlot={item.id === firstUserImageId}
+          onImageFail={onImageFail}
         />
       ))}
     </>

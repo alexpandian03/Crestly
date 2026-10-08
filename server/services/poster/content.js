@@ -13,7 +13,7 @@ export const CONTENT_LIMITS = {
   maxDetails: schemaProps.details.maxItems,
 };
 
-const ALLOWED_IMAGE_HOSTS = new Set(['res.cloudinary.com', 'images.pexels.com']);
+const ALLOWED_IMAGE_HOSTS = new Set(['res.cloudinary.com', 'images.pexels.com', 'images.unsplash.com']);
 
 /** Two storage folders are split organization by organization, so the owner is readable. */
 const TENANT_FOLDER = /(?:brand|tenants)\/([0-9a-f]{24})(?:\/|$)/i;

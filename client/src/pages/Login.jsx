@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertCircle, Info } from "lucide-react";
+import { AlertCircle, Eye, EyeOff, Info, Loader2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import Logo from "../components/Logo";
-import { APP_NAME } from "../config/brand";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
 
 function landingForRole(role) {
   if (role === "superadmin") return "/clients";
@@ -16,6 +18,7 @@ export default function Login() {
   const { login, isAuthenticated, user } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [sessionMessage] = useState(() => {
@@ -48,81 +51,112 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-section flex items-center justify-center p-4">
-      <div className="w-full max-w-md card-surface p-8">
-        <div className="text-center mb-8">
-          <div className="flex justify-center mb-4">
+    <div className="flex min-h-[calc(100vh-4rem)] flex-col justify-between bg-white px-4 py-8">
+      <div className="mx-auto my-auto w-full max-w-[380px] space-y-6">
+        <div className="space-y-2">
+          <div className="mb-6 flex items-center">
             <Logo />
           </div>
-          <h1 className="text-2xl tracking-tight">Log in to {APP_NAME}</h1>
-          <p className="text-sm text-muted-foreground mt-2">
-            Use the email your organization gave you.
+          <h1 className="text-[24px] font-semibold tracking-tight text-[#111827]">
+            Sign in
+          </h1>
+          <p className="text-sm text-[#6B7280]">
+            Create on-brand posters in seconds.
           </p>
         </div>
 
         {sessionMessage && (
-          <div
-            className="mb-4 p-4 rounded-card border border-primary/20 bg-primary/5 text-body text-sm flex items-center gap-3"
+          <p
             role="status"
+            className="flex items-center gap-1.5 text-xs text-[#2563EB]"
           >
-            <Info className="w-5 h-5 text-primary shrink-0" />
+            <Info className="h-3.5 w-3.5 shrink-0" />
             <span>{sessionMessage}</span>
-          </div>
-        )}
-        {error && (
-          <div
-            className="mb-4 p-4 rounded-card border border-danger/30 bg-danger/5 text-danger text-sm flex items-center gap-3"
-            role="alert"
-          >
-            <AlertCircle className="w-5 h-5 shrink-0" />
-            <span>{error}</span>
-          </div>
+          </p>
         )}
 
         <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label
+          <div className="space-y-1.5">
+            <Label
               htmlFor="login-email"
-              className="block text-sm font-medium text-heading mb-1.5"
+              className="text-xs font-medium text-[#111827]"
             >
               Email
-            </label>
-            <input
+            </Label>
+            <Input
               id="login-email"
               type="email"
               required
               autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="input-field"
+              placeholder="name@organization.com"
+              className="h-9 rounded-[6px] border-[#E5E7EB] bg-white text-sm text-[#111827] shadow-none focus-visible:ring-1 focus-visible:ring-[#2563EB]"
             />
           </div>
-          <div>
-            <label
+
+          <div className="space-y-1.5">
+            <Label
               htmlFor="login-password"
-              className="block text-sm font-medium text-heading mb-1.5"
+              className="text-xs font-medium text-[#111827]"
             >
               Password
-            </label>
-            <input
-              id="login-password"
-              type="password"
-              required
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="input-field"
-            />
+            </Label>
+            <div className="relative">
+              <Input
+                id="login-password"
+                type={showPassword ? "text" : "password"}
+                required
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="h-9 rounded-[6px] border-[#E5E7EB] bg-white pr-9 text-sm text-[#111827] shadow-none focus-visible:ring-1 focus-visible:ring-[#2563EB]"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                className="absolute right-0 top-0 flex h-9 w-9 items-center justify-center text-[#6B7280] hover:text-[#111827]"
+              >
+                {showPassword ? (
+                  <EyeOff className="h-4 w-4" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
+              </button>
+            </div>
           </div>
-          <button
+
+          <Button
             type="submit"
             disabled={submitting}
-            className="btn-primary w-full mt-2 py-3"
+            className="h-9 w-full rounded-[6px] bg-[#2563EB] text-sm font-medium text-white shadow-none hover:bg-[#1D4ED8] disabled:opacity-50"
           >
-            {submitting ? "Signing in…" : "Log in"}
-          </button>
+            {submitting ? (
+              <span className="inline-flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Signing in…
+              </span>
+            ) : (
+              "Sign in"
+            )}
+          </Button>
+
+          {error && (
+            <p
+              role="alert"
+              className="flex items-center gap-1.5 text-xs text-[#DC2626]"
+            >
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              <span>{error}</span>
+            </p>
+          )}
         </form>
       </div>
+
+      <footer className="text-center text-xs text-[#9CA3AF]">
+        Brandframe · AI poster generator for teams
+      </footer>
     </div>
   );
 }

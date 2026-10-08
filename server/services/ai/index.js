@@ -14,9 +14,21 @@ import {
 } from './schema.js';
 
 async function invokeProvider(providerName, options) {
+  if (providerName === 'gemini') {
+    const apiKey = process.env.GEMINI_API_KEY?.trim();
+    if (!apiKey) {
+      console.warn('[AI] GEMINI_API_KEY is not configured. Falling back to mock provider.');
+      return generateWithMock(options);
+    }
+    try {
+      return await generateWithGemini(options);
+    } catch (err) {
+      console.warn(`[AI] Gemini provider failed (${err.message || 'API error'}). Falling back to mock provider.`);
+      return generateWithMock(options);
+    }
+  }
+
   switch (providerName) {
-    case 'gemini':
-      return generateWithGemini(options);
     case 'openai':
       return generateWithOpenAI(options);
     case 'anthropic':
@@ -25,6 +37,20 @@ async function invokeProvider(providerName, options) {
     default:
       return generateWithMock(options);
   }
+}
+
+export function llmProviderName() {
+  const provider = (process.env.LLM_PROVIDER || 'mock').toLowerCase().trim();
+  if (provider === 'gemini') {
+    return process.env.GEMINI_API_KEY?.trim() ? 'gemini' : 'mock (gemini key missing)';
+  }
+  if (provider === 'openai') {
+    return process.env.OPENAI_API_KEY?.trim() ? 'openai' : 'mock (openai key missing)';
+  }
+  if (provider === 'anthropic') {
+    return process.env.ANTHROPIC_API_KEY?.trim() ? 'anthropic' : 'mock (anthropic key missing)';
+  }
+  return 'mock';
 }
 
 /**
@@ -104,13 +130,29 @@ export async function generateContent({ prompt, brandKit, template, instruction,
       }
     }
 
-    // If still invalid after retry, throw 502
+    // If still invalid after retry, fall back to mock provider if configured provider failed
     if (!validation.valid || !candidate) {
+      if (provider !== 'mock') {
+        console.warn(`[AI] ${provider} generated invalid content after retry. Falling back to mock provider.`);
+        const fallbackRaw = await generateWithMock({
+          prompt,
+          brandKit,
+          template,
+          instruction,
+          variables: blanks,
+        });
+        const fallbackCandidate = sanitizeAndTruncateContent(fallbackRaw, blanks);
+        if (fallbackCandidate && validatePosterContent(fallbackCandidate, blanks).valid) {
+          fallbackCandidate.isAiGenerated = false;
+          return fallbackCandidate;
+        }
+      }
       const failedErr = new Error("We couldn't create the content. Please try again.");
       failedErr.status = 502;
       throw failedErr;
     }
 
+    candidate.isAiGenerated = provider !== 'mock';
     return candidate;
   } catch (err) {
     if (err.name === 'AbortError' || controller.signal.aborted) {
@@ -229,8 +271,11 @@ export async function generateDesign({
     if (controller.signal.aborted) throw new Error('The AI took too long. Please try again.');
 
     if (!candidate || !validateDesignAnswer(candidate).valid) {
-      return fallbackDesign(prompt, options);
+      const fb = fallbackDesign(prompt, options);
+      fb.isAiGenerated = false;
+      return fb;
     }
+    candidate.isAiGenerated = provider !== 'mock';
     return candidate;
   } catch (err) {
     if (err.name === 'AbortError' || controller.signal.aborted) {

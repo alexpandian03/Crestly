@@ -92,7 +92,7 @@ function ItemColorPicker({ value, brandKit, surfaceBg, onCommit }) {
         <div
           role="dialog"
           aria-label="Colour picker"
-          className="absolute left-0 top-[calc(100%+6px)] z-[60] w-[260px] rounded-lg border border-slate-200 bg-white p-3 text-left shadow-lg"
+          className="absolute left-0 top-[calc(100%+6px)] z-[60] w-[260px] rounded-lg border border-slate-200 bg-white p-3 text-left"
         >
           <span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">
             Brand colours
@@ -250,8 +250,8 @@ function Press({ active, onClick, title, children }) {
       aria-pressed={active}
       onMouseUp={(event) => event.currentTarget.blur()}
       onClick={onClick}
-      className={`rounded px-1.5 py-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 ${
-        active ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+      className={`rounded-[6px] px-1.5 py-1 text-xs transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB] ${
+        active ? 'bg-[#2563EB] text-white' : 'text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827]'
       }`}
     >
       {children}
@@ -287,12 +287,12 @@ function Step({ label, value, min, max, step = 1, onLive, onCommit, suffix = '' 
           onCommit(Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : value);
         }}
         onKeyDown={(event) => event.stopPropagation()}
-        className="w-[52px] rounded border border-slate-300 px-1 py-0.5 text-center text-xs tabular-nums text-slate-800 focus:border-blue-500 focus:outline-none"
+        className="h-8 w-[52px] rounded-[6px] border border-[#E5E7EB] bg-white px-1 text-center text-xs tabular-nums text-[#111827] focus:border-[#2563EB] focus:outline-none"
       />
       <Press title={`More ${label}`} onClick={() => nudge(step)}>
         <span className="text-sm leading-none">+</span>
       </Press>
-      {suffix ? <span className="text-[10px] text-slate-400">{suffix}</span> : null}
+      {suffix ? <span className="text-[10px] text-[#6B7280]">{suffix}</span> : null}
     </div>
   );
 }
@@ -362,7 +362,7 @@ function MetaPopover({ item, onMeta, onClose }) {
       ref={rootRef}
       role="dialog"
       aria-label="Fill-in settings"
-      className="absolute left-0 top-[calc(100%+6px)] z-[60] w-[280px] max-w-[86vw] rounded-lg border border-slate-200 bg-white p-2.5 text-left shadow-lg"
+      className="absolute left-0 top-[calc(100%+6px)] z-[60] w-[280px] max-w-[86vw] rounded-lg border border-slate-200 bg-white p-2.5 text-left"
     >
       <label className="block">
         <span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
@@ -450,7 +450,7 @@ function ModeRow({ item, mode, modes, counters, onMode, onMeta }) {
   return (
     <div className="relative">
       <span className="block text-[10px] font-semibold uppercase tracking-wide text-slate-500">Who changes this?</span>
-      <span className="mt-0.5 flex items-center gap-0.5 rounded-btn border border-slate-200 bg-slate-50 p-0.5">
+      <span className="mt-0.5 flex items-center gap-0.5 rounded-[6px] border border-[#E5E7EB] bg-[#F9FAFB] p-0.5">
         {modes.map((key) => (
           <button
             key={key}
@@ -458,8 +458,8 @@ function ModeRow({ item, mode, modes, counters, onMode, onMeta }) {
             aria-pressed={mode === key}
             title={ITEM_MODES[key]}
             onClick={() => onMode?.(item.id, key)}
-            className={`rounded px-2 py-1 text-[11px] font-semibold leading-tight focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 ${
-              mode === key ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+            className={`rounded-[4px] px-2 py-1 text-[11px] font-medium leading-tight transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB] ${
+              mode === key ? 'bg-[#2563EB] text-white font-semibold' : 'text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827]'
             }`}
           >
             {ITEM_MODES[key]}
@@ -530,7 +530,7 @@ export default function ItemToolbar({
     <div
       role="group"
       aria-label="Item settings"
-      className="flex max-w-full flex-wrap items-end gap-x-3 gap-y-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-md"
+      className="flex max-w-full flex-wrap items-end gap-x-3 gap-y-2 rounded-[8px] border border-[#E5E7EB] bg-white px-3 py-2"
       onPointerDown={(event) => event.stopPropagation()}
       onKeyDown={(event) => event.stopPropagation()}
     >
@@ -546,7 +546,7 @@ export default function ItemToolbar({
                 aria-label="Font"
                 value={style.fontFamily || 'brand:body'}
                 onChange={(event) => set({ fontFamily: event.target.value })}
-                className="max-w-[155px] rounded border border-slate-300 bg-white px-1.5 py-1 text-xs text-slate-800 focus:border-blue-500 focus:outline-none"
+                className="h-8 max-w-[155px] rounded-[6px] border border-[#E5E7EB] bg-white px-2 text-xs text-[#111827] focus:border-[#2563EB] focus:outline-none"
               >
                 <optgroup label="Brand fonts">
                   <option value="brand:heading">

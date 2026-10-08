@@ -78,7 +78,7 @@ export default function BrandImageField({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-semibold text-heading">{label}</p>
+        <p className="text-[13px] font-medium text-[#111827]">{label}</p>
         {busy && (
           <span className="text-[11px] text-primary tabular-nums">
             {progress}%
@@ -88,13 +88,13 @@ export default function BrandImageField({
 
       {shown ? (
         <div
-          className={`relative rounded-card border border-line bg-preview overflow-hidden ${boxClass}`}
+          className={`relative rounded-[6px] border border-dashed border-[#D1D5DB] bg-[#FAFAFA] overflow-hidden p-2 flex items-center justify-center ${boxClass}`}
         >
           <img
             src={shown}
             alt={`${label} preview`}
             crossOrigin="anonymous"
-            className="w-full h-full object-contain"
+            className="max-h-full max-w-full object-contain"
             onError={() =>
               setError("This image could not be displayed. Upload it again.")
             }
@@ -106,16 +106,16 @@ export default function BrandImageField({
                 onClick={remove}
                 aria-label="Remove image"
                 title="Remove image"
-                className="w-7 h-7 rounded-btn bg-canvas border border-line flex items-center justify-center text-body hover:text-danger"
+                className="w-6 h-6 rounded-[4px] bg-white border border-[#E5E7EB] flex items-center justify-center text-[#6B7280] hover:text-[#DC2626] transition-colors"
               >
-                <X size={14} />
+                <X size={13} />
               </button>
             )}
           </div>
         </div>
       ) : (
         <div
-          className={`rounded-card border border-dashed border-line bg-section flex items-center justify-center text-muted-foreground ${boxClass}`}
+          className={`rounded-[6px] border border-dashed border-[#D1D5DB] bg-[#FAFAFA] flex items-center justify-center text-[#9CA3AF] ${boxClass}`}
         >
           <ImageIcon size={20} />
         </div>
@@ -126,12 +126,12 @@ export default function BrandImageField({
           type="button"
           onClick={pick}
           disabled={busy}
-          className="btn-primary text-xs py-2 px-3 disabled:opacity-60"
+          className="h-8 px-3 rounded-[6px] border border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB] shrink-0 inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
         >
           {busy ? (
-            <Loader2 size={14} className="animate-spin" />
+            <Loader2 size={13} className="animate-spin" />
           ) : (
-            <Upload size={14} />
+            <Upload size={13} className="text-[#6B7280]" />
           )}
           <span>
             {busy
@@ -149,9 +149,9 @@ export default function BrandImageField({
           <button
             type="button"
             onClick={remove}
-            className="btn-ghost border border-line text-xs py-2 px-3"
+            className="h-8 px-2.5 rounded-[6px] text-xs font-medium text-[#DC2626] hover:bg-[#FEF2F2] transition-colors inline-flex items-center gap-1.5"
           >
-            <Trash2 size={14} />
+            <Trash2 size={13} />
             <span>Remove</span>
           </button>
         )}

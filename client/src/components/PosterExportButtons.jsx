@@ -99,28 +99,35 @@ export default function PosterExportButtons({ brandKit, template, content, orgNa
   };
 
   return (
-    <div className="flex justify-center mt-4" ref={wrapRef}>
+    <div className="flex justify-center" ref={wrapRef}>
       <div className="relative">
         <button
           type="button"
-          className="btn-primary"
+          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[6px] border border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB] transition-colors disabled:opacity-50"
           aria-haspopup="menu"
           aria-expanded={open}
           disabled={!!exporting}
           onClick={() => setOpen((o) => !o)}
         >
-          {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-          {exporting ? 'Preparing…' : 'Download'}
-          <ChevronDown className="w-4 h-4" />
+          {exporting ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <Download className="w-3.5 h-3.5 text-[#6B7280]" />
+          )}
+          <span>{exporting ? "Preparing…" : "Download"}</span>
+          <ChevronDown className="w-3.5 h-3.5 text-[#6B7280]" />
         </button>
         {open && (
-          <div role="menu" className="absolute right-0 mt-2 w-40 card-surface py-1 z-20">
+          <div
+            role="menu"
+            className="absolute left-1/2 -translate-x-1/2 mt-1.5 w-36 rounded-[6px] border border-[#E5E7EB] bg-white shadow-sm py-1 z-20"
+          >
             {FORMATS.map(({ id, label }) => (
               <button
                 key={id}
                 type="button"
                 role="menuitem"
-                className="w-full text-left px-3 py-2 text-sm text-body hover:bg-section"
+                className="w-full text-left px-3 py-1.5 text-xs text-[#111827] hover:bg-[#F9FAFB] transition-colors"
                 onClick={() => handleExport(id)}
               >
                 Download {label}

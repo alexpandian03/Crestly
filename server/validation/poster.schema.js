@@ -40,6 +40,7 @@ export const generatePosterRequestSchema = z.object({
     .max(recipeIds().length, 'There are only this many designs to leave out')
     .optional(),
   variant: variantValue.optional(),
+  imageUrl: z.string().trim().max(1000, 'Image address is too long').optional(),
 });
 
 const contentSchema = z.object({

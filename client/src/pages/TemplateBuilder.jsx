@@ -12,6 +12,8 @@ import TemplatePreview from "../components/TemplatePreview";
 import { useAuth } from "../context/AuthContext";
 import { LAYOUT_BASE, resolveTemplateRender } from "../utils/templateRender";
 import { LAYOUT_LABELS } from "../utils/templateBuilderRules";
+import { Button } from "../components/ui/button";
+import { Skeleton } from "../components/ui/skeleton";
 
 const AREA_LABELS = {
   header: "Top band",
@@ -81,53 +83,69 @@ export default function TemplateBuilder() {
 
   if (loading) {
     return (
-      <div className="container-page section-pad flex justify-center py-20">
-        <Loader2 className="h-7 w-7 animate-spin text-primary" />
+      <div className="p-6 space-y-6">
+        <div className="space-y-2 pb-6 border-b border-[#E5E7EB]">
+          <Skeleton className="h-4 w-28 rounded" />
+          <Skeleton className="h-7 w-48 rounded" />
+          <Skeleton className="h-4 w-72 rounded" />
+        </div>
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <Skeleton className="h-96 rounded-[8px]" />
+          <div className="space-y-4">
+            <Skeleton className="h-40 rounded-[8px]" />
+            <Skeleton className="h-40 rounded-[8px]" />
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="container-page section-pad space-y-6">
-      <div className="pb-6 border-b border-line flex flex-wrap items-center justify-between gap-4">
+    <div className="p-6 space-y-6">
+      <div className="pb-6 border-b border-[#E5E7EB] flex flex-wrap items-center justify-between gap-4">
         <div className="min-w-0">
           <Link
             to="/templates"
-            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-heading"
+            className="inline-flex items-center gap-1.5 text-xs text-[#6B7280] hover:text-[#111827]"
           >
-            <ArrowLeft className="h-4 w-4" /> All templates
+            <ArrowLeft className="h-3.5 w-3.5" /> All templates
           </Link>
-          <h1 className="text-2xl mt-1 truncate">
+          <h1 className="text-[24px] font-semibold text-[#111827] tracking-tight mt-1 truncate">
             {template?.name || "Template"}
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="text-sm text-[#6B7280] mt-1">
             How this layout places the words, the photo and the information.
           </p>
         </div>
       </div>
 
       {error && (
-        <div className="p-4 rounded-card border border-danger/30 bg-danger/5 text-danger text-sm flex items-center gap-2">
+        <div
+          role="alert"
+          className="p-3 rounded-[6px] border border-[#FECACA] bg-[#FEF2F2] text-[#DC2626] text-xs flex items-center gap-2"
+        >
           <AlertCircle className="h-4 w-4 shrink-0" /> {error}
         </div>
       )}
 
       {template && rendered && (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="card-surface p-4">
+          <div className="rounded-[8px] border border-[#E5E7EB] bg-white p-4">
             <div className="mx-auto w-full max-w-[360px]">
               <TemplatePreview eager brandKit={brandKit} template={template} showZoneBorders />
             </div>
-            <p className="mt-3 text-xs text-muted-foreground">
+            <p className="mt-3 text-xs text-[#6B7280]">
               The top and bottom bands always come from your brand kit. Colours,
               logo and contacts cannot be changed here.
             </p>
           </div>
 
           <div className="space-y-4">
-            <section className="card-surface p-4 space-y-2">
-              <h2 className="text-sm font-semibold text-heading">Areas</h2>
-              <ul className="space-y-1.5 text-sm text-body">
+            <section className="rounded-[8px] border border-[#E5E7EB] bg-white p-4 space-y-2">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
+                Areas
+              </h2>
+              <ul className="space-y-1.5 text-sm text-[#374151]">
                 {[
                   { type: "header", zone: rendered.zones.header },
                   { type: "content", zone: rendered.zones.content },
@@ -142,36 +160,38 @@ export default function TemplateBuilder() {
                     >
                       <span className="inline-flex items-center gap-2">
                         {row.type === "image" ? (
-                          <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                          <ImageIcon className="h-3.5 w-3.5 text-[#6B7280]" />
                         ) : (
-                          <span className="h-2 w-2 rounded-full bg-primary/60" />
+                          <span className="h-2 w-2 rounded-full bg-[#2563EB]" />
                         )}
                         {AREA_LABELS[row.type]}
                       </span>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-xs text-[#6B7280]">
                         {row.zone.w} × {row.zone.h}
                       </span>
                     </li>
                   ))}
               </ul>
-              <p className="text-xs text-muted-foreground pt-1">
+              <p className="text-xs text-[#6B7280] pt-1">
                 Text size in this layout: {rendered.fonts.minFont}–
                 {rendered.fonts.maxFont}
               </p>
             </section>
 
-            <section className="card-surface p-4 space-y-2">
-              <h2 className="text-sm font-semibold text-heading">Placement</h2>
-              <ul className="space-y-1.5 text-sm text-body">
+            <section className="rounded-[8px] border border-[#E5E7EB] bg-white p-4 space-y-2">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
+                Placement
+              </h2>
+              <ul className="space-y-1.5 text-sm text-[#374151]">
                 {SETTING_KEYS.map((key) => (
                   <li
                     key={key}
                     className="flex items-center justify-between gap-2"
                   >
-                    <span className="text-muted-foreground">
+                    <span className="text-[#6B7280]">
                       {LAYOUT_LABELS[key].label}
                     </span>
-                    <span>
+                    <span className="font-medium text-[#111827]">
                       {LAYOUT_LABELS[key].values[rendered.layout[key]] ||
                         LAYOUT_LABELS[key].values[LAYOUT_BASE[key]]}
                     </span>
@@ -180,13 +200,15 @@ export default function TemplateBuilder() {
               </ul>
             </section>
 
-            <Link
-              to={`/templates/${id}/edit`}
-              className="btn-primary w-full justify-center gap-2 inline-flex items-center px-4 py-2 text-sm"
+            <Button
+              asChild
+              className="h-9 w-full rounded-[6px] bg-[#2563EB] text-sm font-medium text-white shadow-none hover:bg-[#1D4ED8]"
             >
-              <MoveRight className="h-4 w-4" /> Edit this layout
-            </Link>
-            <p className="text-xs text-muted-foreground rounded-card bg-section border border-line px-3 py-2">
+              <Link to={`/templates/${id}/edit`}>
+                <MoveRight className="h-4 w-4 mr-2" /> Edit this layout
+              </Link>
+            </Button>
+            <p className="text-xs text-[#6B7280] rounded-[6px] bg-[#FAFAFA] border border-[#E5E7EB] px-3 py-2">
               In the editor you can move the text and photo areas, change these
               settings and save a new version. The two brand areas always come
               from your brand kit.

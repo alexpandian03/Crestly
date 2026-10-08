@@ -5,7 +5,6 @@ import {
   LayoutTemplate,
   Palette,
   Sparkles,
-  UserCog,
   Users,
 } from 'lucide-react';
 
@@ -27,53 +26,82 @@ export const guestNavItems = [
   { href: '/#pricing', label: 'Pricing' },
 ];
 
-/** Two-link top navigation for members, who have no sidebar. */
 export const memberNavItems = [
   { to: '/create', label: 'Create' },
   { to: '/posters', label: 'Posters' },
 ];
 
-const workspaceItems = [
+/** Standard items requested: Dashboard, Create, Posters, Brand kit, Templates, Team */
+export const defaultNavItems = [
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/create', label: 'Create', icon: Sparkles },
   { to: '/posters', label: 'Posters', icon: Images },
   { to: '/brand-kit', label: 'Brand kit', icon: Palette },
   { to: '/templates', label: 'Templates', icon: LayoutTemplate },
+  { to: '/team', label: 'Team', icon: Users },
 ];
 
-/**
- * Sidebar groups; superadmin workspace links need a chosen organization.
- */
 export function navGroups(user) {
   if (user?.role === 'superadmin') {
     return [
       {
-        label: 'Platform',
         items: [
           { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
           { to: '/clients', label: 'Organizations', icon: Building2 },
           { to: '/users', label: 'Users', icon: Users },
         ],
       },
-      { label: 'Workspace', needsClient: true, items: workspaceItems },
-    ];
-  }
-  if (user?.role === 'clientadmin') {
-    return [
       {
-        label: 'Workspace',
+        needsClient: true,
         items: [
-          { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-          ...workspaceItems,
-          { to: '/team', label: 'Team', icon: UserCog },
+          { to: '/create', label: 'Create', icon: Sparkles },
+          { to: '/posters', label: 'Posters', icon: Images },
+          { to: '/brand-kit', label: 'Brand kit', icon: Palette },
+          { to: '/templates', label: 'Templates', icon: LayoutTemplate },
         ],
       },
     ];
   }
+
+  if (user?.role === 'clientadmin') {
+    return [
+      {
+        items: defaultNavItems,
+      },
+    ];
+  }
+
+  if (user?.role === 'user') {
+    return [
+      {
+        items: [
+          { to: '/create', label: 'Create', icon: Sparkles },
+          { to: '/posters', label: 'Posters', icon: Images },
+        ],
+      },
+    ];
+  }
+
   return [];
 }
 
 export function hasSidebar(user) {
-  return user?.role === 'superadmin' || user?.role === 'clientadmin';
+  return Boolean(user);
+}
+
+export function titleForPath(pathname) {
+  if (pathname === '/dashboard') return 'Dashboard';
+  if (pathname === '/create') return 'Create';
+  if (pathname === '/posters') return 'Posters';
+  if (pathname === '/brand-kit') return 'Brand kit';
+  if (pathname === '/templates') return 'Templates';
+  if (pathname === '/team') return 'Team';
+  if (pathname === '/clients') return 'Organizations';
+  if (pathname === '/users') return 'Users';
+  if (pathname.startsWith('/templates/') && pathname.endsWith('/edit')) return 'Edit template';
+  if (pathname === '/how-it-works') return 'How it works';
+  if (pathname === '/access-denied') return 'Access denied';
+  return 'Brandframe';
 }
 
 const COLLAPSE_KEY = 'bf-sidebar-collapsed';

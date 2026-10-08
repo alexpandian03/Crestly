@@ -370,9 +370,9 @@ export default function PosterDetailDrawer({
               </div>
 
               {designStale && previewVersion == null && (
-                <div className="flex flex-col gap-2 rounded-card border border-primary/25 bg-primary/5 px-3 py-2.5">
-                  <span className="flex items-start gap-2 text-sm text-body">
-                    <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-primary" />
+                <div className="flex flex-col gap-2 rounded-[8px] border border-[#E5E7EB] bg-[#FAFAFA] px-3 py-2.5">
+                  <span className="flex items-start gap-2 text-sm text-[#4B5563]">
+                    <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-[#6B7280]" />
                     <span>{DESIGN_STALE_MESSAGE}</span>
                   </span>
                   {designError && (
@@ -494,10 +494,10 @@ export default function PosterDetailDrawer({
                       return (
                         <li
                           key={number}
-                          className={`rounded-card border px-3 py-2.5 ${
+                          className={`rounded-[8px] border px-3 py-2.5 ${
                             isPreviewing
-                              ? "border-primary bg-primary/5"
-                              : "border-line bg-canvas"
+                              ? "border-[#2563EB] bg-[#EFF6FF]"
+                              : "border-[#E5E7EB] bg-white"
                           }`}
                         >
                           <div className="flex items-start justify-between gap-3">
@@ -505,8 +505,8 @@ export default function PosterDetailDrawer({
                               <p className="text-sm text-heading font-medium">
                                 Version {number}
                                 {isLatest && (
-                                  <span className="ml-2 inline-flex items-center gap-1 rounded-chip bg-success/10 text-success px-2 py-0.5 text-[11px] font-medium">
-                                    <Check className="w-3 h-3" /> Current
+                                  <span className="ml-2 inline-flex items-center gap-1.5 text-[11px] font-medium text-[#10B981]">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[#10B981]" /> Current
                                   </span>
                                 )}
                               </p>

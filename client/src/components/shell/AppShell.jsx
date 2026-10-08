@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import Navbar from '../Navbar';
 import Footer from '../Footer';
 import SideBar, { MobileMenu } from './SideBar';
+import TopBar from './TopBar';
 import { OrgBar, OrgPicker } from './OrgBar';
 import ChangePasswordDialog from './ChangePasswordDialog';
 import { useClientOptions } from './useClientOptions';
@@ -13,12 +14,9 @@ import {
   memberNavItems,
   navGroups,
   readCollapsed,
+  titleForPath,
   writeCollapsed,
 } from './navItems';
-
-/* Must match the h-16 top bar and h-11 context bar: the sidebar sticks below them. */
-const TOP_BAR_H = 64;
-const ORG_BAR_H = 44;
 
 export default function AppShell({ children }) {
   const { user, isAuthenticated, activeClientId } = useAuth();
@@ -35,7 +33,7 @@ export default function AppShell({ children }) {
   const [password, setPassword] = useState(false);
 
   const mustChangePassword = Boolean(user?.mustChangePassword);
-  const headerH = TOP_BAR_H + (showOrgBar ? ORG_BAR_H : 0);
+  const title = titleForPath(location.pathname);
 
   useEffect(() => setDrawer(false), [location.pathname, location.hash]);
 
@@ -67,38 +65,55 @@ export default function AppShell({ children }) {
   const flatItems = !isAuthenticated ? guestNavItems : memberNavItems;
 
   return (
-    <div className="flex min-h-screen flex-col bg-canvas font-sans text-body">
-      <div className="sticky top-0 z-40 shrink-0 bg-canvas">
-        <Navbar menuOpen={drawer} onToggleMenu={() => setDrawer((value) => !value)} onPassword={() => setPassword(true)} />
-        {showOrgBar && <OrgBar selected={org.selected} onChange={askForClient} />}
-      </div>
+    <div className="flex min-h-screen bg-white font-sans text-[#111827]">
+      {/* 240px wide sidebar on the left for authenticated users */}
+      {sidebar && (
+        <SideBar
+          collapsed={collapsed}
+          onToggle={toggleCollapsed}
+          groups={groups}
+          hasClient={Boolean(activeClientId)}
+          onNeedClient={askForClient}
+        />
+      )}
 
-      <div className="flex w-full flex-1 items-stretch">
-        {sidebar && (
-          <SideBar
-            collapsed={collapsed}
-            onToggle={toggleCollapsed}
-            groups={groups}
-            hasClient={Boolean(activeClientId)}
-            onNeedClient={askForClient}
-            style={{ top: headerH, height: `calc(100vh - ${headerH}px)` }}
-          />
+      {/* Main content column with 56px top bar */}
+      <div className="flex flex-1 flex-col min-w-0">
+        {sidebar ? (
+          <div className="sticky top-0 z-40 bg-white">
+            <TopBar
+              title={title}
+              onToggleMenu={() => setDrawer((value) => !value)}
+              onPassword={() => setPassword(true)}
+            />
+            {showOrgBar && <OrgBar selected={org.selected} onChange={askForClient} />}
+          </div>
+        ) : (
+          <div className="sticky top-0 z-40 bg-white">
+            <Navbar
+              menuOpen={drawer}
+              onToggleMenu={() => setDrawer((value) => !value)}
+              onPassword={() => setPassword(true)}
+            />
+            {showOrgBar && <OrgBar selected={org.selected} onChange={askForClient} />}
+          </div>
         )}
+
         <main className="min-w-0 flex-1">{children}</main>
+
+        {!sidebar && <Footer />}
       </div>
 
-      {!sidebar && <Footer />}
-
+      {/* Mobile drawer for small screens */}
       <MobileMenu
         open={drawer}
         onClose={() => setDrawer(false)}
-        hiddenClass={sidebar ? 'lg:hidden' : 'md:hidden'}
         groups={groups}
-        flatItems={flatItems}
         hasClient={Boolean(activeClientId)}
         onNeedClient={askForClient}
       />
 
+      {/* Superadmin organization picker */}
       {showOrgBar && (
         <OrgPicker
           open={picker}
@@ -110,6 +125,7 @@ export default function AppShell({ children }) {
         />
       )}
 
+      {/* Password change dialog */}
       <ChangePasswordDialog
         open={password || mustChangePassword}
         mustChange={mustChangePassword}

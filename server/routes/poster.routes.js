@@ -12,6 +12,8 @@ import {
   restorePosterVersionController,
   updatePosterController,
   uploadPosterThumbnailController,
+  searchPhotosController,
+  trackPhotoDownloadController,
 } from '../controllers/poster.controller.js';
 import { requireAuth, requireRole, tenantGuard } from '../middleware/auth.middleware.js';
 import { validateBody, validateParams, validateQuery } from '../middleware/validate.middleware.js';
@@ -50,6 +52,8 @@ router.post(
 
 router.post('/', tenantGuard, validateBody(createPosterSchema), createPosterController);
 router.get('/', tenantGuard, validateQuery(posterListQuerySchema), listPostersController);
+router.get('/photos/search', tenantGuard, searchPhotosController);
+router.post('/photos/download', tenantGuard, trackPhotoDownloadController);
 router.get('/:id', tenantGuard, validateParams(posterIdParamsSchema), getPosterController);
 
 router.patch(

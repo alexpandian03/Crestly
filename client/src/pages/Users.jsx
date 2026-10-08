@@ -6,27 +6,54 @@ import {
   KeyRound,
   Loader2,
   Plus,
-  UserCheck,
-  UserPlus,
-  Users as UsersIcon,
+  X,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext";
 import api from "../services/api";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Skeleton } from "../components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog";
 
-const inputClass =
-  "w-full bg-section border border-line rounded-btn px-3.5 py-2.5 text-sm text-heading focus:outline-none focus:border-primary/60 transition-colors";
 const passwordIsValid = (value) =>
   value.length >= 10 &&
   value.length <= 72 &&
   /[A-Za-z]/.test(value) &&
   /\d/.test(value);
+
 const itemId = (item) => item?.id || item?._id;
 
-function displayDate(value) {
+function formatRole(role) {
+  if (role === "superadmin") return "Super admin";
+  if (role === "clientadmin") return "Client admin";
+  return "User";
+}
+
+function formatLoginDate(value) {
   if (!value) return "Never";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "Never" : date.toLocaleString();
+  if (Number.isNaN(date.getTime())) return "Never";
+  return date.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 export default function Users() {
@@ -44,6 +71,7 @@ export default function Users() {
   const [role, setRole] = useState(isSuperadmin ? "clientadmin" : "user");
   const [clientId, setClientId] = useState(activeClientId || "");
   const [feedback, setFeedback] = useState({ type: "", message: "" });
+  const [dialogError, setDialogError] = useState("");
   const [temporaryPassword, setTemporaryPassword] = useState(null);
 
   const loadData = async () => {
@@ -84,20 +112,15 @@ export default function Users() {
 
   const handleCreate = async (event) => {
     event.preventDefault();
-    setFeedback({ type: "", message: "" });
+    setDialogError("");
     if (!passwordIsValid(password)) {
-      setFeedback({
-        type: "error",
-        message:
-          "Password must be 10–72 characters and include a letter and a number.",
-      });
+      setDialogError(
+        "Password must be 10–72 characters and include at least one letter and one number.",
+      );
       return;
     }
     if (isSuperadmin && !clientId) {
-      setFeedback({
-        type: "error",
-        message: "Select an organization for this account.",
-      });
+      setDialogError("Select an organization for this account.");
       return;
     }
 
@@ -122,12 +145,10 @@ export default function Users() {
       setShowAddForm(false);
       await loadData();
     } catch (err) {
-      setFeedback({
-        type: "error",
-        message:
-          err.response?.data?.error?.message ||
+      setDialogError(
+        err.response?.data?.error?.message ||
           "We could not create this account.",
-      });
+      );
     } finally {
       setSubmitting(false);
     }
@@ -199,153 +220,355 @@ export default function Users() {
   };
 
   return (
-    <div className="container-page section-pad space-y-8">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-line">
-        <div>
-          <h1 className="text-2xl flex items-center gap-2">
-            <UsersIcon className="w-6 h-6 text-primary" />
-            {isSuperadmin ? "Users" : "Team"}
-          </h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Manage account access and temporary passwords.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowAddForm((show) => !show)}
-          className="btn-primary"
-        >
-          <Plus className="w-4 h-4" />{" "}
-          {showAddForm ? "Close form" : "Add member"}
-        </button>
-      </div>
-
-      {feedback.message && (
-        <div
-          className={`p-4 rounded-card text-sm flex items-center gap-3 border ${feedback.type === "success" ? "bg-success/5 border-success/20 text-success" : "bg-danger/5 border-danger/20 text-danger"}`}
-          role="status"
-        >
-          {feedback.type === "success" ? (
-            <CheckCircle className="w-4 h-4 shrink-0" />
-          ) : (
-            <AlertCircle className="w-4 h-4 shrink-0" />
-          )}
-          <span>{feedback.message}</span>
-        </div>
-      )}
-
-      {temporaryPassword && (
-        <div
-          className="p-5 rounded-card border border-primary/30 bg-primary/5 space-y-3"
-          role="status"
-        >
+    <div className="bg-white min-h-[calc(100vh-56px)]">
+      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+        {/* Header */}
+        <div className="pb-5 border-b border-[#E5E7EB] flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 className="text-base">
-              Temporary password for {temporaryPassword.name}
-            </h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              Copy it now. It is shown only once.
+            <h1 className="text-[24px] font-semibold text-[#111827] leading-tight">
+              {isSuperadmin ? "Users" : "Team"}
+            </h1>
+            <p className="text-sm text-[#6B7280] mt-1">
+              Manage account access and temporary passwords.
             </p>
           </div>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <input
-              readOnly
-              value={temporaryPassword.value}
-              className="input-field font-mono"
-              onFocus={(event) => event.target.select()}
-            />
-            <button
-              type="button"
-              onClick={copyTemporaryPassword}
-              className="btn-primary"
-            >
-              <Copy className="w-4 h-4" /> Copy
-            </button>
-            <button
-              type="button"
-              onClick={() => setTemporaryPassword(null)}
-              className="btn-ghost"
-            >
-              Done
-            </button>
-          </div>
+          <Button
+            onClick={() => {
+              setDialogError("");
+              setShowAddForm(true);
+            }}
+            className="h-9 px-3.5 rounded-[6px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-sm font-medium inline-flex items-center gap-1.5 transition-colors shadow-none"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add member</span>
+          </Button>
         </div>
-      )}
 
-      {showAddForm && (
-        <div className="card-surface p-6 space-y-5">
-          <div className="flex items-center gap-2 font-semibold text-heading">
-            <UserPlus className="w-4 h-4 text-primary" /> New account
+        {/* Feedback message banner */}
+        {feedback.message && (
+          <div
+            className={`p-3 rounded-[8px] border text-xs flex items-center justify-between gap-3 ${
+              feedback.type === "success"
+                ? "bg-[#F0FDF4] border-[#BBF7D0] text-[#16A34A]"
+                : "bg-[#FEF2F2] border-[#FECACA] text-[#DC2626]"
+            }`}
+            role="status"
+          >
+            <div className="flex items-center gap-2">
+              {feedback.type === "success" ? (
+                <CheckCircle className="w-4 h-4 shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 shrink-0" />
+              )}
+              <span>{feedback.message}</span>
+            </div>
+            <button
+              type="button"
+              aria-label="Dismiss message"
+              onClick={() => setFeedback({ type: "", message: "" })}
+              className="p-0.5 text-[#9CA3AF] hover:text-[#111827]"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
-          <form onSubmit={handleCreate} className="space-y-4">
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-heading mb-1.5">
+        )}
+
+        {/* Temporary password alert banner */}
+        {temporaryPassword && (
+          <div
+            className="p-4 rounded-[8px] border border-[#E5E7EB] bg-[#FAFAFA] space-y-3"
+            role="status"
+          >
+            <div>
+              <h2 className="text-sm font-semibold text-[#111827]">
+                Temporary password for {temporaryPassword.name}
+              </h2>
+              <p className="text-xs text-[#6B7280] mt-0.5">
+                Copy it now. It is shown only once.
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2 max-w-md">
+              <Input
+                readOnly
+                value={temporaryPassword.value}
+                className="h-9 font-mono text-sm rounded-[6px] border-[#E5E7EB] bg-white text-[#111827]"
+                onFocus={(event) => event.target.select()}
+              />
+              <Button
+                type="button"
+                onClick={copyTemporaryPassword}
+                className="h-9 px-3 rounded-[6px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-medium shrink-0 gap-1.5 shadow-none"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>Copy</span>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setTemporaryPassword(null)}
+                className="h-9 px-3 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB] shrink-0"
+              >
+                Done
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Table container: 1px-bordered 8px-radius, no shadow */}
+        <div className="rounded-[8px] border border-[#E5E7EB] bg-white overflow-hidden">
+          {loading ? (
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-[#FAFAFA] border-b border-[#E5E7EB] hover:bg-[#FAFAFA]">
+                  <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
+                    Name
+                  </TableHead>
+                  <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
+                    Email
+                  </TableHead>
+                  <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
+                    Role
+                  </TableHead>
+                  <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
+                    Status
+                  </TableHead>
+                  <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
+                    Last login
+                  </TableHead>
+                  <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] text-right">
+                    Actions
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {Array.from({ length: 5 }).map((_, index) => (
+                  <TableRow key={index} className="border-b border-[#E5E7EB]">
+                    <TableCell className="px-4 py-3">
+                      <Skeleton className="h-4 w-32 rounded-[4px]" />
+                    </TableCell>
+                    <TableCell className="px-4 py-3">
+                      <Skeleton className="h-4 w-44 rounded-[4px]" />
+                    </TableCell>
+                    <TableCell className="px-4 py-3">
+                      <Skeleton className="h-4 w-20 rounded-[4px]" />
+                    </TableCell>
+                    <TableCell className="px-4 py-3">
+                      <Skeleton className="h-4 w-16 rounded-[4px]" />
+                    </TableCell>
+                    <TableCell className="px-4 py-3">
+                      <Skeleton className="h-4 w-24 rounded-[4px]" />
+                    </TableCell>
+                    <TableCell className="px-4 py-3 text-right">
+                      <Skeleton className="h-8 w-36 ml-auto rounded-[6px]" />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : usersList.length === 0 ? (
+            <div className="p-12 text-center space-y-2">
+              <p className="text-sm font-medium text-[#111827]">
+                No members found
+              </p>
+              <p className="text-xs text-[#6B7280]">
+                Add a team member to give them access to create posters.
+              </p>
+              <Button
+                onClick={() => {
+                  setDialogError("");
+                  setShowAddForm(true);
+                }}
+                className="mt-2 h-9 px-3.5 rounded-[6px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-medium inline-flex items-center gap-1.5 shadow-none"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add member</span>
+              </Button>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-[#FAFAFA] border-b border-[#E5E7EB] hover:bg-[#FAFAFA]">
+                  <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
+                    Name
+                  </TableHead>
+                  <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
+                    Email
+                  </TableHead>
+                  <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
+                    Role
+                  </TableHead>
+                  <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
+                    Status
+                  </TableHead>
+                  <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
+                    Last login
+                  </TableHead>
+                  <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] text-right">
+                    Actions
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {usersList.map((member) => {
+                  const id = itemId(member);
+                  const active = member.isActive !== false;
+                  const isSelf = id === (user?.id || user?._id);
+                  return (
+                    <TableRow
+                      key={id}
+                      className="border-b border-[#E5E7EB] hover:bg-[#F9FAFB] transition-colors"
+                    >
+                      <TableCell className="px-4 py-3 font-medium text-sm text-[#111827]">
+                        {member.name}
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-sm text-[#6B7280]">
+                        {member.email}
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-sm text-[#6B7280]">
+                        {formatRole(member.role)}
+                      </TableCell>
+                      <TableCell className="px-4 py-3">
+                        <div className="flex items-center gap-1.5 text-xs">
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                              active ? "bg-[#16A34A]" : "bg-[#9CA3AF]"
+                            }`}
+                          />
+                          <span
+                            className={
+                              active
+                                ? "text-[#16A34A] font-medium"
+                                : "text-[#6B7280]"
+                            }
+                          >
+                            {active ? "Active" : "Inactive"}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-xs text-[#6B7280]">
+                        {formatLoginDate(
+                          member.lastLoginAt || member.lastLogin,
+                        )}
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={actionId === id}
+                            onClick={() => resetPassword(member)}
+                            className="h-8 px-2.5 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-50 inline-flex items-center gap-1.5 shadow-none"
+                          >
+                            <KeyRound className="w-3.5 h-3.5 text-[#6B7280]" />
+                            <span>Reset password</span>
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={
+                              actionId === id ||
+                              (!isSuperadmin && isSelf && active)
+                            }
+                            onClick={() => toggleActive(member)}
+                            className="h-8 px-2.5 rounded-[6px] text-xs font-medium text-[#6B7280] hover:text-[#111827] hover:bg-[#F3F4F6] disabled:opacity-50"
+                          >
+                            {active ? "Deactivate" : "Activate"}
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </div>
+
+        {/* Add member Dialog */}
+        <Dialog open={showAddForm} onOpenChange={setShowAddForm}>
+          <DialogContent className="sm:max-w-md rounded-[8px] border border-[#E5E7EB] bg-white p-6 shadow-md">
+            <DialogHeader>
+              <DialogTitle className="text-base font-semibold text-[#111827]">
+                Add team member
+              </DialogTitle>
+              <DialogDescription className="text-xs text-[#6B7280]">
+                Create a new account with an initial temporary password.
+              </DialogDescription>
+            </DialogHeader>
+
+            <form onSubmit={handleCreate} className="space-y-4 pt-1">
+              <div className="space-y-1.5">
+                <label className="block text-[13px] font-medium text-[#111827]">
                   Name
                 </label>
-                <input
+                <Input
                   required
                   value={name}
                   onChange={(event) => setName(event.target.value)}
-                  className={inputClass}
+                  placeholder="e.g. Alex Smith"
+                  className="h-9 rounded-[6px] border-[#E5E7EB] bg-white text-sm text-[#111827]"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-heading mb-1.5">
+
+              <div className="space-y-1.5">
+                <label className="block text-[13px] font-medium text-[#111827]">
                   Email
                 </label>
-                <input
+                <Input
                   type="email"
                   required
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
-                  className={inputClass}
+                  placeholder="alex@organization.com"
+                  className="h-9 rounded-[6px] border-[#E5E7EB] bg-white text-sm text-[#111827]"
                 />
               </div>
-            </div>
-            <div
-              className={`grid gap-4 ${isSuperadmin ? "md:grid-cols-3" : "md:grid-cols-2"}`}
-            >
-              <div>
-                <label className="block text-sm font-medium text-heading mb-1.5">
-                  Password
+
+              <div className="space-y-1.5">
+                <label className="block text-[13px] font-medium text-[#111827]">
+                  Temporary password
                 </label>
-                <input
+                <Input
                   type="password"
                   required
                   minLength={10}
                   maxLength={72}
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  className={inputClass}
+                  placeholder="Minimum 10 characters"
+                  className="h-9 rounded-[6px] border-[#E5E7EB] bg-white text-sm text-[#111827]"
                 />
-                <p className="text-xs text-muted-foreground mt-1">
-                  10–72 characters, including a letter and number.
+                <p className="text-[11px] text-[#6B7280]">
+                  10–72 characters, including at least one letter and one number.
                 </p>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-heading mb-1.5">
+
+              <div className="space-y-1.5">
+                <label className="block text-[13px] font-medium text-[#111827]">
                   Role
                 </label>
                 <select
                   value={role}
                   onChange={(event) => setRole(event.target.value)}
-                  className={inputClass}
+                  className="h-9 w-full rounded-[6px] border border-[#E5E7EB] bg-white px-2.5 text-sm text-[#111827] outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]"
                 >
+                  <option value="user">User</option>
                   <option value="clientadmin">Client admin</option>
-                  <option value="user">Poster creator</option>
                 </select>
               </div>
+
               {isSuperadmin && (
-                <div>
-                  <label className="block text-sm font-medium text-heading mb-1.5">
+                <div className="space-y-1.5">
+                  <label className="block text-[13px] font-medium text-[#111827]">
                     Organization
                   </label>
                   <select
                     required
                     value={clientId}
                     onChange={(event) => setClientId(event.target.value)}
-                    className={inputClass}
+                    className="h-9 w-full rounded-[6px] border border-[#E5E7EB] bg-white px-2.5 text-sm text-[#111827] outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]"
                   >
                     <option value="">Select organization</option>
                     {clients.map((client) => (
@@ -356,122 +579,38 @@ export default function Users() {
                   </select>
                 </div>
               )}
-            </div>
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setShowAddForm(false)}
-                className="btn-ghost"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="btn-primary"
-              >
-                {submitting ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <UserPlus className="w-4 h-4" />
-                )}
-                {submitting ? "Creating…" : "Create account"}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
 
-      <div className="card-surface overflow-x-auto">
-        <div className="px-5 py-4 border-b border-line flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm font-semibold text-heading">
-            <UserCheck className="w-4 h-4 text-primary" /> Directory
-          </div>
-          <span className="text-xs text-muted-foreground">
-            {usersList.length} accounts
-          </span>
-        </div>
-        {loading ? (
-          <div className="p-12 flex justify-center">
-            <Loader2 className="w-6 h-6 text-primary animate-spin" />
-          </div>
-        ) : usersList.length === 0 ? (
-          <div className="p-12 text-center text-sm text-muted-foreground">
-            No users found.
-          </div>
-        ) : (
-          <table className="w-full min-w-[850px] text-sm text-left">
-            <thead className="bg-section border-b border-line text-xs uppercase tracking-wider text-muted-foreground">
-              <tr>
-                <th className="py-3.5 px-5">Name</th>
-                <th className="py-3.5 px-5">Email</th>
-                <th className="py-3.5 px-5">Role</th>
-                <th className="py-3.5 px-5">Status</th>
-                <th className="py-3.5 px-5">Last login</th>
-                <th className="py-3.5 px-5 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {usersList.map((member) => {
-                const id = itemId(member);
-                const active = member.isActive !== false;
-                const isSelf = id === (user?.id || user?._id);
-                return (
-                  <tr key={id} className="hover:bg-section/60">
-                    <td className="py-4 px-5 font-medium text-heading">
-                      {member.name}
-                    </td>
-                    <td className="py-4 px-5 text-muted-foreground">
-                      {member.email}
-                    </td>
-                    <td className="py-4 px-5">
-                      <span className="rounded-chip border border-line px-2.5 py-1 text-xs font-semibold uppercase text-primary">
-                        {member.role === "superadmin"
-                          ? "Superadmin"
-                          : member.role === "clientadmin"
-                            ? "Client admin"
-                            : "User"}
-                      </span>
-                    </td>
-                    <td className="py-4 px-5">
-                      <span
-                        className={`text-xs font-medium ${active ? "text-success" : "text-danger"}`}
-                      >
-                        {active ? "Active" : "Inactive"}
-                      </span>
-                    </td>
-                    <td className="py-4 px-5 text-xs text-muted-foreground">
-                      {displayDate(member.lastLoginAt || member.lastLogin)}
-                    </td>
-                    <td className="py-4 px-5">
-                      <div className="flex justify-end gap-2">
-                        <button
-                          type="button"
-                          disabled={
-                            actionId === id ||
-                            (!isSuperadmin && isSelf && active)
-                          }
-                          onClick={() => toggleActive(member)}
-                          className="px-3 py-1.5 rounded-btn border border-line text-xs font-medium hover:border-primary disabled:opacity-50"
-                        >
-                          {active ? "Deactivate" : "Activate"}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={actionId === id}
-                          onClick={() => resetPassword(member)}
-                          className="px-3 py-1.5 rounded-btn border border-line text-xs font-medium hover:border-primary disabled:opacity-50 inline-flex items-center gap-1"
-                        >
-                          <KeyRound className="w-3.5 h-3.5" /> Reset password
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
+              {dialogError && (
+                <p className="text-xs text-[#DC2626] leading-snug">
+                  {dialogError}
+                </p>
+              )}
+
+              <DialogFooter className="pt-2 gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowAddForm(false)}
+                  className="h-9 px-3 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB]"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={submitting}
+                  className="h-9 px-4 rounded-[6px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-medium shadow-none disabled:opacity-50 gap-1.5"
+                >
+                  {submitting ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Plus className="w-3.5 h-3.5" />
+                  )}
+                  <span>{submitting ? "Adding…" : "Add member"}</span>
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

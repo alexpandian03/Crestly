@@ -50,7 +50,7 @@ function NumberBox({ label, value, min, max, onChange }) {
             commit(event.target.value);
           }
         }}
-        className="mt-0.5 w-full rounded border border-slate-300 px-1.5 py-1 text-xs tabular-nums text-slate-800 focus:border-blue-500 focus:outline-none"
+        className="mt-0.5 h-8 w-full rounded-[6px] border border-[#E5E7EB] bg-white px-2 text-xs tabular-nums text-[#111827] focus:border-[#2563EB] focus:outline-none"
       />
     </label>
   );
@@ -65,7 +65,7 @@ function IconButton({ label, pressed, disabled, onClick, children }) {
       aria-pressed={pressed}
       disabled={disabled}
       onClick={onClick}
-      className="rounded p-1.5 text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+      className="rounded-[4px] p-1.5 text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827] disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
     >
       {children}
     </button>
@@ -118,15 +118,15 @@ export default function SelectionBar({
   return (
     <div
       ref={rootRef}
-      className="flex items-center rounded-lg border border-slate-200 bg-white shadow-md"
+      className="flex items-center rounded-[6px] border border-[#E5E7EB] bg-white"
       style={{ pointerEvents: 'auto', fontSize: font, width: 'max-content' }}
       onPointerDown={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
     >
-      <span ref={tagRef} className="px-1.5 text-[11px] font-semibold tabular-nums text-slate-500">
+      <span ref={tagRef} className="px-1.5 text-[11px] font-semibold tabular-nums text-[#6B7280]">
         {item.w} × {item.h}
       </span>
-      <span aria-hidden="true" className="h-4 w-px bg-slate-200" />
+      <span aria-hidden="true" className="h-4 w-px bg-[#E5E7EB]" />
       <IconButton
         label={item.locked ? 'Allow moving' : 'Keep in place'}
         pressed={Boolean(item.locked)}
@@ -162,7 +162,7 @@ export default function SelectionBar({
         <div
           role="dialog"
           aria-label="Position and size"
-          className="absolute left-0 w-[228px] rounded-lg border border-slate-200 bg-white p-2.5 shadow-lg"
+          className="absolute left-0 w-[228px] rounded-lg border border-slate-200 bg-white p-2.5"
           style={openUpward ? { bottom: 'calc(100% + 6px)' } : { top: 'calc(100% + 6px)' }}
           onKeyDown={(event) => event.stopPropagation()}
         >

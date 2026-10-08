@@ -168,7 +168,7 @@ function ItemCues({ item, scale, pictureBlank }) {
   const mode = modeOf(item);
   const fillable = item.kind === 'text' || item.kind === 'image';
   const cues = [];
-  if (mode === 'ai') cues.push({ key: 'ai', label: 'The assistant writes it', Icon: Sparkles, tone: { background: '#eef2ff', color: '#4338ca', border: '#c7d2fe' } });
+  if (mode === 'ai') cues.push({ key: 'ai', label: 'The assistant writes it', Icon: Sparkles, tone: { background: '#eff6ff', color: '#2563eb', border: '#bfdbfe' } });
   if (mode === 'user') cues.push({ key: 'user', label: 'The person replaces it', Icon: ImagePlus, tone: { background: '#ecfdf5', color: '#047857', border: '#a7f3d0' } });
   if (mode === 'locked' && fillable) cues.push({ key: 'locked', label: 'Locked, part of the design', Icon: Lock, tone: { background: '#f1f5f9', color: '#475569', border: '#cbd5e1' } });
   if (cues.length === 0) return null;
@@ -205,7 +205,7 @@ const ItemFrame = memo(function ItemFrame({ item, scale, selected, editing, hidd
   const border = !guidesOn
     ? '1px solid transparent'
     : selected
-    ? '1.5px solid #2563eb'
+    ? '1px dashed #2563eb'
     : locked
     ? '1px solid transparent'
     : hidden
@@ -308,13 +308,10 @@ function BandOverlay({ area, size, scale, band, open, onOpen }) {
           event.stopPropagation();
           onOpen(open ? null : band);
         }}
-        className="inline-flex items-center gap-1 rounded-full bg-white/90 px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
-        style={{ pointerEvents: 'auto', fontSize: `${Math.max(9, 11 / Math.max(scale, 0.35))}px` }}
+        className="inline-flex items-center gap-1.5 rounded-[6px] border border-[#E5E7EB] bg-white px-2 py-1 text-[12px] font-medium text-[#111827] hover:bg-[#F9FAFB] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
+        style={{ pointerEvents: 'auto' }}
       >
-        <svg aria-hidden="true" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-          <rect x="4" y="11" width="16" height="10" rx="2" />
-          <path d="M8 11V8a4 4 0 0 1 8 0v3" />
-        </svg>
+        <Lock className="h-3 w-3 text-[#6B7280]" />
         {band === 'header' ? 'Brand header' : 'Brand footer'}
       </button>
     </div>
@@ -326,7 +323,7 @@ function BrandPopover({ band, onClose }) {
     <div
       role="dialog"
       aria-label="Brand area"
-      className="absolute z-[45] w-[240px] rounded-lg border border-slate-200 bg-white p-3 shadow-lg"
+      className="absolute z-[45] w-[240px] rounded-[8px] border border-[#E5E7EB] bg-white p-3"
       style={{
         left: '50%',
         transform: 'translateX(-50%)',
@@ -337,7 +334,7 @@ function BrandPopover({ band, onClose }) {
       onPointerDown={(event) => event.stopPropagation()}
     >
       <div className="flex items-start gap-2">
-        <p className="flex-1 text-xs leading-relaxed text-slate-600">
+        <p className="flex-1 text-xs leading-relaxed text-[#6B7280]">
           {band === 'header'
             ? 'The top of every poster is your organization name and logo. It is the same on all your templates, so it is not placed here.'
             : 'The bottom of every poster carries your contact details. It is the same on all your templates, so it is not placed here.'}
@@ -346,14 +343,14 @@ function BrandPopover({ band, onClose }) {
           type="button"
           onClick={onClose}
           aria-label="Close"
-          className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+          className="shrink-0 rounded-[4px] p-0.5 text-[#9CA3AF] hover:bg-[#F3F4F6] hover:text-[#111827]"
         >
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
       <Link
         to="/brand-kit"
-        className="mt-2 inline-flex rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+        className="mt-2 inline-flex rounded-[6px] border border-[#E5E7EB] bg-white px-2.5 py-1 text-xs font-semibold text-[#2563EB] hover:bg-[#EFF6FF]"
       >
         Edit in Brand Kit
       </Link>
@@ -751,7 +748,7 @@ export default function EditorStage({
   return (
     <div
       ref={boxRef}
-      className="relative min-h-0 flex-1 overflow-auto bg-[#e9edf2]"
+      className="relative min-h-0 flex-1 overflow-auto bg-[#F3F4F6]"
       style={{ cursor: panMode ? 'grab' : undefined, touchAction: panMode ? 'none' : undefined }}
       onPointerDown={(event) => {
         setBandPopover(null);
@@ -765,7 +762,7 @@ export default function EditorStage({
     >
       <div className="flex min-h-full w-full" style={{ padding: 16 }}>
         <div
-          className="relative shrink-0 overflow-hidden bg-white shadow-md"
+          className="relative shrink-0 overflow-hidden bg-white border border-[#E5E7EB]"
           style={{ width: `${whole(size.width * scale)}px`, height: `${whole(size.height * scale)}px`, margin: 'auto' }}
         >
           <div
@@ -781,7 +778,7 @@ export default function EditorStage({
               pointerEvents: 'none',
             }}
           >
-            <PosterCanvas brandKit={brandKit} template={template} content={content} />
+            <PosterCanvas brandKit={brandKit} template={template} content={content} isEditor={true} />
             {hiddenRules ? <style data-editor-hidden>{hiddenRules}</style> : null}
           </div>
 
@@ -857,7 +854,7 @@ export default function EditorStage({
       </div>
 
       <div
-        className="absolute bottom-3 right-3 z-[50] flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm"
+        className="absolute bottom-3 right-3 z-[50] flex items-center rounded-[6px] border border-[#E5E7EB] bg-white p-0.5"
         role="group"
         aria-label="Zoom"
       >
@@ -869,8 +866,8 @@ export default function EditorStage({
               type="button"
               aria-pressed={active}
               onClick={() => onZoom(step)}
-              className={`min-w-[38px] rounded px-2 py-1 text-[11px] font-semibold tabular-nums focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 ${
-                active ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+              className={`min-w-[36px] rounded-[4px] px-2 py-1 text-xs font-medium tabular-nums transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB] ${
+                active ? 'bg-[#EFF6FF] text-[#2563EB] font-semibold' : 'text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827]'
               }`}
             >
               {step === 'fit' ? 'Fit' : `${step}%`}
@@ -879,12 +876,12 @@ export default function EditorStage({
         })}
       </div>
 
-      <div className="absolute bottom-3 left-3 z-[50] flex items-center gap-1">
+      <div className="absolute bottom-3 left-3 z-[50] flex items-center gap-1.5">
         <button
           type="button"
           onClick={onToggleGuides}
           aria-pressed={!guidesOn}
-          className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+          className="rounded-[6px] border border-[#E5E7EB] bg-white px-2.5 py-1 text-xs font-medium text-[#111827] hover:bg-[#F3F4F6] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
         >
           {guidesOn ? 'Hide guides' : 'Show guides'}
         </button>
@@ -892,13 +889,13 @@ export default function EditorStage({
           type="button"
           onClick={onToggleGrid}
           aria-pressed={gridOn}
-          className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+          className="rounded-[6px] border border-[#E5E7EB] bg-white px-2.5 py-1 text-xs font-medium text-[#111827] hover:bg-[#F3F4F6] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
         >
           {gridOn ? 'Hide grid' : 'Show grid'}
         </button>
       </div>
 
-      <p className="absolute bottom-3 left-1/2 z-[49] -translate-x-1/2 text-[11px] text-slate-500">
+      <p className="absolute bottom-3 left-1/2 z-[49] -translate-x-1/2 text-xs text-[#6B7280]">
         {percent}% · {size.width} × {size.height}
         {panMode ? ' · holding Space: dragging moves the view' : ''}
       </p>

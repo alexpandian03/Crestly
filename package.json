@@ -26,6 +26,7 @@
     "test:timeago": "node server/scripts/test-time-ago.js",
     "test:aidesign": "node server/scripts/test-poster-ai-design.js",
     "test:image": "node server/scripts/test-poster-image.js",
+    "test:e2e-generate": "node server/scripts/test-e2e-generate.js",
     "start": "node server/dev.js"
   },
   "dependencies": {
