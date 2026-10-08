@@ -61,9 +61,7 @@ export default function SaveAsTemplateDialog({
     >
       <div className="card-surface w-full max-w-md space-y-4 p-6">
         <div className="flex items-start gap-3">
-          <span className="rounded-chip bg-primary/10 p-2 text-primary">
-            <Layout className="h-5 w-5" />
-          </span>
+          <Layout className="h-5 w-5 text-[#6B7280] shrink-0 mt-0.5" />
           <div className="min-w-0">
             <h2
               id="save-as-template-title"

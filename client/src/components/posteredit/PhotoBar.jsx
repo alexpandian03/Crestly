@@ -63,7 +63,7 @@ export default function PhotoBar({
       ref={wrapRef}
       role="group"
       aria-label={label}
-      className="flex flex-wrap items-center gap-1 rounded-card border border-line bg-canvas/95 p-1.5 shadow-soft"
+      className="flex flex-wrap items-center gap-1 rounded-card border border-line bg-canvas/95 p-1.5"
       style={{ pointerEvents: "auto" }}
     >
       <div className="relative">
@@ -87,7 +87,7 @@ export default function PhotoBar({
           <div
             role="menu"
             aria-label="Pictures to choose from"
-            className="absolute left-0 top-full z-10 mt-1 w-52 rounded-card border border-line bg-canvas p-1 shadow-soft"
+            className="absolute left-0 top-full z-10 mt-1 w-52 rounded-card border border-line bg-canvas p-1"
           >
             {alternatives.length === 0 ? (
               <p className="px-2 py-2 text-[11px] text-muted-foreground">

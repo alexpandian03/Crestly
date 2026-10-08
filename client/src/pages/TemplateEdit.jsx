@@ -21,6 +21,15 @@ import {
   Undo2,
 } from "lucide-react";
 import api from "../services/api";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
 import TemplatePreview from "../components/TemplatePreview";
 import EditorStage from "../components/editor/EditorStage";
 import EditorRail, { EditorPanel } from "../components/editor/EditorRail";
@@ -1068,169 +1077,196 @@ export default function TemplateEdit() {
       style={{ height: `calc(100vh - ${headerH}px)` }}
     >
       {/* ------------------------------------------------------ top bar */}
-      <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-canvas px-3 py-2">
-        <button
-          type="button"
-          onClick={goBack}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-btn px-2 py-1.5 text-sm text-muted-foreground hover:bg-section hover:text-heading focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-        >
-          <ArrowLeft className="h-4 w-4" /> Back
-        </button>
-
-        <label className="min-w-[160px] flex-1">
-          <span className="sr-only">Template name</span>
-          <input
-            type="text"
-            value={name}
-            maxLength={NAME_LIMIT}
-            onChange={(event) => setName(event.target.value)}
-            aria-label="Template name"
-            className="w-full truncate rounded-btn border border-transparent bg-transparent px-2 py-1 text-base font-semibold text-heading hover:border-line focus:border-primary focus:bg-canvas focus:outline-none"
-          />
-        </label>
-
-        <span
-          className={`shrink-0 rounded-chip border px-2.5 py-1 text-[11px] font-semibold ${
-            dirty
-              ? "border-line bg-section text-body"
-              : "border-success/30 bg-success/10 text-success"
-          }`}
-        >
-          {dirty ? "Not saved yet" : `Saved as version ${saved.version || 1}`}
-        </span>
-
-        <div className="flex shrink-0 items-center gap-1">
-          <button
+      <header className="flex h-12 shrink-0 items-center justify-between border-b border-[#E5E7EB] bg-white px-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <Button
             type="button"
-            onClick={() => dispatch({ type: "undo" })}
-            disabled={hist.past.length === 0}
-            aria-label="Undo"
-            title="Undo"
-            className="rounded-btn border border-line p-1.5 text-body hover:bg-section disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+            variant="ghost"
+            size="sm"
+            onClick={goBack}
+            className="h-8 gap-1.5 px-2 text-xs font-medium text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827]"
           >
-            <Undo2 className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => dispatch({ type: "redo" })}
-            disabled={hist.future.length === 0}
-            aria-label="Redo"
-            title="Redo"
-            className="rounded-btn border border-line p-1.5 text-body hover:bg-section disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-          >
-            <Redo2 className="h-4 w-4" />
-          </button>
+            <ArrowLeft className="h-4 w-4" /> Back
+          </Button>
+
+          <label className="min-w-0 flex-1 max-w-sm">
+            <span className="sr-only">Template name</span>
+            <input
+              type="text"
+              value={name}
+              maxLength={NAME_LIMIT}
+              onChange={(event) => setName(event.target.value)}
+              aria-label="Template name"
+              className="h-8 w-full truncate rounded-[6px] border border-transparent bg-transparent px-2 text-[14px] font-semibold text-[#111827] hover:border-[#E5E7EB] focus:border-[#2563EB] focus:bg-white focus:outline-none"
+            />
+          </label>
         </div>
 
-        <div
-          role="group"
-          aria-label="Edit or preview"
-          className="flex shrink-0 items-center gap-0.5 rounded-btn border border-line bg-section p-0.5"
-        >
-          {[
-            { key: "edit", label: "Edit", on: false },
-            { key: "preview", label: "Preview", on: true },
-          ].map((option) => (
-            <button
-              key={option.key}
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-1.5 text-xs text-[#6B7280]">
+            <span
+              className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                dirty ? "bg-[#9CA3AF]" : "bg-[#16A34A]"
+              }`}
+            />
+            <span>
+              {dirty ? "Unsaved changes" : `Saved as version ${saved.version || 1}`}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-0.5">
+            <Button
               type="button"
-              aria-pressed={previewOn === option.on}
-              onClick={() => setPreviewOn(option.on)}
-              className={`rounded px-2.5 py-1 text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${
-                previewOn === option.on
-                  ? "bg-canvas text-primary shadow-sm"
-                  : "text-muted-foreground hover:text-heading"
+              variant="ghost"
+              size="sm"
+              onClick={() => dispatch({ type: "undo" })}
+              disabled={hist.past.length === 0}
+              aria-label="Undo"
+              title="Undo"
+              className="h-8 w-8 p-0 text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827] disabled:opacity-30"
+            >
+              <Undo2 className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => dispatch({ type: "redo" })}
+              disabled={hist.future.length === 0}
+              aria-label="Redo"
+              title="Redo"
+              className="h-8 w-8 p-0 text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827] disabled:opacity-30"
+            >
+              <Redo2 className="h-4 w-4" />
+            </Button>
+          </div>
+
+          <div
+            role="group"
+            aria-label="Edit or preview"
+            className="flex items-center rounded-[6px] border border-[#E5E7EB] bg-[#F9FAFB] p-0.5"
+          >
+            <button
+              type="button"
+              aria-pressed={!previewOn}
+              onClick={() => setPreviewOn(false)}
+              className={`rounded-[4px] px-2.5 py-1 text-xs transition-colors ${
+                !previewOn
+                  ? "bg-white font-semibold text-[#111827]"
+                  : "text-[#6B7280] hover:text-[#111827]"
               }`}
             >
-              {option.label}
+              Edit
             </button>
-          ))}
+            <button
+              type="button"
+              aria-pressed={previewOn}
+              onClick={() => setPreviewOn(true)}
+              className={`rounded-[4px] px-2.5 py-1 text-xs transition-colors ${
+                previewOn
+                  ? "bg-white font-semibold text-[#111827]"
+                  : "text-[#6B7280] hover:text-[#111827]"
+              }`}
+            >
+              Preview
+            </button>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setDrawerOpen(true)}
+            className="h-8 gap-1.5 rounded-[6px] border-[#E5E7EB] px-3 text-xs font-medium text-[#111827] shadow-none hover:bg-[#F3F4F6]"
+          >
+            <HistoryIcon className="h-3.5 w-3.5 text-[#6B7280]" /> Versions
+          </Button>
+
+          <Button
+            type="button"
+            size="sm"
+            onClick={save}
+            disabled={saving}
+            className="h-8 gap-1.5 rounded-[6px] bg-[#2563EB] px-3.5 text-xs font-medium text-white shadow-none hover:bg-[#1D4ED8] disabled:opacity-50"
+          >
+            {saving ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Save className="h-3.5 w-3.5" />
+            )}
+            Save
+          </Button>
         </div>
-        <button
-          type="button"
-          onClick={() => setDrawerOpen(true)}
-          className="btn-ghost border border-line inline-flex shrink-0 items-center gap-1.5 px-3 py-1.5 text-sm"
-        >
-          <HistoryIcon className="h-4 w-4" /> Versions
-        </button>
-        <button
-          type="button"
-          onClick={save}
-          disabled={saving}
-          className="btn-primary inline-flex shrink-0 items-center gap-1.5 px-3.5 py-1.5 text-sm disabled:opacity-60"
-        >
-          {saving ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Save className="h-4 w-4" />
-          )}{" "}
-          Save
-        </button>
       </header>
 
       {/* --------------------------------------------- type and note row */}
-      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line bg-section px-3 py-1.5">
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          Type
-          <select
-            value={category}
-            onChange={(event) => setCategory(event.target.value)}
-            aria-label="Template type"
-            className="rounded border border-line bg-canvas px-1.5 py-1 text-xs font-semibold text-heading"
-          >
-            {TEMPLATE_CATEGORIES.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex min-w-[220px] flex-1 items-center gap-1.5 text-xs text-muted-foreground">
-          Note
-          <input
-            type="text"
-            value={note}
-            maxLength={NOTE_LIMIT}
-            onChange={(event) => setNote(event.target.value)}
-            placeholder="What did you change? (optional)"
-            aria-label="Note for this save"
-            className="min-w-0 flex-1 rounded border border-line bg-canvas px-2 py-1 text-xs text-body focus:border-primary focus:outline-none"
-          />
-        </label>
-        <p className="shrink-0 text-[11px] text-muted-foreground">
-          {size.width} × {size.height} pixels
-        </p>
-        {dirty ? (
-          <button
-            type="button"
-            onClick={resetToSaved}
-            className="shrink-0 text-[11px] font-semibold text-muted-foreground underline hover:text-heading"
-          >
-            Undo everything
-          </button>
-        ) : null}
+      <div className="flex h-10 shrink-0 items-center justify-between border-b border-[#E5E7EB] bg-white px-3">
+        <div className="flex flex-1 items-center gap-4 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-[#6B7280] shrink-0">Type</span>
+            <Select value={category} onValueChange={(val) => setCategory(val)}>
+              <SelectTrigger className="h-7 w-32 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] shadow-none focus:ring-1 focus:ring-[#2563EB]">
+                <SelectValue placeholder="Type" />
+              </SelectTrigger>
+              <SelectContent className="rounded-[6px] border-[#E5E7EB]">
+                {TEMPLATE_CATEGORIES.map((option) => (
+                  <SelectItem key={option} value={option} className="text-xs">
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-1 items-center gap-2 min-w-[200px] max-w-md">
+            <span className="text-xs text-[#6B7280] shrink-0">Note</span>
+            <Input
+              type="text"
+              value={note}
+              maxLength={NOTE_LIMIT}
+              onChange={(event) => setNote(event.target.value)}
+              placeholder="What did you change? (optional)"
+              className="h-7 rounded-[6px] border-[#E5E7EB] bg-white text-xs text-[#111827] shadow-none focus-visible:ring-1 focus-visible:ring-[#2563EB]"
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 shrink-0 ml-3">
+          {dirty ? (
+            <button
+              type="button"
+              onClick={resetToSaved}
+              className="text-xs text-[#6B7280] hover:text-[#111827] underline"
+            >
+              Undo everything
+            </button>
+          ) : null}
+          <p className="text-xs text-[#6B7280]">
+            {size.width} × {size.height} pixels
+          </p>
+        </div>
       </div>
 
       {banner ? (
         <div
           role="status"
-          className={`flex shrink-0 flex-wrap items-start gap-2 border-b px-3 py-2 text-sm ${
+          className={`flex shrink-0 flex-wrap items-start gap-2 border-b px-3 py-2 text-xs ${
             banner.tone === "ok"
-              ? "border-success/30 bg-success/5 text-success"
+              ? "border-[#BBF7D0] bg-[#F0FDF4] text-[#16A34A]"
               : banner.tone === "warn"
-                ? "border-amber-300 bg-amber-50 text-amber-800"
-                : "border-danger/30 bg-danger/5 text-danger"
+                ? "border-[#FDE68A] bg-[#FFFBEB] text-[#D97706]"
+                : "border-[#FECACA] bg-[#FEF2F2] text-[#DC2626]"
           }`}
         >
           {banner.tone === "ok" ? (
-            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           ) : (
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           )}
           <span className="flex-1">
             {banner.text}
             {banner.more?.length ? (
-              <span className="mt-1 block list-disc pl-4 text-xs">
+              <span className="mt-1 block list-disc pl-4 text-[11px]">
                 {banner.more.map((line) => (
                   <span key={line} className="block">
                     {line}
@@ -1243,7 +1279,7 @@ export default function TemplateEdit() {
             <button
               type="button"
               onClick={banner.action.run}
-              className="underline shrink-0"
+              className="underline shrink-0 font-medium"
             >
               {banner.action.label}
             </button>
@@ -1369,8 +1405,8 @@ export default function TemplateEdit() {
       )}
 
       {wide && !previewOn ? (
-        <p className="flex shrink-0 items-center gap-1.5 border-t border-line bg-canvas px-3 py-1 text-[11px] text-muted-foreground">
-          <Keyboard className="h-3.5 w-3.5" />
+        <p className="flex shrink-0 items-center gap-1.5 border-t border-[#E5E7EB] bg-white px-3 py-1.5 text-[11px] text-[#6B7280]">
+          <Keyboard className="h-3.5 w-3.5 text-[#9CA3AF]" />
           Arrow keys move the picked item 1 pixel, Shift for 10 · Delete removes
           it · Ctrl or Command with D makes a copy, with C copies it for another
           template and with V puts it back, with Z goes back, with Y comes

@@ -6,13 +6,13 @@ import {
   LayoutGrid,
   Loader2,
   Plus,
-  RefreshCw,
 } from "lucide-react";
 import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
-import TemplateCard from "../components/TemplateCard";
+import TemplateCard, { TemplateCardSkeleton } from "../components/TemplateCard";
 import DeleteTemplateDialog from "../components/DeleteTemplateDialog";
 import { templateIdOf } from "../utils/templateRender";
+import { Button } from "../components/ui/button";
 
 const CONFLICT_MESSAGE =
   "This template was changed somewhere else. Reload to continue.";
@@ -21,24 +21,6 @@ function friendlyError(err, fallback) {
   const status = err?.response?.status;
   if (status === 409) return CONFLICT_MESSAGE;
   return err?.response?.data?.error?.message || fallback;
-}
-
-function CardSkeleton() {
-  return (
-    <div className="card-surface overflow-hidden">
-      <div className="bg-preview p-3">
-        <div
-          className="w-[132px] mx-auto animate-pulse rounded bg-section"
-          style={{ aspectRatio: "0.8" }}
-        />
-      </div>
-      <div className="p-4 space-y-2">
-        <div className="h-3.5 w-2/3 rounded bg-section animate-pulse" />
-        <div className="h-2.5 w-1/3 rounded bg-section animate-pulse" />
-        <div className="h-5 w-full rounded-chip bg-section animate-pulse" />
-      </div>
-    </div>
-  );
 }
 
 export default function Templates() {
@@ -80,7 +62,6 @@ export default function Templates() {
         if (!quiet) setLoading(false);
       }
     },
-    // A different organization means a different template set and brand.
     [activeClientId],
   );
 
@@ -88,8 +69,7 @@ export default function Templates() {
     load();
   }, [load]);
 
-  /* Coming back to the tab has to show the newest look, so the list is re-read quietly
-     whenever the page becomes visible or regains focus — including after the editor saved. */
+  /* Re-read quietly whenever the page regains focus. */
   useEffect(() => {
     const refresh = () => {
       if (document.visibilityState !== "hidden") load({ quiet: true });
@@ -154,8 +134,6 @@ export default function Templates() {
     navigate(`/templates/${templateIdOf(template)}/edit`);
   };
 
-  /* The card the dialog shows, always read from the live list, so turning a template
-     off inside the dialog immediately changes what the dialog offers. */
   const deleteTarget = useMemo(
     () => templates.find((t) => templateIdOf(t) === deleting?.id) || null,
     [templates, deleting],
@@ -218,126 +196,130 @@ export default function Templates() {
   };
 
   return (
-    <div className="container-page section-pad space-y-6">
-      <div className="pb-6 border-b border-line flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl flex items-center gap-2">
-            <LayoutGrid className="h-6 w-6 text-primary" /> Templates
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            The layouts your team can choose from. Your brand kit fills in the
-            header and footer.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => load()}
-            className="btn-ghost inline-flex items-center gap-2 px-3 py-2 text-sm"
-          >
-            <RefreshCw className="h-4 w-4" /> Reload
-          </button>
-          <button
-            type="button"
+    <div className="bg-white min-h-[calc(100vh-56px)]">
+      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+        {/* Header */}
+        <div className="pb-5 border-b border-[#E5E7EB] flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-[24px] font-semibold text-[#111827] leading-tight">
+              Templates
+            </h1>
+            <p className="text-sm text-[#6B7280] mt-1">
+              The layouts your team can choose from. Your brand kit fills in the
+              header and footer.
+            </p>
+          </div>
+          <Button
             onClick={newTemplate}
             disabled={creating || loading || !templates.length}
-            className="btn-primary inline-flex items-center gap-2 px-4 py-2 text-sm"
+            className="h-9 px-3.5 rounded-[6px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-sm font-medium inline-flex items-center gap-1.5 transition-colors shadow-none disabled:opacity-50"
           >
             {creating ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              <Plus className="h-4 w-4" />
+              <Plus className="w-4 h-4" />
             )}
-            New template
-          </button>
+            <span>New template</span>
+          </Button>
         </div>
+
+        {error && (
+          <div className="flex items-start justify-between gap-3 rounded-[8px] border border-[#E5E7EB] bg-[#FAFAFA] p-3 text-sm text-[#DC2626]">
+            <div className="flex items-start gap-2 min-w-0">
+              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-[#DC2626]" />
+              <span className="flex-1">{error}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => load({ quiet: true })}
+              className="text-xs font-medium text-[#2563EB] hover:underline shrink-0"
+            >
+              Try again
+            </button>
+          </div>
+        )}
+
+        {!loading && !error && brandKit === null && templates.length > 0 && (
+          <p className="text-xs text-[#6B7280]">
+            Previews use standard colours because this organization has no brand
+            kit yet.
+          </p>
+        )}
+
+        {/* Responsive Grid (4 / 3 / 2 columns) */}
+        {loading ? (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {Array.from({ length: 8 }).map((_, index) => (
+              <TemplateCardSkeleton key={index} />
+            ))}
+          </div>
+        ) : templates.length === 0 ? (
+          <div className="rounded-[8px] border border-[#E5E7EB] bg-[#FAFAFA] p-12 text-center">
+            <LayoutGrid className="mx-auto h-10 w-10 text-[#9CA3AF]" />
+            <h3 className="mt-3 text-sm font-medium text-[#111827]">
+              No templates yet
+            </h3>
+            <p className="mt-1 text-xs text-[#6B7280]">
+              Choose New template to start from a layout that already works.
+            </p>
+            <Button
+              onClick={newTemplate}
+              disabled={creating}
+              className="mt-4 h-9 px-4 rounded-[6px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-medium shadow-none inline-flex items-center gap-1.5"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create template</span>
+            </Button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {templates.map((template) => (
+              <TemplateCard
+                key={templateIdOf(template)}
+                template={template}
+                brandKit={brandKit}
+                busy={busyId === templateIdOf(template)}
+                onEdit={() => openEditor(template)}
+                onDuplicate={() =>
+                  runOn(
+                    template,
+                    "duplicate",
+                    "Copy created. Turn it on when you are happy with it.",
+                  )
+                }
+                onToggleActive={() =>
+                  runOn(
+                    template,
+                    template.isActive === false ? "activate" : "deactivate",
+                    template.isActive === false
+                      ? "Template is now available to your team."
+                      : "Template is now hidden from the Create page.",
+                  )
+                }
+                onDelete={() => openDelete(template)}
+              />
+            ))}
+          </div>
+        )}
+
+        {deleteTarget && (
+          <DeleteTemplateDialog
+            template={deleteTarget}
+            error={deleteError}
+            busy={deleteBusy || busyId === templateIdOf(deleteTarget)}
+            onCancel={closeDelete}
+            onConfirm={confirmDelete}
+            onDeactivate={() =>
+              runOn(
+                deleteTarget,
+                "deactivate",
+                "Template is now hidden from the Create page.",
+                setDeleteError,
+              )
+            }
+          />
+        )}
       </div>
-
-      {error && (
-        <div className="p-4 rounded-card border border-danger/30 bg-danger/5 text-danger text-sm flex items-start gap-2">
-          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-          <span className="flex-1">{error}</span>
-          <button
-            type="button"
-            onClick={() => load({ quiet: true })}
-            className="underline shrink-0"
-          >
-            Try again
-          </button>
-        </div>
-      )}
-
-      {!loading && !error && brandKit === null && templates.length > 0 && (
-        <p className="text-xs text-muted-foreground">
-          Previews use standard colours because this organization has no brand
-          kit yet.
-        </p>
-      )}
-
-      {loading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, index) => (
-            <CardSkeleton key={index} />
-          ))}
-        </div>
-      ) : templates.length === 0 ? (
-        <div className="card-surface p-12 text-center">
-          <LayoutGrid className="mx-auto h-10 w-10 text-muted-foreground" />
-          <p className="mt-3 text-sm font-medium text-heading">
-            No templates yet
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Choose New template to start from a layout that already works.
-          </p>
-        </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {templates.map((template) => (
-            <TemplateCard
-              key={templateIdOf(template)}
-              template={template}
-              brandKit={brandKit}
-              busy={busyId === templateIdOf(template)}
-              onEdit={() => openEditor(template)}
-              onDuplicate={() =>
-                runOn(
-                  template,
-                  "duplicate",
-                  "Copy created. Turn it on when you are happy with it.",
-                )
-              }
-              onToggleActive={() =>
-                runOn(
-                  template,
-                  template.isActive === false ? "activate" : "deactivate",
-                  template.isActive === false
-                    ? "Template is now available to your team."
-                    : "Template is now hidden from the Create page.",
-                )
-              }
-              onDelete={() => openDelete(template)}
-            />
-          ))}
-        </div>
-      )}
-
-      {deleteTarget && (
-        <DeleteTemplateDialog
-          template={deleteTarget}
-          error={deleteError}
-          busy={deleteBusy || busyId === templateIdOf(deleteTarget)}
-          onCancel={closeDelete}
-          onConfirm={confirmDelete}
-          onDeactivate={() =>
-            runOn(
-              deleteTarget,
-              "deactivate",
-              "Template is now hidden from the Create page.",
-              setDeleteError,
-            )
-          }
-        />
-      )}
     </div>
   );
 }

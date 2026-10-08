@@ -87,7 +87,7 @@ export default function EditorRail({ tab, onTab }) {
   return (
     <nav
       aria-label="What to add"
-      className="flex w-16 shrink-0 flex-col items-stretch gap-1 border-r border-line bg-canvas py-2"
+      className="flex w-14 shrink-0 flex-col items-center gap-1 border-r border-[#E5E7EB] bg-[#FAFAFA] py-2"
     >
       {RAIL_TABS.map(({ key, label, Icon }) => {
         const active = tab === key;
@@ -99,13 +99,17 @@ export default function EditorRail({ tab, onTab }) {
             title={label}
             aria-pressed={active}
             onClick={() => onTab(active ? "" : key)}
-            className={`mx-2 flex flex-col items-center gap-1 rounded-btn py-2 text-[10px] font-semibold leading-tight focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${
+            className={`flex w-12 flex-col items-center gap-1 rounded-[6px] py-2 text-[11px] font-medium leading-tight transition-colors ${
               active
-                ? "bg-primary/10 text-primary"
-                : "text-body hover:bg-section"
+                ? "bg-[#F3F4F6] text-[#111827]"
+                : "text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827]"
             }`}
           >
-            <Icon className="h-4 w-4" />
+            <Icon
+              className={`h-[18px] w-[18px] ${
+                active ? "text-[#111827]" : "text-[#6B7280]"
+              }`}
+            />
             {label}
           </button>
         );
@@ -126,10 +130,10 @@ function Row({
   return (
     <div
       data-layer-row={inList ? item.id : undefined}
-      className={`flex items-center gap-1.5 rounded-btn border px-2 py-1.5 ${
+      className={`flex items-center gap-1.5 rounded-[6px] border px-2 py-1.5 ${
         dropTarget || selected
-          ? "border-primary bg-primary/5"
-          : "border-line bg-canvas"
+          ? "border-[#2563EB] bg-[#EFF6FF]"
+          : "border-[#E5E7EB] bg-white"
       } ${dropTarget ? "border-dashed" : ""}`}
     >
       {handle}
@@ -137,7 +141,7 @@ function Row({
       <button
         type="button"
         onClick={() => onSelect(item.id)}
-        className="min-w-0 flex-1 truncate text-left text-xs font-semibold text-heading hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+        className="min-w-0 flex-1 truncate text-left text-xs font-medium text-[#111827] hover:text-[#2563EB] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
       >
         {itemLabel(item)}
       </button>
@@ -150,7 +154,7 @@ const MODE_CHIPS = {
   ai: {
     label: "The assistant writes these words",
     Icon: Sparkles,
-    className: "border-indigo-200 bg-indigo-50 text-indigo-700",
+    className: "border-blue-200 bg-[#EFF6FF] text-[#2563EB]",
   },
   user: {
     label: "The person filling this in chooses the picture",
@@ -230,7 +234,7 @@ function AddButton({ onClick, children, disabled = false }) {
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="w-full rounded-btn border border-dashed border-line bg-section px-3 py-2 text-left text-xs font-semibold text-heading hover:border-primary hover:bg-primary/5 disabled:cursor-not-allowed disabled:border-line disabled:text-muted-foreground disabled:hover:border-line disabled:hover:bg-section focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+      className="w-full rounded-[6px] border border-dashed border-[#E5E7EB] bg-[#FAFAFA] px-3 py-2 text-left text-xs font-medium text-[#111827] hover:border-[#2563EB] hover:bg-[#EFF6FF] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:text-[#9CA3AF] disabled:hover:border-[#E5E7EB] disabled:hover:bg-[#FAFAFA] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
     >
       {children}
     </button>
@@ -296,7 +300,7 @@ function ColourRow({ label, value, fallback = "#0f172a", brandKit = null, onPick
             aria-label={label}
             value={shown || fallback}
             onChange={(event) => onPick?.(event.target.value)}
-            className="h-7 w-9 cursor-pointer rounded border border-line bg-canvas p-0.5"
+            className="h-8 w-10 cursor-pointer rounded-[6px] border border-[#E5E7EB] bg-white p-0.5"
           />
           <input
             type="text"
@@ -312,7 +316,7 @@ function ColourRow({ label, value, fallback = "#0f172a", brandKit = null, onPick
                 event.currentTarget.blur();
               }
             }}
-            className="w-[74px] rounded border border-line px-1.5 py-1 text-[11px] font-mono"
+            className="h-8 w-[76px] rounded-[6px] border border-[#E5E7EB] bg-white px-2 text-xs font-mono text-[#111827]"
           />
         </span>
       </div>
@@ -417,7 +421,7 @@ function NumberRow({ label, value, min, max, onLive, onCommit }) {
             event.currentTarget.blur();
           }
         }}
-        className="w-20 rounded border border-line px-1.5 py-1 text-xs tabular-nums"
+        className="h-8 w-20 rounded-[6px] border border-[#E5E7EB] bg-white px-2 text-xs tabular-nums text-[#111827]"
       />
     </label>
   );
@@ -497,8 +501,8 @@ function TextPanel({ items, selectedId, actions }) {
         </Note>
       ) : null}
       {textItems.length > 0 ? (
-        <div className="space-y-1.5 border-t border-line pt-3">
-          <p className="text-xs font-semibold text-heading">On this poster</p>
+        <div className="space-y-1.5 border-t border-[#E5E7EB] pt-3">
+          <p className="text-[13px] font-semibold text-[#111827]">On this poster</p>
           {textItems.map((item) => (
             <Row
               key={item.id}
@@ -580,7 +584,7 @@ function ImagesPanel({ items, selectedId, actions, brandKit }) {
 
       {pictures.length > 0 ? (
         <div className="space-y-1.5">
-          <p className="text-xs font-semibold text-heading">On this poster</p>
+          <p className="text-[13px] font-semibold text-[#111827]">On this poster</p>
           {pictures.map((item) => (
             <Row
               key={item.id}
@@ -609,8 +613,8 @@ function ImagesPanel({ items, selectedId, actions, brandKit }) {
       )}
 
       {chosen ? (
-        <div className="space-y-3 border-t border-line pt-3">
-          <p className="text-xs font-semibold text-heading">
+        <div className="space-y-3 border-t border-[#E5E7EB] pt-3">
+          <p className="text-[13px] font-semibold text-[#111827]">
             {itemLabel(chosen)}
           </p>
           {chosen.variable ? (
@@ -700,7 +704,7 @@ function ShapesPanel({ items, selectedId, actions, brandKit = null }) {
 
       {shapes.length > 0 ? (
         <div className="space-y-1.5">
-          <p className="text-xs font-semibold text-heading">On this poster</p>
+          <p className="text-[13px] font-semibold text-[#111827]">On this poster</p>
           {shapes.map((item) => (
             <Row
               key={item.id}
@@ -729,8 +733,8 @@ function ShapesPanel({ items, selectedId, actions, brandKit = null }) {
       )}
 
       {chosen ? (
-        <div className="space-y-3 border-t border-line pt-3">
-          <p className="text-xs font-semibold text-heading">This shape</p>
+        <div className="space-y-3 border-t border-[#E5E7EB] pt-3">
+          <p className="text-[13px] font-semibold text-[#111827]">This shape</p>
           <div className="flex gap-1.5">
             {["rect", "circle", "line"].map((type) => (
               <button
@@ -972,9 +976,9 @@ function PageSection({
   children,
 }) {
   return (
-    <div className="space-y-3 rounded-btn border border-line bg-section/50 p-3">
+    <div className="space-y-3 rounded-[6px] border border-[#E5E7EB] bg-[#FAFAFA] p-3">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold text-heading">{title}</span>
+        <span className="text-[13px] font-semibold text-[#111827]">{title}</span>
         {isCustom ? (
           <div className="flex items-center gap-1.5">
             <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 border border-amber-200">
@@ -1233,8 +1237,8 @@ function BrandPanel({
       </div>
 
       <div className="space-y-2">
-        <span className="text-xs font-semibold text-heading">Brand colours</span>
-        <p className="text-[11px] text-muted-foreground">
+        <span className="text-[13px] font-semibold text-[#111827]">Brand colours</span>
+        <p className="text-[11px] text-[#6B7280]">
           {selectedItem
             ? "Click a colour to apply it to the selected item."
             : "Select an item on the poster to apply a brand colour."}
@@ -1248,15 +1252,15 @@ function BrandPanel({
                 type="button"
                 onClick={() => onApplyColorToken?.(swatch.token)}
                 disabled={!selectedItem}
-                className="flex items-center gap-2.5 rounded-btn border border-line bg-canvas px-2.5 py-2 text-left hover:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex items-center gap-2.5 rounded-[6px] border border-[#E5E7EB] bg-white px-2.5 py-2 text-left hover:border-[#2563EB] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <span
                   className="h-6 w-6 rounded-full border border-slate-300 shrink-0 shadow-inner"
                   style={{ backgroundColor: hex }}
                 />
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-semibold text-heading">{swatch.label}</p>
-                  <p className="font-mono text-[10px] text-muted-foreground uppercase">{hex}</p>
+                  <p className="text-xs font-medium text-[#111827]">{swatch.label}</p>
+                  <p className="font-mono text-[10px] text-[#6B7280] uppercase">{hex}</p>
                 </div>
               </button>
             );
@@ -1264,8 +1268,8 @@ function BrandPanel({
         </div>
       </div>
 
-      <div className="space-y-2 border-t border-line pt-3">
-        <span className="text-xs font-semibold text-heading">Brand fonts</span>
+      <div className="space-y-2 border-t border-[#E5E7EB] pt-3">
+        <span className="text-[13px] font-semibold text-[#111827]">Brand fonts</span>
         <p className="text-[11px] text-muted-foreground">
           {selectedItem?.kind === "text"
             ? "Click a font to apply it to the selected text."
@@ -1331,16 +1335,16 @@ export function EditorPanel({
     <div
       role="dialog"
       aria-label={title}
-      className="absolute bottom-0 left-0 top-0 z-[55] w-[300px] max-w-[86vw] overflow-y-auto border-r border-line bg-canvas p-4 shadow-xl"
+      className="absolute bottom-0 left-0 top-0 z-[55] w-[300px] max-w-[86vw] overflow-y-auto border-r border-[#E5E7EB] bg-white p-4"
       onPointerDown={(event) => event.stopPropagation()}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-heading">{title}</h2>
+        <h2 className="text-[13px] font-semibold text-[#111827]">{title}</h2>
         <button
           type="button"
           aria-label="Close this panel"
           onClick={onClose}
-          className="rounded p-1 text-muted-foreground hover:bg-section hover:text-heading focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+          className="rounded-[6px] p-1 text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
         >
           <X className="h-4 w-4" />
         </button>

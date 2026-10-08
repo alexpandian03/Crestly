@@ -6,8 +6,9 @@ import { variableSlotsOf } from '../../shared/templateElements.js';
 import { TEMPLATE_SIZE_DEFAULT } from '../services/template/zones.js';
 import { scopedFilter } from '../middleware/auth.middleware.js';
 import { generateContent, generateDesign } from '../services/ai/index.js';
-import { resolveImage } from '../services/images.js';
-import { sanitizeString, designToContent } from '../services/ai/schema.js';
+import { resolveImage, resolveImageDetails, resolvePosterImage, searchPhotos, triggerDownload } from '../services/images.js';
+import { sanitizeString, designToContent, sanitizeAndTruncateDesign } from '../services/ai/schema.js';
+import { generateWithMock } from '../services/ai/providers/mock.js';
 import { normalizePosterContent, normalizeImageUrl, contentValuesContext } from '../services/poster/content.js';
 import { captureDesign } from '../services/poster/design.js';
 import {
@@ -25,47 +26,116 @@ import { screenSubject } from '../services/image/prompt.js';
  * POST /api/posters/generate with mode "ai": one whole design taken from a recipe, plus the
  * words that go on it. Whether this mode is open is the organization's setting, not the user's.
  */
-async function generateFromRecipe(req, res, { templateId, prompt, instruction, avoidRecipeIds, variant }) {
-  const client = await Client.findById(req.clientId).select('designModes').lean();
-  if (!(client?.designModes?.ai ?? true)) {
-    return res.status(403).json({
+async function generateFromRecipe(req, res, { templateId, prompt, instruction, avoidRecipeIds, variant, imageUrl: userImageUrl }) {
+  try {
+    const client = await Client.findById(req.clientId).select('designModes').lean();
+    if (!(client?.designModes?.ai ?? true)) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          message:
+            'Designs written by the assistant are switched off for your organization. An administrator can turn them on in organization settings.',
+          status: 403,
+        },
+      });
+    }
+
+    let brandKit = await BrandKit.findOne(scopedFilter(req)).lean();
+    if (!brandKit) {
+      brandKit = { orgName: 'Our Organization', colors: {}, fonts: {}, header: {}, footer: {} };
+    }
+
+    /* The size comes from the layout asked for, else the tenant's first active template,
+       else the brand kit's own poster size. No template at all is not an error here. */
+    const template = templateId
+      ? await Template.findOne(scopedFilter(req, { _id: templateId, isActive: true })).lean()
+      : await Template.findOne(scopedFilter(req, { isActive: true })).sort({ createdAt: 1 }).lean();
+    const size = template?.size || brandKit.defaultPosterSize || TEMPLATE_SIZE_DEFAULT;
+
+    let answer;
+    let content;
+    let built;
+
+    let isAiGenerated = (process.env.LLM_PROVIDER || 'mock').toLowerCase().trim() !== 'mock';
+
+    // Generate the design (timeout, retry, sanitization handled internally)
+    // STAGE-10-COUNT: one AI generation. Count it here against the client's plan limit.
+    try {
+      answer = await generateDesign({ prompt, brandKit, instruction, avoidRecipeIds, variant });
+      content = designToContent(answer);
+      built = buildRecipeDesign({
+        recipe: { recipeId: answer.recipeId, variant: answer.variant, icon: answer.icon },
+        content,
+        brandKit,
+        size,
+      });
+    } catch (err) {
+      console.error(`[AI Design] Generation failed: ${err.message || 'unknown error'}`);
+      isAiGenerated = false;
+      try {
+        const mockRaw = await generateWithMock({
+          prompt,
+          brandKit,
+          instruction,
+          mode: 'design',
+          avoidRecipeIds,
+          variant,
+        });
+        answer = sanitizeAndTruncateDesign(mockRaw, { avoidRecipeIds, variant });
+        content = designToContent(answer);
+        built = buildRecipeDesign({
+          recipe: { recipeId: answer.recipeId, variant: answer.variant, icon: answer.icon },
+          content,
+          brandKit,
+          size,
+        });
+      } catch (fallbackErr) {
+        console.error(`[AI Design] Fallback failed: ${fallbackErr.message || 'unknown error'}`);
+        return res.status(500).json({
+          success: false,
+          error: { message: 'We could not generate the poster design. Please try again.', status: 500 },
+        });
+      }
+    }
+
+    content.isAiGenerated = isAiGenerated;
+
+    /* A design or template that shows a picture looks one up with resolvePosterImage,
+       and a photo that cannot be found falls back gracefully. */
+    try {
+      const hasImageSlot =
+        recipeNeedsPhoto(built.recipeId) ||
+        (Array.isArray(built.elements) && built.elements.some((el) => el.kind === 'image' || el.field === 'photo')) ||
+        (template && Array.isArray(template.elements) && template.elements.some((el) => el.kind === 'image' || el.field === 'photo'));
+
+      if (userImageUrl && typeof userImageUrl === 'string' && userImageUrl.trim()) {
+        content.imageUrl = userImageUrl.trim();
+      } else if (hasImageSlot) {
+        const photo = await resolvePosterImage(prompt, content.title, content.imageQuery);
+        content.imageUrl = photo?.imageUrl || '';
+        if (photo?.photographer) {
+          content.photographer = photo.photographer;
+          content.photographerUrl = photo.photographerUrl;
+        }
+        if (photo?.downloadLocation) {
+          content.downloadLocation = photo.downloadLocation;
+        }
+      } else {
+        content.imageUrl = '';
+      }
+    } catch (photoErr) {
+      console.warn(`[AI Photo] Photo resolution failed: ${photoErr.message || 'unknown error'}`);
+      content.imageUrl = userImageUrl ? userImageUrl.trim() : '';
+    }
+
+    return res.status(200).json({ success: true, data: { design: recipePayload(built), content } });
+  } catch (outerErr) {
+    console.error(`[AI Design] Unexpected error: ${outerErr.message || 'unknown error'}`);
+    return res.status(500).json({
       success: false,
-      error: {
-        message:
-          'Designs written by the assistant are switched off for your organization. An administrator can turn them on in organization settings.',
-        status: 403,
-      },
+      error: { message: 'We could not generate the poster design. Please try again.', status: 500 },
     });
   }
-
-  let brandKit = await BrandKit.findOne(scopedFilter(req)).lean();
-  if (!brandKit) {
-    brandKit = { orgName: 'Our Organization', colors: {}, fonts: {}, header: {}, footer: {} };
-  }
-
-  /* The size comes from the layout asked for, else the tenant's first active template,
-     else the brand kit's own poster size. No template at all is not an error here. */
-  const template = templateId
-    ? await Template.findOne(scopedFilter(req, { _id: templateId, isActive: true })).lean()
-    : await Template.findOne(scopedFilter(req, { isActive: true })).sort({ createdAt: 1 }).lean();
-  const size = template?.size || brandKit.defaultPosterSize || TEMPLATE_SIZE_DEFAULT;
-
-  // Generate the design (timeout, retry, sanitization handled internally)
-  // STAGE-10-COUNT: one AI generation. Count it here against the client's plan limit.
-  const answer = await generateDesign({ prompt, brandKit, instruction, avoidRecipeIds, variant });
-  const content = designToContent(answer);
-  const built = buildRecipeDesign({
-    recipe: { recipeId: answer.recipeId, variant: answer.variant, icon: answer.icon },
-    content,
-    brandKit,
-    size,
-  });
-
-  /* Only a design that shows a picture looks one up, and a photo that cannot be found
-     never fails the request. */
-  content.imageUrl = recipeNeedsPhoto(built.recipeId) ? await resolveImage(content.imageQuery) : '';
-
-  return res.status(200).json({ success: true, data: { design: recipePayload(built), content } });
 }
 
 /**
@@ -83,10 +153,18 @@ export async function generatePosterContentController(req, res, next) {
       });
     }
 
-    const { templateId, prompt, instruction, mode = 'template', avoidRecipeIds, variant } = req.body;
+    const { templateId, prompt, instruction, mode = 'template', avoidRecipeIds, variant, imageUrl: userImageUrl } = req.body;
 
     if (mode === 'ai') {
-      return generateFromRecipe(req, res, { templateId, prompt, instruction, avoidRecipeIds, variant });
+      try {
+        return await generateFromRecipe(req, res, { templateId, prompt, instruction, avoidRecipeIds, variant, imageUrl: userImageUrl });
+      } catch (err) {
+        console.error(`[AI Design Controller] Failed: ${err.message || 'unknown error'}`);
+        return res.status(500).json({
+          success: false,
+          error: { message: 'We could not generate the poster design. Please try again.', status: 500 },
+        });
+      }
     }
 
     // Load template scoped strictly to the authenticated tenant.
@@ -132,8 +210,21 @@ export async function generatePosterContentController(req, res, next) {
       variables,
     });
 
-    // Resolve optional image via Pexels (returns empty string on failure/timeout)
-    const imageUrl = await resolveImage(content.imageQuery);
+    let imageUrl = '';
+    let photo = null;
+
+    if (userImageUrl && typeof userImageUrl === 'string' && userImageUrl.trim()) {
+      imageUrl = userImageUrl.trim();
+    } else {
+      // Only when there is no user photo, call the stock photo search
+      photo = await resolvePosterImage(prompt, content.title, content.imageQuery);
+      imageUrl = photo?.imageUrl || '';
+    }
+
+    const images = {};
+    if (imageSlots.length > 0 && imageUrl) {
+      images[imageSlots[0].key] = imageUrl;
+    }
 
     return res.status(200).json({
       success: true,
@@ -141,6 +232,9 @@ export async function generatePosterContentController(req, res, next) {
         content: {
           ...content,
           imageUrl,
+          ...(Object.keys(images).length > 0 ? { images } : {}),
+          ...(photo?.photographer ? { photographer: photo.photographer, photographerUrl: photo.photographerUrl } : {}),
+          ...(photo?.downloadLocation ? { downloadLocation: photo.downloadLocation } : {}),
         },
         /* Photo blanks are never generated: the person making the poster replaces them. */
         imageSlots: imageSlots.map((slot) => ({ key: slot.key, label: slot.label })),
@@ -721,3 +815,39 @@ export async function uploadPosterThumbnailController(req, res, next) {
     next(err);
   }
 }
+
+/**
+ * GET /api/posters/photos/search?query=...
+ * Searches photos using active image search provider (Unsplash, Pexels, Mock).
+ */
+export async function searchPhotosController(req, res, next) {
+  try {
+    const query = req.query.query || req.query.q || '';
+    const photos = await searchPhotos(query);
+    return res.status(200).json({
+      success: true,
+      data: { photos },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/posters/photos/download
+ * Triggers download tracking for Unsplash when a photo is chosen for a poster.
+ */
+export async function trackPhotoDownloadController(req, res, next) {
+  try {
+    const { downloadLocation } = req.body || {};
+    if (downloadLocation) {
+      await triggerDownload(downloadLocation);
+    }
+    return res.status(200).json({
+      success: true,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+

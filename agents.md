@@ -1459,3 +1459,17 @@ JWT Bearer auth, Cloudinary, ES modules. One repo, one Vercel project:
   own lazy chunk, timeAgo 0.75 kB, Templates 13.92, DesignChooser 3.46, TemplateBuilder 5.44, BrandKit 39.99,
   TemplateEdit 117.24 kB / 33.25 gzip, main chunk 478.00 kB / 149.73 gzip). Backups of the files replaced are in
   `.backups/preview-unify/`.
+- Unified image resolution & template field filling done:
+  1. Image resolution: unified `resolvePosterImage(description, title, keywords)` used by both "Use one of our
+     layouts" (template mode) and "AI designs it" (recipe mode). Extracts 2-4 keywords, queries Unsplash (or Pexels/
+     thematic mock fallbacks), tracks downloads, attaches attribution, and automatically equips photo-capable recipes
+     (sports, festival/pongal, cultural, blood donation) with photos.
+  2. Template mode field filling: strictly isolates venue to the place name (e.g. "School ground") with `extractVenue`
+     and `formatVenue`; populates kicker, subtitle, 3 bullets, and cta from description without "Sample" prefixes;
+     suppresses placeholder copy (`SAMPLE LINE...`, `A heading of your own`, etc.) on generated posters while preserving
+     them in template editor via `isEditor` flag. Missing info defaults to "Venue to be announced" / "Date to be announced".
+  3. UI status badge: added subtle "{isAiGenerated ? 'AI text' : 'Sample text (AI unavailable)'}" status line below
+     the preview on the Generate page.
+  4. Verified with acceptance test suite (`test-acceptance-images-layout.js`), e2e generate test suite (`test-e2e-generate.js`,
+     8 event descriptions, 48 assertions), render layout tests (`test-render-layout.js`), and `npm run build` clean.
+

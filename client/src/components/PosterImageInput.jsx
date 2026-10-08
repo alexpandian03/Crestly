@@ -105,10 +105,10 @@ export default function PosterImageInput({ value = "", onChange }) {
   const showThumb = value && !urlError;
 
   return (
-    <div className="space-y-3">
-      <label className="block text-sm font-medium text-heading">
+    <div className="space-y-1.5">
+      <label className="block text-sm font-medium text-[#111827]">
         Poster photo{" "}
-        <span className="font-normal text-muted-foreground">(optional)</span>
+        <span className="font-normal text-[#6B7280]">(optional)</span>
       </label>
 
       <div className="flex gap-2">
@@ -119,13 +119,15 @@ export default function PosterImageInput({ value = "", onChange }) {
             onChange={handleUrlChange}
             onBlur={handleBlur}
             placeholder="https://example.com/image.jpg"
-            className={`input-field pr-9 ${urlError ? "border-danger" : ""}`}
+            className={`w-full h-9 rounded-[6px] border ${
+              urlError ? "border-[#DC2626]" : "border-[#E5E7EB]"
+            } bg-white px-3 pr-8 text-sm text-[#111827] placeholder:text-[#9CA3AF] outline-none focus:border-[#2563EB] transition-colors`}
           />
           {urlInput && (
             <button
               type="button"
               onClick={handleClear}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-heading"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#111827]"
               title="Remove image"
             >
               <X className="w-4 h-4" />
@@ -137,12 +139,12 @@ export default function PosterImageInput({ value = "", onChange }) {
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
-          className="btn-ghost border border-line shrink-0 text-xs"
+          className="h-9 px-3 rounded-[6px] border border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB] shrink-0 inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
         >
           {uploading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
           ) : (
-            <Upload className="w-4 h-4" />
+            <Upload className="w-3.5 h-3.5 text-[#6B7280]" />
           )}
           <span>{uploading ? "Uploading…" : "Upload"}</span>
         </button>
@@ -156,26 +158,26 @@ export default function PosterImageInput({ value = "", onChange }) {
       </div>
 
       {/* Helper text */}
-      <p className="text-xs text-muted-foreground">
+      <p className="text-xs text-[#6B7280]">
         Paste an https link or upload a JPG, PNG or WebP (max 2 MB).
       </p>
 
       {urlError && (
-        <div className="flex items-start gap-2 text-danger text-xs">
+        <div className="flex items-start gap-1.5 text-[#DC2626] text-xs">
           <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
           <span>{urlError}</span>
         </div>
       )}
 
       {uploadError && (
-        <div className="flex items-start gap-2 text-danger text-xs">
+        <div className="flex items-start gap-1.5 text-[#DC2626] text-xs">
           <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
           <span>{uploadError}</span>
         </div>
       )}
 
       {showThumb && (
-        <div className="relative w-full h-28 rounded-card overflow-hidden border border-line bg-preview">
+        <div className="relative w-full h-24 rounded-[6px] overflow-hidden border border-[#E5E7EB] bg-[#FAFAFA]">
           <img
             src={value}
             alt="Poster photo preview"
@@ -191,7 +193,7 @@ export default function PosterImageInput({ value = "", onChange }) {
           <button
             type="button"
             onClick={handleClear}
-            className="absolute top-2 right-2 w-6 h-6 rounded-chip bg-canvas border border-line flex items-center justify-center text-body"
+            className="absolute top-1.5 right-1.5 w-6 h-6 rounded-[4px] bg-white border border-[#E5E7EB] flex items-center justify-center text-[#6B7280] hover:text-[#111827]"
             title="Remove image"
           >
             <X className="w-3.5 h-3.5" />

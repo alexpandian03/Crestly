@@ -23,7 +23,7 @@ export default function SizeStepper({
     <div
       role="group"
       aria-label={`${label} text size`}
-      className="flex items-center gap-1 rounded-chip border border-line bg-canvas px-1.5 py-1 shadow-soft"
+      className="flex items-center gap-1 rounded-chip border border-line bg-canvas px-1.5 py-1"
       style={{ pointerEvents: "auto" }}
     >
       <span className="hidden px-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground sm:inline">

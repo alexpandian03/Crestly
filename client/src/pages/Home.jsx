@@ -4,9 +4,29 @@ import { useAuth } from "../context/AuthContext";
 import { saveDraft } from "../config/draft";
 import { DEMO_POSTERS, SAMPLE_PROMPTS } from "../data/demoPosters";
 import LandingPosterCard from "../components/LandingPosterCard";
+import ErrorBoundary from "../components/ErrorBoundary";
 import FaqAccordion from "../components/FaqAccordion";
-import { FileDown, Lock, RefreshCw, Users } from "lucide-react";
 import { APP_NAME } from "../config/brand";
+import { useGoogleFonts } from "../hooks/useGoogleFonts";
+import { FileDown, Lock, RefreshCw } from "lucide-react";
+
+const DEMO_GALLERY_FONTS = [
+  "Playfair Display",
+  "Inter",
+  "Poppins",
+  "Anton",
+  "Roboto",
+  "Cinzel",
+  "Lato",
+  "Cormorant Garamond",
+  "Montserrat",
+  "Space Grotesk",
+  "IBM Plex Mono",
+  "Merriweather",
+  "Source Sans 3",
+  "DM Serif Display",
+  "DM Sans",
+];
 
 const CATEGORIES = [
   "All",
@@ -68,6 +88,10 @@ export default function Home() {
   const { isAuthenticated } = useAuth();
   const [text, setText] = useState("");
   const [category, setCategory] = useState("All");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const fontsLoaded = useGoogleFonts("Playfair Display", "Inter", DEMO_GALLERY_FONTS);
+  const galleryLoading = loading || !fontsLoaded;
 
   const posters = useMemo(
     () =>
@@ -112,18 +136,18 @@ export default function Home() {
             <label htmlFor="hero-description" className="sr-only">
               Poster description
             </label>
-            <div className="rounded-card bg-canvas border border-primary-ring shadow-soft p-2 sm:p-3 flex flex-col sm:flex-row gap-2">
+            <div className="rounded-[8px] bg-white border border-[#E5E7EB] p-2 sm:p-3 flex flex-col sm:flex-row gap-2">
               <textarea
                 id="hero-description"
                 rows={3}
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 placeholder="Sports day on 18 Oct, 8 AM, school ground…"
-                className="flex-1 resize-none border-0 bg-transparent px-3 py-2 text-sm text-heading placeholder:text-muted-foreground focus:outline-none focus:ring-0"
+                className="flex-1 resize-none border-0 bg-transparent px-3 py-2 text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-0"
               />
               <button
                 type="submit"
-                className="btn-primary sm:self-end shrink-0"
+                className="sm:self-end shrink-0 h-9 px-4 rounded-[6px] bg-[#2563EB] text-sm font-medium text-white hover:bg-[#1D4ED8] transition-colors"
               >
                 Generate
               </button>
@@ -193,15 +217,51 @@ export default function Home() {
               </button>
             ))}
           </div>
-          <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {posters.map((poster) => (
-              <LandingPosterCard
-                key={poster.id}
-                poster={poster}
-                onUse={(p) => goCreate(p.prompt)}
-              />
-            ))}
-          </div>
+          <ErrorBoundary
+            fallback={
+              <div className="mt-8 rounded-[8px] border border-[#E5E7EB] bg-[#FAFAFA] p-8 text-center text-sm text-[#6B7280]">
+                We could not load the template previews right now.
+              </div>
+            }
+          >
+            {galleryLoading ? (
+              <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5" aria-label="Loading templates">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="rounded-[8px] border border-[#E5E7EB] bg-white p-3">
+                    <div className="aspect-[4/5] rounded-[6px] bg-[#E5E7EB] animate-pulse" />
+                  </div>
+                ))}
+              </div>
+            ) : error ? (
+              <div className="mt-8 rounded-[8px] border border-[#E5E7EB] bg-[#FAFAFA] p-8 text-center text-sm text-[#6B7280]">
+                {error}
+              </div>
+            ) : posters.length === 0 ? (
+              <div className="mt-8 rounded-[8px] border border-[#E5E7EB] bg-[#FAFAFA] p-8 text-center text-sm text-[#6B7280]">
+                No templates found in this category.
+              </div>
+            ) : (
+              <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                {posters.map((poster) => (
+                  <ErrorBoundary
+                    key={poster.id}
+                    fallback={
+                      <div className="rounded-[8px] border border-[#E5E7EB] bg-white p-3">
+                        <div className="aspect-[4/5] rounded-[6px] bg-[#E5E7EB] flex items-center justify-center text-xs text-[#9CA3AF] p-3 text-center">
+                          Preview unavailable
+                        </div>
+                      </div>
+                    }
+                  >
+                    <LandingPosterCard
+                      poster={poster}
+                      onUse={(p) => goCreate(p.prompt)}
+                    />
+                  </ErrorBoundary>
+                ))}
+              </div>
+            )}
+          </ErrorBoundary>
         </div>
       </section>
 
@@ -213,12 +273,12 @@ export default function Home() {
           <h2 className="text-2xl sm:text-3xl tracking-tight">How it works</h2>
           <ol className="mt-10 grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {STEPS.map((s) => (
-              <li key={s.n} className="card-surface p-5">
-                <span className="inline-flex w-8 h-8 items-center justify-center rounded-btn bg-primary text-white text-sm font-semibold">
+              <li key={s.n} className="rounded-[8px] border border-[#E5E7EB] bg-white p-5">
+                <span className="inline-flex w-7 h-7 items-center justify-center rounded-[6px] border border-[#E5E7EB] bg-[#FAFAFA] text-[#111827] text-xs font-semibold">
                   {s.n}
                 </span>
-                <h3 className="mt-4 text-base">{s.title}</h3>
-                <p className="mt-2 text-sm text-body">{s.body}</p>
+                <h3 className="mt-4 text-base font-semibold text-[#111827]">{s.title}</h3>
+                <p className="mt-2 text-sm text-[#6B7280]">{s.body}</p>
               </li>
             ))}
           </ol>
@@ -237,30 +297,30 @@ export default function Home() {
             </p>
           </div>
           <div className="grid grid-cols-2 gap-4" aria-hidden="true">
-            <div className="rounded-card border border-line overflow-hidden shadow-soft">
-              <p className="text-[11px] font-medium text-muted-foreground px-3 py-2 border-b border-line">
+            <div className="rounded-[8px] border border-[#E5E7EB] overflow-hidden">
+              <p className="text-[11px] font-medium text-muted-foreground px-3 py-2 border-b border-[#E5E7EB]">
                 Before — unlocked
               </p>
-              <div className="h-40 bg-preview flex flex-col">
-                <div className="h-8 bg-danger/20" />
+              <div className="h-40 bg-[#F9FAFB] flex flex-col">
+                <div className="h-8 bg-red-100" />
                 <div className="flex-1 p-3 space-y-2">
-                  <div className="h-3 w-3/4 bg-line rounded-chip" />
-                  <div className="h-3 w-1/2 bg-line rounded-chip" />
+                  <div className="h-3 w-3/4 bg-[#E5E7EB] rounded" />
+                  <div className="h-3 w-1/2 bg-[#E5E7EB] rounded" />
                 </div>
-                <div className="h-8 bg-accent/30" />
+                <div className="h-8 bg-amber-100" />
               </div>
             </div>
-            <div className="rounded-card border border-line overflow-hidden shadow-soft">
-              <p className="text-[11px] font-medium text-muted-foreground px-3 py-2 border-b border-line">
+            <div className="rounded-[8px] border border-[#E5E7EB] overflow-hidden">
+              <p className="text-[11px] font-medium text-muted-foreground px-3 py-2 border-b border-[#E5E7EB]">
                 After — locked
               </p>
-              <div className="h-40 bg-preview flex flex-col">
-                <div className="h-8 bg-heading" />
+              <div className="h-40 bg-[#F9FAFB] flex flex-col">
+                <div className="h-8 bg-[#111827]" />
                 <div className="flex-1 p-3 space-y-2">
-                  <div className="h-3 w-3/4 bg-primary/20 rounded-chip" />
-                  <div className="h-3 w-1/2 bg-primary/20 rounded-chip" />
+                  <div className="h-3 w-3/4 bg-blue-100 rounded" />
+                  <div className="h-3 w-1/2 bg-blue-100 rounded" />
                 </div>
-                <div className="h-8 bg-heading" />
+                <div className="h-8 bg-[#111827]" />
               </div>
             </div>
           </div>
@@ -367,29 +427,29 @@ export default function Home() {
             ].map((plan) => (
               <div
                 key={plan.name}
-                className={`rounded-card border p-6 shadow-soft ${
+                className={`rounded-[8px] border p-6 ${
                   plan.highlight
-                    ? "border-primary bg-section"
-                    : "border-line bg-canvas"
+                    ? "border-[#2563EB] bg-[#F9FAFB]"
+                    : "border-[#E5E7EB] bg-white"
                 }`}
               >
                 {plan.highlight && (
-                  <p className="text-xs font-semibold text-primary uppercase tracking-wide mb-2">
+                  <p className="text-xs font-semibold text-[#2563EB] uppercase tracking-wide mb-2">
                     Most used
                   </p>
                 )}
-                <h3 className="text-lg">{plan.name}</h3>
-                <p className="mt-2 text-3xl font-semibold text-heading tracking-tight">
+                <h3 className="text-lg font-semibold text-[#111827]">{plan.name}</h3>
+                <p className="mt-2 text-3xl font-semibold text-[#111827] tracking-tight">
                   {plan.price}
-                  <span className="text-sm font-medium text-muted-foreground">
+                  <span className="text-sm font-medium text-[#6B7280]">
                     {" "}
                     /mo
                   </span>
                 </p>
-                <p className="mt-2 text-sm text-muted-foreground">
+                <p className="mt-2 text-sm text-[#6B7280]">
                   {plan.note}
                 </p>
-                <ul className="mt-4 space-y-2 text-sm text-body">
+                <ul className="mt-4 space-y-2 text-sm text-[#4B5563]">
                   {plan.items.map((item) => (
                     <li key={item}>{item}</li>
                   ))}
@@ -397,7 +457,11 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => goCreate("")}
-                  className="btn-primary w-full mt-6"
+                  className={`w-full mt-6 h-9 rounded-[6px] text-sm font-medium transition-colors ${
+                    plan.highlight
+                      ? "bg-[#2563EB] text-white hover:bg-[#1D4ED8]"
+                      : "border border-[#E5E7EB] bg-white text-[#111827] hover:bg-[#F3F4F6]"
+                  }`}
                 >
                   Log in to create
                 </button>

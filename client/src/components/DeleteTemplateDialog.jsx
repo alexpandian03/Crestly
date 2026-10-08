@@ -1,5 +1,6 @@
 import React, { useEffect } from "react";
 import { AlertTriangle, Power, Trash2 } from "lucide-react";
+import { Button } from "./ui/button";
 
 /**
  * The confirm step for deleting a template. An active template cannot be deleted,
@@ -23,11 +24,9 @@ export default function DeleteTemplateDialog({
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [onCancel]);
 
-  const cancelClass = "btn-ghost border border-line px-4 py-2 text-sm";
-
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-heading/40 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="delete-template-title"
@@ -35,27 +34,25 @@ export default function DeleteTemplateDialog({
         if (event.target === event.currentTarget) onCancel();
       }}
     >
-      <div className="card-surface w-full max-w-md space-y-4 p-6">
+      <div className="w-full max-w-md rounded-[8px] border border-[#E5E7EB] bg-white p-6 space-y-4">
         <div className="flex items-start gap-3">
-          <span className="rounded-chip bg-danger/10 p-2 text-danger">
-            <AlertTriangle className="h-5 w-5" />
-          </span>
+          <AlertTriangle className="h-5 w-5 text-[#DC2626] shrink-0 mt-0.5" />
           <div className="min-w-0">
             <h2
               id="delete-template-title"
-              className="text-base font-semibold text-heading"
+              className="text-base font-semibold text-[#111827]"
             >
               {active
                 ? "Turn this template off first"
                 : "Delete this template?"}
             </h2>
             <p
-              className="mt-1 text-xs text-muted-foreground truncate"
+              className="mt-1 text-xs text-[#6B7280] truncate"
               title={template?.name}
             >
               {template?.name}
             </p>
-            <p className="mt-2 text-sm text-body leading-snug">
+            <p className="mt-2 text-sm text-[#4B5563] leading-snug">
               {active
                 ? "Your team can still choose this template on the Create page. Turn it off and you can delete it."
                 : "Posters already created from it will not be affected. This cannot be undone."}
@@ -63,30 +60,37 @@ export default function DeleteTemplateDialog({
           </div>
         </div>
 
-        {error && <p className="text-sm text-danger">{error}</p>}
+        {error && <p className="text-sm text-[#DC2626]">{error}</p>}
 
         <div className="flex flex-wrap justify-end gap-2 pt-1">
-          <button type="button" onClick={onCancel} className={cancelClass}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onCancel}
+            className="h-9 px-3 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB]"
+          >
             Cancel
-          </button>
+          </Button>
           {active ? (
-            <button
+            <Button
               type="button"
               onClick={onDeactivate}
               disabled={busy}
-              className="btn-primary inline-flex items-center gap-2 px-4 py-2 text-sm disabled:opacity-60"
+              className="h-9 px-3 rounded-[6px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-medium gap-1.5 shadow-none disabled:opacity-50"
             >
-              <Power className="h-4 w-4" /> Turn it off
-            </button>
+              <Power className="h-3.5 w-3.5" />
+              <span>Turn it off</span>
+            </Button>
           ) : (
-            <button
+            <Button
               type="button"
               onClick={onConfirm}
               disabled={busy}
-              className="inline-flex items-center gap-2 rounded-btn bg-danger px-4 py-2 text-sm font-semibold text-canvas transition-colors hover:bg-danger/90 disabled:opacity-60"
+              className="h-9 px-3 rounded-[6px] bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-medium gap-1.5 shadow-none disabled:opacity-50"
             >
-              <Trash2 className="h-4 w-4" /> {busy ? "Deleting…" : "Delete"}
-            </button>
+              <Trash2 className="h-3.5 w-3.5" />
+              <span>{busy ? "Deleting…" : "Delete"}</span>
+            </Button>
           )}
         </div>
       </div>

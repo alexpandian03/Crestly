@@ -41,10 +41,10 @@ export default function DesignChooser({
   }, [templates, category]);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2.5">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-semibold text-heading">Design</span>
-        <span className="text-xs text-muted-foreground">
+        <label className="text-sm font-medium text-[#111827]">Design</label>
+        <span className="text-xs text-[#6B7280]">
           {cards.length === 1 ? "Set by your organization" : "Choose one"}
         </span>
       </div>
@@ -53,44 +53,53 @@ export default function DesignChooser({
         className={
           cards.length === 1
             ? "space-y-2"
-            : "grid grid-cols-1 sm:grid-cols-2 gap-2"
+            : "grid grid-cols-1 sm:grid-cols-2 gap-2.5"
         }
       >
         {cards.map((card) => {
           const active = card.mode === mode;
-          const Icon = card.mode === "ai" ? Sparkles : Layout;
           return (
             <button
               key={card.mode}
               type="button"
               onClick={() => onModeChange(card.mode)}
               aria-pressed={active}
-              className={`text-left rounded-btn border p-3 transition-all ${
+              className={`text-left rounded-[6px] border p-3 transition-colors ${
                 active
-                  ? "border-primary bg-section ring-1 ring-primary shadow-soft"
-                  : "border-line bg-canvas hover:border-primary/50"
+                  ? "border-[#2563EB] bg-[#EFF6FF]"
+                  : "border-[#E5E7EB] bg-white hover:border-[#D1D5DB]"
               }`}
             >
-              <span className="flex items-center gap-2">
-                <Icon
-                  className={`w-4 h-4 shrink-0 ${active ? "text-primary" : "text-muted-foreground"}`}
-                />
-                <span className="text-sm font-semibold text-heading">
-                  {card.title}
+              <div className="flex items-start gap-2.5">
+                <span
+                  className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
+                    active
+                      ? "border-[#2563EB] bg-[#2563EB]"
+                      : "border-[#D1D5DB] bg-white"
+                  }`}
+                >
+                  {active && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                  )}
                 </span>
-              </span>
-              <span className="mt-1 block text-xs text-muted-foreground leading-relaxed">
-                {card.note}
-              </span>
+                <div className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium text-[#111827]">
+                    {card.title}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-[#6B7280] leading-relaxed">
+                    {card.note}
+                  </span>
+                </div>
+              </div>
             </button>
           );
         })}
       </div>
 
       {mode === "template" && (
-        <div className="rounded-btn border border-line bg-canvas p-3 space-y-2">
+        <div className="rounded-[6px] border border-[#E5E7EB] bg-white p-3 space-y-2.5">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold text-heading">
+            <span className="text-xs font-medium text-[#111827]">
               Choose a layout
             </span>
             {categories.length > 2 && (
@@ -100,10 +109,10 @@ export default function DesignChooser({
                     key={cat}
                     type="button"
                     onClick={() => setCategory(cat)}
-                    className={`text-xs px-2 py-0.5 rounded-chip transition-colors ${
+                    className={`text-xs px-2 py-0.5 rounded-[4px] transition-colors ${
                       category.toLowerCase() === cat.toLowerCase()
-                        ? "bg-primary text-white"
-                        : "text-muted-foreground hover:text-heading bg-section"
+                        ? "bg-[#2563EB] text-white"
+                        : "text-[#6B7280] hover:text-[#111827] bg-[#F3F4F6]"
                     }`}
                   >
                     {cat}
@@ -124,13 +133,13 @@ export default function DesignChooser({
                     type="button"
                     onClick={() => onSelectTemplate(id)}
                     aria-pressed={isSelected}
-                    className={`text-left rounded-btn border transition-all overflow-hidden ${
+                    className={`text-left rounded-[6px] border transition-colors overflow-hidden ${
                       isSelected
-                        ? "border-primary bg-section ring-1 ring-primary shadow-soft"
-                        : "border-line bg-canvas hover:border-primary/50"
+                        ? "border-[#2563EB] bg-[#EFF6FF]"
+                        : "border-[#E5E7EB] bg-white hover:border-[#D1D5DB]"
                     }`}
                   >
-                    <div className="bg-preview p-1.5 flex justify-center pointer-events-none select-none">
+                    <div className="bg-[#FAFAFA] p-1.5 flex justify-center pointer-events-none select-none">
                       <TemplatePreview
                         brandKit={brandKit}
                         template={t}
@@ -139,12 +148,12 @@ export default function DesignChooser({
                     </div>
                     <div className="px-2 py-1.5">
                       <p
-                        className="text-[11px] font-semibold text-heading truncate"
+                        className="text-[11px] font-medium text-[#111827] truncate"
                         title={t.name}
                       >
                         {t.name}
                       </p>
-                      <p className="text-[10px] text-muted-foreground capitalize">
+                      <p className="text-[10px] text-[#6B7280] capitalize">
                         {t.category || "Event"}
                       </p>
                     </div>
@@ -153,7 +162,7 @@ export default function DesignChooser({
               })}
             </div>
           ) : (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-[#6B7280]">
               No layout is turned on for your organization yet. An administrator
               can turn one on under Templates.
             </p>
@@ -161,7 +170,7 @@ export default function DesignChooser({
         </div>
       )}
 
-      <p className="text-xs text-muted-foreground rounded-card bg-section border border-line px-3 py-2">
+      <p className="text-xs text-[#6B7280] leading-relaxed">
         {BRAND_LINE}
       </p>
     </div>

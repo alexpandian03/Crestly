@@ -18,6 +18,8 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
 import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import PosterCard, { PosterCardSkeleton } from "../components/PosterCard";
@@ -332,266 +334,305 @@ export default function History() {
   const openTemplate = templatesById.get(String(openTemplateId || "")) || null;
 
   return (
-    <div className="container-page section-pad space-y-6">
-      <div className="pb-6 border-b border-line flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl">My posters</h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Every poster you have saved, with its earlier versions.
-          </p>
-        </div>
-        <Link to="/create" className="btn-primary shrink-0">
-          <Plus className="w-4 h-4" /> New poster
-        </Link>
-      </div>
-
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[220px]">
-            <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="search"
-              value={searchText}
-              onChange={(event) => setSearchText(event.target.value)}
-              placeholder="Search by headline or description"
-              className="input-field pl-9 pr-9"
-              aria-label="Search posters"
-            />
-            {searchText && (
-              <button
-                type="button"
-                onClick={() => setSearchText("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-heading"
-                title="Clear search"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setShowFilters((open) => !open)}
-            className={`btn-ghost border border-line text-xs ${showFilters || category || status || from || to ? "text-primary" : ""}`}
-            aria-expanded={showFilters}
-          >
-            <SlidersHorizontal className="w-4 h-4" />
-            <span>Filters</span>
-            {filtersActive && (
-              <span className="rounded-chip bg-primary/10 text-primary px-1.5 py-0.5 text-[11px] font-semibold">
-                {activeFilterCount}
-              </span>
-            )}
-            <ChevronDown
-              className={`w-4 h-4 transition-transform ${showFilters ? "rotate-180" : ""}`}
-            />
-          </button>
-        </div>
-
-        {showFilters && (
-          <div className="card-surface p-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <label className="block text-xs">
-              <span className="text-muted-foreground">Type</span>
-              <select
-                value={category}
-                onChange={(event) => setCategory(event.target.value)}
-                className="input-field mt-1"
-              >
-                <option value="">Any type</option>
-                {categories.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="block text-xs">
-              <span className="text-muted-foreground">Status</span>
-              <select
-                value={status}
-                onChange={(event) => setStatus(event.target.value)}
-                className="input-field mt-1"
-              >
-                {STATUS_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="block text-xs">
-              <span className="text-muted-foreground">Changed from</span>
-              <input
-                type="date"
-                value={from}
-                max={to || undefined}
-                onChange={(event) => setFrom(event.target.value)}
-                className="input-field mt-1"
-              />
-            </label>
-
-            <label className="block text-xs">
-              <span className="text-muted-foreground">Changed until</span>
-              <input
-                type="date"
-                value={to}
-                min={from || undefined}
-                onChange={(event) => setTo(event.target.value)}
-                className="input-field mt-1"
-              />
-            </label>
-
-            {filtersActive && (
-              <div className="sm:col-span-2 lg:col-span-4">
-                <button
-                  type="button"
-                  onClick={clearFilters}
-                  className="btn-ghost text-xs"
-                >
-                  <X className="w-4 h-4" /> Clear all filters
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {!loading && !listError && items.length > 0 && (
-          <p className="text-xs text-muted-foreground">
-            Showing {items.length} of {total} poster{total === 1 ? "" : "s"}
-          </p>
-        )}
-      </div>
-
-      {listError && (
-        <div className="card-surface p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-danger/30 bg-danger/5">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-danger shrink-0 mt-0.5" />
-            <div>
-              <h2 className="text-sm font-semibold text-heading">
-                Posters not loaded
-              </h2>
-              <p className="text-sm text-body mt-1">{listError}</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setReloadToken((token) => token + 1)}
-            className="btn-primary text-xs shrink-0"
-          >
-            <RefreshCw className="w-4 h-4" /> Try again
-          </button>
-        </div>
-      )}
-
-      {loading && (
-        <div
-          className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4"
-          aria-busy="true"
-        >
-          {Array.from({ length: 8 }).map((_, index) => (
-            <PosterCardSkeleton key={index} />
-          ))}
-        </div>
-      )}
-
-      {!loading && !listError && items.length === 0 && (
-        <div className="card-surface text-center py-16 px-6 space-y-4">
-          <Sparkles className="w-10 h-10 text-muted-foreground mx-auto" />
+    <div className="bg-white min-h-[calc(100vh-56px)]">
+      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+        {/* Header */}
+        <div className="pb-5 border-b border-[#E5E7EB] flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 className="text-base">
-              {filtersActive
-                ? "No posters match these filters"
-                : "No posters yet"}
-            </h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              {filtersActive
-                ? "Try a different word, or clear the filters to see everything."
-                : "Describe what you need and we will write the words for your poster."}
+            <h1 className="text-[24px] font-semibold text-[#111827] leading-tight">
+              Posters
+            </h1>
+            <p className="text-sm text-[#6B7280] mt-1">
+              Every poster you have saved, with its earlier versions.
             </p>
           </div>
-          {filtersActive ? (
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="btn-ghost border border-line"
-            >
-              <X className="w-4 h-4" /> Clear filters
-            </button>
-          ) : (
-            <Link to="/create" className="btn-primary inline-flex">
-              <Sparkles className="w-4 h-4" /> Create your first poster
+          <Button
+            asChild
+            className="h-9 px-3.5 rounded-[6px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-sm font-medium inline-flex items-center gap-1.5 transition-colors"
+          >
+            <Link to="/create">
+              <Plus className="w-4 h-4" />
+              <span>New poster</span>
             </Link>
-          )}
+          </Button>
         </div>
-      )}
 
-      {!loading && !listError && items.length > 0 && (
-        <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-            {items.map((poster) => {
-              const template = templatesById.get(
-                String(poster.templateId || ""),
-              );
-              /* The shape the poster was saved with, so a resized template cannot change old cards. */
-              const size = poster.design?.template?.size || template?.size;
-              return (
-                <PosterCard
-                  key={idOf(poster)}
-                  poster={poster}
-                  category={categoryOf(poster.templateId)}
-                  createdByName={
-                    canSeeAuthors ? namesById[String(poster.userId)] || "" : ""
-                  }
-                  aspectRatio={
-                    size?.width && size?.height ? size.width / size.height : 0.8
-                  }
-                  busy={busyIds.has(idOf(poster))}
-                  onOpenDetail={(item) => setOpenId(idOf(item))}
-                  onOpenInEditor={openInEditor}
-                  onDuplicate={handleDuplicate}
-                  onDelete={handleDelete}
+        {/* Toolbar */}
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="relative flex-1 min-w-[240px] max-w-sm">
+              <Search className="w-4 h-4 text-[#6B7280] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Input
+                type="search"
+                value={searchText}
+                onChange={(event) => setSearchText(event.target.value)}
+                placeholder="Search by headline or description"
+                className="h-9 pl-9 pr-8 rounded-[6px] border-[#E5E7EB] bg-white text-sm text-[#111827] placeholder:text-[#9CA3AF] focus-visible:border-[#2563EB] focus-visible:ring-1 focus-visible:ring-[#2563EB]"
+                aria-label="Search posters"
+              />
+              {searchText && (
+                <button
+                  type="button"
+                  onClick={() => setSearchText("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#111827]"
+                  title="Clear search"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3">
+              {!loading && !listError && items.length > 0 && (
+                <span className="text-xs text-[#6B7280]">
+                  Showing {items.length} of {total} poster{total === 1 ? "" : "s"}
+                </span>
+              )}
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowFilters((open) => !open)}
+                className={`h-9 px-3 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium ${
+                  showFilters || category || status || from || to
+                    ? "text-[#2563EB] border-[#2563EB]"
+                    : "text-[#111827] hover:bg-[#F9FAFB]"
+                }`}
+                aria-expanded={showFilters}
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5 mr-1.5" />
+                <span>Filters</span>
+                {filtersActive && (
+                  <span className="ml-1.5 rounded-[4px] bg-[#EFF6FF] text-[#2563EB] px-1.5 py-0.5 text-[11px] font-semibold">
+                    {activeFilterCount}
+                  </span>
+                )}
+                <ChevronDown
+                  className={`w-3.5 h-3.5 ml-1 transition-transform ${
+                    showFilters ? "rotate-180" : ""
+                  }`}
                 />
-              );
-            })}
+              </Button>
+            </div>
           </div>
 
-          {page < pages && (
-            <div className="flex justify-center pt-2">
-              <button
-                type="button"
-                onClick={handleLoadMore}
-                disabled={loadingMore}
-                className="btn-ghost border border-line"
-              >
-                {loadingMore ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Plus className="w-4 h-4" />
-                )}
-                <span>{loadingMore ? "Loading…" : "Load more"}</span>
-              </button>
+          {showFilters && (
+            <div className="rounded-[8px] border border-[#E5E7EB] bg-[#FAFAFA] p-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <label className="block text-xs">
+                <span className="font-medium text-[#6B7280]">Type</span>
+                <select
+                  value={category}
+                  onChange={(event) => setCategory(event.target.value)}
+                  className="mt-1 w-full h-9 rounded-[6px] border border-[#E5E7EB] bg-white px-2.5 text-xs text-[#111827] outline-none focus:border-[#2563EB]"
+                >
+                  <option value="">Any type</option>
+                  {categories.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block text-xs">
+                <span className="font-medium text-[#6B7280]">Status</span>
+                <select
+                  value={status}
+                  onChange={(event) => setStatus(event.target.value)}
+                  className="mt-1 w-full h-9 rounded-[6px] border border-[#E5E7EB] bg-white px-2.5 text-xs text-[#111827] outline-none focus:border-[#2563EB]"
+                >
+                  {STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block text-xs">
+                <span className="font-medium text-[#6B7280]">Changed from</span>
+                <input
+                  type="date"
+                  value={from}
+                  max={to || undefined}
+                  onChange={(event) => setFrom(event.target.value)}
+                  className="mt-1 w-full h-9 rounded-[6px] border border-[#E5E7EB] bg-white px-2.5 text-xs text-[#111827] outline-none focus:border-[#2563EB]"
+                />
+              </label>
+
+              <label className="block text-xs">
+                <span className="font-medium text-[#6B7280]">Changed until</span>
+                <input
+                  type="date"
+                  value={to}
+                  min={from || undefined}
+                  onChange={(event) => setTo(event.target.value)}
+                  className="mt-1 w-full h-9 rounded-[6px] border border-[#E5E7EB] bg-white px-2.5 text-xs text-[#111827] outline-none focus:border-[#2563EB]"
+                />
+              </label>
+
+              {filtersActive && (
+                <div className="sm:col-span-2 lg:col-span-4 pt-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearFilters}
+                    className="h-7 px-2 text-xs text-[#6B7280] hover:text-[#111827] hover:bg-white rounded-[4px]"
+                  >
+                    <X className="w-3.5 h-3.5 mr-1" /> Clear all filters
+                  </Button>
+                </div>
+              )}
             </div>
           )}
-        </>
-      )}
+        </div>
 
-      {openId && (
-        <PosterDetailDrawer
-          key={openId}
-          posterId={openId}
-          brandKit={brandKit}
-          template={openTemplate}
-          templates={templates}
-          namesById={namesById}
-          currentUserId={user?.id || ""}
-          canSeeAuthors={canSeeAuthors}
-          showAuthors={canSeeAuthors}
-          onClose={() => setOpenId("")}
-          onChanged={handlePosterChanged}
-        />
-      )}
+        {listError && (
+          <div className="p-4 rounded-[8px] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border border-[#FCA5A5] bg-[#FEF2F2] text-[#DC2626]">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 text-[#DC2626] shrink-0 mt-0.5" />
+              <div>
+                <h2 className="text-xs font-semibold text-[#DC2626]">
+                  Posters not loaded
+                </h2>
+                <p className="text-xs text-[#DC2626] mt-0.5">{listError}</p>
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setReloadToken((token) => token + 1)}
+              className="h-8 rounded-[6px] border-[#DC2626]/30 bg-white text-xs font-medium text-[#DC2626] hover:bg-[#FEF2F2] shrink-0"
+            >
+              <RefreshCw className="w-3 h-3 mr-1" /> Try again
+            </Button>
+          </div>
+        )}
+
+        {/* Loading state: shadcn Skeleton cards */}
+        {loading && (
+          <div
+            className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4"
+            aria-busy="true"
+          >
+            {Array.from({ length: 8 }).map((_, index) => (
+              <PosterCardSkeleton key={index} />
+            ))}
+          </div>
+        )}
+
+        {/* Empty state */}
+        {!loading && !listError && items.length === 0 && (
+          <div className="rounded-[8px] border border-dashed border-[#D1D5DB] bg-white text-center py-16 px-6 space-y-4 max-w-md mx-auto">
+            <div className="w-10 h-10 rounded-full border border-[#E5E7EB] bg-[#F9FAFB] flex items-center justify-center mx-auto">
+              <Sparkles className="w-5 h-5 text-[#9CA3AF]" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-[#111827]">
+                {filtersActive
+                  ? "No posters match these filters"
+                  : "No posters yet"}
+              </h2>
+              <p className="text-xs text-[#6B7280] mt-1 max-w-xs mx-auto leading-relaxed">
+                {filtersActive
+                  ? "Try a different word, or clear the filters to see everything."
+                  : "Describe what you need and we will write the words for your poster."}
+              </p>
+            </div>
+            {filtersActive ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={clearFilters}
+                className="h-8 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB]"
+              >
+                <X className="w-3.5 h-3.5 mr-1 text-[#6B7280]" /> Clear filters
+              </Button>
+            ) : (
+              <Button
+                asChild
+                className="h-9 px-4 rounded-[6px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-medium inline-flex items-center gap-1.5"
+              >
+                <Link to="/create">
+                  <Plus className="w-4 h-4" /> Create poster
+                </Link>
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* Grid and Load More */}
+        {!loading && !listError && items.length > 0 && (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {items.map((poster) => {
+                const template = templatesById.get(
+                  String(poster.templateId || ""),
+                );
+                const size = poster.design?.template?.size || template?.size;
+                return (
+                  <PosterCard
+                    key={idOf(poster)}
+                    poster={poster}
+                    category={categoryOf(poster.templateId)}
+                    createdByName={
+                      canSeeAuthors ? namesById[String(poster.userId)] || "" : ""
+                    }
+                    aspectRatio={
+                      size?.width && size?.height ? size.width / size.height : 0.8
+                    }
+                    busy={busyIds.has(idOf(poster))}
+                    onOpenDetail={(item) => setOpenId(idOf(item))}
+                    onOpenInEditor={openInEditor}
+                    onDuplicate={handleDuplicate}
+                    onDelete={handleDelete}
+                  />
+                );
+              })}
+            </div>
+
+            {page < pages && (
+              <div className="flex justify-center pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleLoadMore}
+                  disabled={loadingMore}
+                  className="h-9 px-4 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB] transition-colors"
+                >
+                  {loadingMore ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                  ) : (
+                    <Plus className="w-3.5 h-3.5 mr-1.5 text-[#6B7280]" />
+                  )}
+                  <span>{loadingMore ? "Loading…" : "Load more"}</span>
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+
+        {openId && (
+          <PosterDetailDrawer
+            key={openId}
+            posterId={openId}
+            brandKit={brandKit}
+            template={openTemplate}
+            templates={templates}
+            namesById={namesById}
+            currentUserId={user?.id || ""}
+            canSeeAuthors={canSeeAuthors}
+            showAuthors={canSeeAuthors}
+            onClose={() => setOpenId("")}
+            onChanged={handlePosterChanged}
+          />
+        )}
+      </div>
     </div>
   );
 }

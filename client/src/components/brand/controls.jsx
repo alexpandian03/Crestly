@@ -8,6 +8,8 @@ import {
 } from "../../utils/contrast";
 import { resolveColorToken } from "../../../../shared/templateElements.js";
 import BrandImageField from "./BrandImageField";
+import { Input } from "../ui/input";
+import { Switch } from "../ui/switch";
 
 /* Same bounds the server accepts, so the form can't offer a value it would reject. */
 export const LIMITS = {
@@ -76,14 +78,14 @@ export function Field({ label, hint, htmlFor, children, className = "" }) {
       {label && (
         <label
           htmlFor={htmlFor}
-          className="block text-xs font-semibold text-heading"
+          className="block text-[13px] font-medium text-[#111827]"
         >
           {label}
         </label>
       )}
       {children}
       {hint && (
-        <p className="text-xs text-muted-foreground leading-snug">{hint}</p>
+        <p className="text-xs text-[#6B7280] leading-snug">{hint}</p>
       )}
     </div>
   );
@@ -101,17 +103,17 @@ export function TextInput({
 }) {
   return (
     <Field label={label} hint={hint} htmlFor={id}>
-      <input
+      <Input
         id={id}
         type={type}
         value={value ?? ""}
         maxLength={maxLength}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
-        className="input-field"
+        className="h-9 rounded-[6px] border-[#E5E7EB] bg-white text-sm text-[#111827] focus-visible:border-[#2563EB] focus-visible:ring-1 focus-visible:ring-[#2563EB]"
       />
       {maxLength && (
-        <p className="text-[11px] text-muted-foreground text-right">
+        <p className="text-[11px] text-[#6B7280] text-right">
           {String(value ?? "").length}/{maxLength}
         </p>
       )}
@@ -126,7 +128,7 @@ export function Select({ label, value, onChange, options, hint, id }) {
         id={id}
         value={value ?? ""}
         onChange={(event) => onChange(event.target.value)}
-        className="input-field"
+        className="h-9 w-full rounded-[6px] border border-[#E5E7EB] bg-white px-2.5 text-sm text-[#111827] shadow-none outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]"
       >
         {options.map((option) => {
           const item =
@@ -146,34 +148,20 @@ export function Select({ label, value, onChange, options, hint, id }) {
 
 export function Toggle({ label, checked, onChange, hint }) {
   return (
-    <div className="flex items-start justify-between gap-3 rounded-btn border border-line bg-canvas px-3 py-2.5">
+    <div className="flex items-center justify-between gap-4 py-3">
       <div className="min-w-0">
-        <p className="text-xs font-semibold text-heading">{label}</p>
+        <p className="text-[13px] font-medium text-[#111827]">{label}</p>
         {hint && (
-          <p className="text-[11px] text-muted-foreground leading-snug mt-0.5">
+          <p className="text-xs text-[#6B7280] leading-snug mt-0.5">
             {hint}
           </p>
         )}
       </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
+      <Switch
+        checked={Boolean(checked)}
+        onCheckedChange={(val) => onChange(val)}
         aria-label={label}
-        onClick={() => onChange(!checked)}
-        className={`shrink-0 w-11 h-6 rounded-chip border transition-colors relative ${
-          checked ? "bg-primary border-primary" : "bg-section border-line"
-        }`}
-      >
-        <span
-          className="absolute top-0.5 rounded-chip bg-canvas shadow-soft transition-all"
-          style={{
-            left: checked ? "22px" : "3px",
-            width: "18px",
-            height: "18px",
-          }}
-        />
-      </button>
+      />
     </div>
   );
 }
@@ -206,10 +194,9 @@ export function SliderNumber({
           step={step}
           value={shown}
           onChange={(event) => clampTo(event.target.value)}
-          className="flex-1 min-w-0 cursor-pointer"
-          style={{ accentColor: "var(--color-primary)" }}
+          className="flex-1 min-w-0 cursor-pointer accent-[#2563EB]"
         />
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           <input
             type="number"
             aria-label={`${label} value`}
@@ -223,10 +210,10 @@ export function SliderNumber({
               else if (event.target.value === "") onChange(min);
             }}
             onBlur={(event) => clampTo(event.target.value)}
-            className="input-field w-[74px] px-2 py-1.5 text-right tabular-nums"
+            className="h-9 w-[74px] rounded-[6px] border border-[#E5E7EB] bg-white px-2 py-1 text-right tabular-nums text-sm text-[#111827] focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] outline-none"
           />
           {unit && (
-            <span className="text-xs text-muted-foreground">{unit}</span>
+            <span className="text-xs text-[#6B7280]">{unit}</span>
           )}
         </div>
       </div>
@@ -238,7 +225,7 @@ export function Segmented({ label, value, onChange, options, hint }) {
   return (
     <Field label={label} hint={hint}>
       <div
-        className="flex flex-wrap gap-1 rounded-btn border border-line bg-section p-1"
+        className="flex flex-wrap gap-1 rounded-[6px] border border-[#E5E7EB] bg-[#F9FAFB] p-1"
         role="group"
         aria-label={label}
       >
@@ -254,10 +241,10 @@ export function Segmented({ label, value, onChange, options, hint }) {
               type="button"
               onClick={() => onChange(item.value)}
               aria-pressed={active}
-              className={`flex-1 min-w-[64px] rounded-[6px] px-2.5 py-1.5 text-xs font-semibold capitalize transition-colors ${
+              className={`flex-1 min-w-[64px] rounded-[6px] px-2.5 py-1.5 text-xs font-medium capitalize transition-colors ${
                 active
-                  ? "bg-primary text-white shadow-soft"
-                  : "text-body hover:bg-canvas hover:text-heading"
+                  ? "bg-white text-[#111827] border border-[#E5E7EB] shadow-xs"
+                  : "text-[#6B7280] hover:text-[#111827] hover:bg-white/50"
               }`}
             >
               {item.label}
@@ -274,20 +261,15 @@ function ContrastNote({ foreground, background, large, brandKit }) {
   const bg = resolveColorToken(background, brandKit);
   if (!bg || !parseColor(fg)) return null;
   const level = wcagLevel(fg, bg, { large });
-  if (level === "AAA" || level === "AA") {
-    return (
-      <p className="text-[11px] text-success leading-snug">
-        {contrastLabel(fg, bg, { large })}
-      </p>
-    );
-  }
+  const isPass = level === "AAA" || level === "AA";
   return (
-    <p className="flex items-start gap-1.5 text-[11px] text-danger leading-snug">
-      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
-      <span>
-        {contrastLabel(fg, bg, { large })}. The preview lifts or
-        darkens this text so it stays readable.
-      </span>
+    <p className="flex items-center gap-1.5 text-xs text-[#6B7280] leading-snug mt-1">
+      <span
+        className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+          isPass ? "bg-[#10B981]" : "bg-[#F59E0B]"
+        }`}
+      />
+      <span>{contrastLabel(fg, bg, { large })}</span>
     </p>
   );
 }
@@ -317,24 +299,31 @@ export function ColorInput({
     .replace(/\s+color$/i, "")
     .trim();
   const group = named ? `${named} color` : "Color";
+  const swatchHex = toHex(resolveColorToken(value, brandKit), "#ffffff");
 
   return (
     <Field label={label} hint={hint}>
       <div
-        className={`flex items-center gap-2 rounded-btn border bg-canvas px-2 py-1.5 ${
-          invalid ? "border-danger" : "border-line"
+        className={`relative flex items-center h-9 rounded-[6px] border bg-white px-2.5 gap-2.5 transition-colors focus-within:border-[#2563EB] focus-within:ring-1 focus-within:ring-[#2563EB] ${
+          invalid ? "border-[#DC2626]" : "border-[#E5E7EB]"
         }`}
       >
-        <input
-          type="color"
-          aria-label={`${group} picker`}
-          value={toHex(resolveColorToken(value, brandKit), "#ffffff")}
-          onChange={(event) => {
-            setDraft(null);
-            onChange(event.target.value);
-          }}
-          className="w-8 h-8 shrink-0 cursor-pointer rounded-[6px] border border-line bg-transparent p-0"
-        />
+        <label
+          className="relative flex items-center justify-center w-5 h-5 rounded-[4px] border border-[#E5E7EB] shrink-0 cursor-pointer overflow-hidden shadow-xs"
+          style={{ backgroundColor: swatchHex }}
+          title={`Pick ${group}`}
+        >
+          <input
+            type="color"
+            aria-label={`${group} picker`}
+            value={swatchHex}
+            onChange={(event) => {
+              setDraft(null);
+              onChange(event.target.value);
+            }}
+            className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+          />
+        </label>
         <input
           type="text"
           aria-label={`${group} value`}
@@ -346,17 +335,25 @@ export function ColorInput({
               onChange(event.target.value.trim());
           }}
           onBlur={() => {
-            if (draft !== null && !parseColor(resolveColorToken(draft, brandKit))) setDraft(null);
+            if (draft !== null && !parseColor(resolveColorToken(draft, brandKit)))
+              setDraft(null);
             else commit(draft ?? "");
           }}
-          className="w-full min-w-0 bg-transparent text-sm text-heading uppercase tracking-wide focus:outline-none"
+          className="flex-1 min-w-[70px] bg-transparent text-sm font-mono text-[#111827] uppercase tracking-wide focus:outline-none placeholder:text-[#9CA3AF]"
         />
       </div>
       {invalid && (
-        <p className="text-[11px] text-danger">Use a color like #4338CA or a brand color.</p>
+        <p className="text-xs text-[#DC2626] mt-1">
+          Use a color like #2563EB or a brand color.
+        </p>
       )}
       {!invalid && (
-        <ContrastNote foreground={text} background={onSurface} large={large} brandKit={brandKit} />
+        <ContrastNote
+          foreground={text}
+          background={onSurface}
+          large={large}
+          brandKit={brandKit}
+        />
       )}
     </Field>
   );
@@ -384,11 +381,11 @@ export function TextStyleEditor({
   );
 
   return (
-    <div className="space-y-3 rounded-btn border border-line bg-section p-3">
-      <p className="text-xs font-semibold text-heading">{label}</p>
+    <div className="space-y-3 rounded-[8px] border border-[#E5E7EB] bg-[#FAFAFA] p-3.5">
+      <p className="text-[13px] font-semibold text-[#111827]">{label}</p>
       <div
         className={
-          columns ? "grid grid-cols-1 sm:grid-cols-2 gap-3" : "space-y-3"
+          columns ? "grid grid-cols-2 gap-4" : "space-y-3"
         }
       >
         <Select
@@ -406,7 +403,7 @@ export function TextStyleEditor({
           unit="px"
         />
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-4">
         <Segmented
           label="Weight"
           value={
@@ -431,13 +428,15 @@ export function TextStyleEditor({
           unit="px"
         />
       </div>
-      <ColorInput
-        label="Text color"
-        value={style.color}
-        onChange={(next) => patch({ color: next })}
-        onSurface={onSurface}
-        large={size >= 24}
-      />
+      <div className="grid grid-cols-2 gap-4">
+        <ColorInput
+          label="Text color"
+          value={style.color}
+          onChange={(next) => patch({ color: next })}
+          onSurface={onSurface}
+          large={size >= 24}
+        />
+      </div>
       <Toggle
         label="Show in capitals"
         checked={Boolean(style.uppercase)}
@@ -445,14 +444,13 @@ export function TextStyleEditor({
       />
       {sample && (
         <p
-          className="rounded-btn border border-line bg-canvas px-3 py-2 truncate"
+          className="rounded-[6px] border border-[#E5E7EB] bg-white px-3 py-2 truncate text-sm text-[#111827]"
           style={{
             fontFamily: `'${fontFamily}', sans-serif`,
-            fontSize: `${Math.min(size, 30)}px`,
+            fontSize: `${Math.min(22, Math.max(12, size * 0.75))}px`,
             fontWeight: Number(style.weight) || 400,
-            letterSpacing: `${Number(style.letterSpacing) || 0}px`,
             textTransform: style.uppercase ? "uppercase" : "none",
-            color: toHex(style.color, "#1e1b4b"),
+            letterSpacing: `${style.letterSpacing || 0}px`,
           }}
         >
           {sample}
@@ -508,7 +506,7 @@ export function BackgroundEditor({
       )}
       {type === "gradient" && (
         <div className="space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-4">
             <ColorInput
               label="Start color"
               value={bg.gradientFrom}
@@ -544,7 +542,7 @@ export function BackgroundEditor({
             onChange={(url) => patch({ imageUrl: url })}
             hint="A dark or light wash over the photo keeps the text readable."
           />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-4">
             <ColorInput
               label="Wash color"
               value={bg.overlayColor}
@@ -595,7 +593,7 @@ export function BackgroundEditor({
   );
 }
 
-/** Card wrapper with a title and an optional "restore saved values" action. */
+/** Section wrapper with a 16px/600 title, helper text, and an optional ghost "Reset" action. */
 export function SectionCard({
   title,
   desc,
@@ -605,24 +603,21 @@ export function SectionCard({
   children,
 }) {
   return (
-    <section className="card-surface p-4 sm:p-5 space-y-4">
-      <div className="flex items-start justify-between gap-3 pb-3 border-b border-line">
-        <div className="flex items-start gap-2.5 min-w-0">
-          {Icon && <Icon size={18} className="shrink-0 text-primary mt-0.5" />}
-          <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-heading">{title}</h2>
-            {desc && (
-              <p className="text-xs text-muted-foreground mt-0.5 leading-snug">
-                {desc}
-              </p>
-            )}
-          </div>
+    <section className="space-y-4 py-6 first:pt-0 last:pb-0 border-b border-[#E5E7EB] last:border-b-0">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-[16px] font-semibold text-[#111827]">{title}</h2>
+          {desc && (
+            <p className="text-xs text-[#6B7280] mt-0.5 leading-snug">
+              {desc}
+            </p>
+          )}
         </div>
         {onReset && (
           <button
             type="button"
             onClick={onReset}
-            className="btn-ghost border border-line shrink-0 text-[11px] px-2 py-1"
+            className="h-7 px-2 text-xs font-medium text-[#6B7280] hover:text-[#111827] hover:bg-[#F3F4F6] rounded-[6px] transition-colors shrink-0 flex items-center gap-1.5"
             title={resetLabel}
           >
             <RotateCcw size={12} />

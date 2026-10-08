@@ -1,140 +1,125 @@
-import React, { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { ChevronDown, KeyRound, LogOut, LogOutIcon } from "lucide-react";
-import toast from "react-hot-toast";
-import { useAuth } from "../../context/AuthContext";
-import { ROLE_LABELS } from "./navItems";
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ChevronDown, KeyRound, LogOut, LogOutIcon } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { useAuth } from '../../context/AuthContext';
+import { ROLE_LABELS } from './navItems';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
 
 function initialsOf(name, email) {
-  const source = String(name || email || "?").trim();
+  const source = String(name || email || '?').trim();
   const parts = source.split(/[\s._@-]+/).filter(Boolean);
   const letters = parts
     .slice(0, 2)
     .map((part) => part[0])
-    .join("");
-  return (letters || source[0] || "?").toUpperCase();
+    .join('');
+  return (letters || source[0] || '?').toUpperCase();
 }
 
 export default function UserMenu({ onPassword }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const wrapRef = useRef(null);
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const onPointerDown = (event) => {
-      if (wrapRef.current && !wrapRef.current.contains(event.target))
-        setOpen(false);
-    };
-    const onKeyDown = (event) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
 
   const signOut = () => {
     logout();
-    setOpen(false);
-    navigate("/login");
+    navigate('/login');
   };
 
-  /** Forgets every credential this app stored in the browser; other devices keep their own token. */
+  /** Forgets every credential stored in browser; other devices keep their own token. */
   const signOutEverywhere = () => {
-    ["token", "activeClientId", "bf-sidebar-collapsed", "bf-theme"].forEach(
-      (key) => {
-        localStorage.removeItem(key);
-        sessionStorage.removeItem(key);
-      },
-    );
-    sessionStorage.removeItem("authMessage");
-    sessionStorage.removeItem("accessDeniedMessage");
+    ['token', 'activeClientId', 'bf-sidebar-collapsed', 'bf-theme'].forEach((key) => {
+      localStorage.removeItem(key);
+      sessionStorage.removeItem(key);
+    });
+    sessionStorage.removeItem('authMessage');
+    sessionStorage.removeItem('accessDeniedMessage');
     signOut();
-    toast.success(
-      "Signed out on this device. Other devices sign out when their session ends.",
-    );
+    toast.success('Signed out on this device. Other devices sign out when their session ends.');
   };
 
-  const itemClass =
-    "w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-sm text-body hover:bg-section hover:text-heading";
+  const roleText = ROLE_LABELS[user?.role] || user?.role || 'Member';
 
   return (
-    <div className="relative shrink-0" ref={wrapRef}>
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        aria-haspopup="menu"
-        className="flex items-center gap-2 rounded-btn border border-line bg-canvas pl-1.5 pr-1.5 py-1.5 sm:pr-2.5 text-sm font-medium text-heading transition-colors hover:border-primary"
-      >
-        <span
-          aria-hidden="true"
-          className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-primary text-xs font-semibold text-white"
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-2 rounded-[6px] p-1 sm:px-2 sm:py-1.5 transition-colors hover:bg-[#F3F4F6] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#E5E7EB]"
+          aria-label="User account menu"
         >
-          {initialsOf(user?.name, user?.email)}
-        </span>
-        <span className="hidden sm:block max-w-[10rem] truncate">
-          {user?.name}
-        </span>
-        <span className="shrink-0 whitespace-nowrap rounded-chip bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
-          {ROLE_LABELS[user?.role] || user?.role}
-        </span>
-        <ChevronDown
-          className={`hidden sm:block h-4 w-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
-        />
-      </button>
+          {/* Small gray avatar with initial */}
+          <span
+            aria-hidden="true"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#E5E7EB] text-xs font-semibold text-[#4B5563]"
+          >
+            {initialsOf(user?.name, user?.email)}
+          </span>
 
-      {open && (
-        <div
-          role="menu"
-          className="absolute right-0 mt-2 w-64 rounded-card border border-line bg-canvas shadow-soft py-1 z-50"
-        >
-          <div className="px-3.5 py-3 border-b border-line">
-            <p className="text-sm font-semibold text-heading truncate">
-              {user?.name}
-            </p>
-            <p className="mt-0.5 text-xs text-muted-foreground truncate">
-              {user?.email}
-            </p>
-            <p className="mt-2 inline-flex items-center rounded-chip bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
-              {ROLE_LABELS[user?.role] || user?.role}
-            </p>
+          {/* Name & role as plain gray text (NOT a purple pill) */}
+          <div className="hidden sm:flex flex-col items-start text-left leading-tight">
+            <span className="text-sm font-medium text-[#111827] max-w-[130px] truncate">
+              {user?.name || 'User'}
+            </span>
+            <span className="text-xs text-[#6B7280]">
+              {roleText}
+            </span>
           </div>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              onPassword?.();
-            }}
-            className={itemClass}
-          >
-            <KeyRound className="h-4 w-4 shrink-0" /> Change password
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={signOutEverywhere}
-            className={itemClass}
-          >
-            <LogOutIcon className="h-4 w-4 shrink-0" /> Log out of all devices
-          </button>
-          <div className="my-1 border-t border-line" />
-          <button
-            type="button"
-            role="menuitem"
-            onClick={signOut}
-            className={itemClass}
-          >
-            <LogOut className="h-4 w-4 shrink-0" /> Log out
-          </button>
+
+          <ChevronDown className="hidden sm:block h-3.5 w-3.5 text-[#6B7280] shrink-0" />
+        </button>
+      </DropdownMenuTrigger>
+
+      <DropdownMenuContent
+        align="end"
+        sideOffset={6}
+        className="w-56 rounded-[8px] border border-[#E5E7EB] bg-white p-1 text-[#111827] shadow-md"
+      >
+        <div className="px-2.5 py-2">
+          <p className="text-sm font-medium text-[#111827] truncate">
+            {user?.name || 'User'}
+          </p>
+          <p className="text-xs text-[#6B7280] truncate mt-0.5">
+            {user?.email}
+          </p>
+          <p className="text-xs text-[#6B7280] mt-1">
+            {roleText}
+          </p>
         </div>
-      )}
-    </div>
+
+        <DropdownMenuSeparator className="bg-[#E5E7EB] my-1" />
+
+        <DropdownMenuItem
+          onClick={onPassword}
+          className="flex cursor-pointer items-center gap-2 rounded-[6px] px-2.5 py-1.5 text-sm text-[#374151] hover:bg-[#F3F4F6] hover:text-[#111827] focus:bg-[#F3F4F6] focus:text-[#111827]"
+        >
+          <KeyRound className="h-4 w-4 text-[#6B7280]" />
+          <span>Change password</span>
+        </DropdownMenuItem>
+
+        <DropdownMenuItem
+          onClick={signOutEverywhere}
+          className="flex cursor-pointer items-center gap-2 rounded-[6px] px-2.5 py-1.5 text-sm text-[#374151] hover:bg-[#F3F4F6] hover:text-[#111827] focus:bg-[#F3F4F6] focus:text-[#111827]"
+        >
+          <LogOutIcon className="h-4 w-4 text-[#6B7280]" />
+          <span>Log out of all devices</span>
+        </DropdownMenuItem>
+
+        <DropdownMenuSeparator className="bg-[#E5E7EB] my-1" />
+
+        <DropdownMenuItem
+          onClick={signOut}
+          className="flex cursor-pointer items-center gap-2 rounded-[6px] px-2.5 py-1.5 text-sm text-[#DC2626] hover:bg-[#FEF2F2] hover:text-[#DC2626] focus:bg-[#FEF2F2] focus:text-[#DC2626]"
+        >
+          <LogOut className="h-4 w-4 text-[#DC2626]" />
+          <span>Log out</span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

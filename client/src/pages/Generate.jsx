@@ -24,6 +24,9 @@ import {
   Shuffle,
   LayoutTemplate,
 } from "lucide-react";
+import { Button } from "../components/ui/button";
+import { Textarea } from "../components/ui/textarea";
+import { Skeleton } from "../components/ui/skeleton";
 import api from "../services/api";
 import PosterExportButtons from "../components/PosterExportButtons";
 import PosterImageInput from "../components/PosterImageInput";
@@ -40,6 +43,7 @@ import {
   canUploadBlankImage,
   mergeGeneratedBlanks,
 } from "../utils/posterVariables";
+import { variableSlotsOf } from "../../../shared/templateElements.js";
 import {
   designBrandKit,
   designTemplate,
@@ -160,9 +164,12 @@ const REFINEMENT_BUTTONS = [
 
 function SkeletonPoster() {
   return (
-    <div className="w-full max-w-[420px] mx-auto">
-      <div className="aspect-[4/5] rounded-card bg-line/70 animate-pulse shadow-soft" />
-      <p className="sr-only">Creating your poster preview</p>
+    <div className="w-full max-w-[420px] mx-auto flex flex-col items-center">
+      <Skeleton className="w-full aspect-[4/5] rounded-[8px] border border-[#E5E7EB] bg-[#E5E7EB]/60" />
+      <div className="mt-4 flex items-center gap-2 text-xs text-[#6B7280]">
+        <Loader2 className="w-3.5 h-3.5 animate-spin text-[#2563EB]" />
+        <span>Generating your poster...</span>
+      </div>
     </div>
   );
 }
@@ -243,6 +250,29 @@ export default function Generate() {
     const draft = readDraft();
     if (draft) setDescription(draft);
   }, []);
+
+  const reloadTemplates = React.useCallback(async () => {
+    try {
+      const res = await api.get("/templates");
+      const loaded = res?.data?.data?.templates || [];
+      if (res?.data?.success && loaded.length > 0) {
+        setTemplates(loaded);
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    const onFocus = () => reloadTemplates();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") reloadTemplates();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [reloadTemplates]);
 
   useEffect(() => {
     async function loadInitialData() {
@@ -344,6 +374,7 @@ export default function Generate() {
         ...(resolvedTemplateId ? { templateId: resolvedTemplateId } : {}),
         prompt: description.trim(),
         mode: designMode,
+        ...(userImageUrl?.trim() ? { imageUrl: userImageUrl.trim() } : {}),
         ...(inst ? { instruction: inst } : {}),
         ...(designMode === MODE_AI && avoid && seenRecipesRef.current.length > 0
           ? { avoidRecipeIds: seenRecipesRef.current }
@@ -503,6 +534,7 @@ export default function Generate() {
      or the design the assistant just laid out while nothing is saved yet. */
   const drawBrandKit = designBrandKit(posterDesign, brandKit);
   const drawTemplate = designTemplate(posterDesign, selectedTemplate);
+  const blanksSource = posterDesign || drawTemplate;
 
   const aiPoster = isAiDesign(drawTemplate);
   const canManageTemplates =
@@ -517,11 +549,15 @@ export default function Generate() {
     userImageUrl || generatedContent?.imageUrl || generatedContent?.image || "";
   /* The spaces to fill in belong to the design this poster was made with, so the snapshot
    * answers first; a brand-new one uses the layout chosen on this page. */
-  const blanksSource = posterDesign || drawTemplate;
-  const posterContent = generatedContent
-    ? { ...generatedContent, imageUrl: chosenImageUrl, image: chosenImageUrl }
-    : userImageUrl
-      ? {
+  const firstImageSlot = useMemo(() => {
+    return variableSlotsOf(drawTemplate?.elements)?.images?.[0] || null;
+  }, [drawTemplate]);
+
+  const posterContent = useMemo(() => {
+    if (!generatedContent && !userImageUrl) return null;
+    const base = generatedContent
+      ? { ...generatedContent, imageUrl: chosenImageUrl, image: chosenImageUrl }
+      : {
           title: "",
           tagline: "",
           date: "",
@@ -530,8 +566,29 @@ export default function Generate() {
           details: [],
           imageUrl: userImageUrl,
           image: userImageUrl,
-        }
-      : null;
+        };
+    if (firstImageSlot) {
+      return {
+        ...base,
+        images: {
+          ...(base.images || {}),
+          [firstImageSlot.key]: chosenImageUrl || "",
+        },
+      };
+    }
+    return base;
+  }, [generatedContent, userImageUrl, chosenImageUrl, firstImageSlot]);
+
+  const photoStatusLabel = useMemo(() => {
+    const activePhoto =
+      userImageUrl?.trim() ||
+      posterContent?.imageUrl?.trim() ||
+      posterContent?.image?.trim() ||
+      (firstImageSlot ? posterContent?.images?.[firstImageSlot.key]?.trim() : "");
+    if (!activePhoto) return "No photo";
+    if (userImageUrl?.trim()) return "Your photo";
+    return "Stock photo";
+  }, [userImageUrl, posterContent, firstImageSlot]);
 
   useEffect(() => {
     setImageLoadError(false);
@@ -1015,46 +1072,38 @@ export default function Generate() {
   };
 
   return (
-    <div className="bg-canvas">
-      <div className="container-page py-6 sm:py-8 space-y-6">
+    <div className="bg-white min-h-[calc(100vh-56px)]">
+      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
         <div>
-          <h1 className="text-2xl sm:text-3xl tracking-tight">
+          <h1 className="text-[24px] font-semibold text-[#111827] leading-tight">
             Create a poster
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="text-sm text-[#6B7280] mt-1">
             Describe your event in everyday words. Your logo, header, footer,
             and colors stay locked.
           </p>
         </div>
 
-        {feedback.message && (
+        {feedback.type === "error" && feedback.message && (
           <div
-            className={`p-4 rounded-card text-sm flex items-center gap-3 border ${
-              feedback.type === "success"
-                ? "border-success/30 text-success bg-section"
-                : "border-danger/30 text-danger bg-section"
-            }`}
-            role="status"
+            className="p-3 rounded-[6px] text-xs flex items-center gap-2 border border-[#FCA5A5] bg-[#FEF2F2] text-[#DC2626]"
+            role="alert"
           >
-            {feedback.type === "success" ? (
-              <CheckCircle className="w-5 h-5 shrink-0" />
-            ) : (
-              <AlertCircle className="w-5 h-5 shrink-0" />
-            )}
+            <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{feedback.message}</span>
           </div>
         )}
 
         {saveError && (
           <div
-            className="p-4 rounded-card text-sm flex items-center justify-between gap-3 border border-danger/30 text-danger bg-section"
+            className="p-3 rounded-[6px] text-xs flex items-center justify-between gap-3 border border-[#FCA5A5] bg-[#FEF2F2] text-[#DC2626]"
             role="alert"
           >
-            <span className="flex items-center gap-3">
-              <AlertCircle className="w-5 h-5 shrink-0" />
+            <span className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{saveError.message}</span>
             </span>
-            <span className="flex items-center gap-3 shrink-0">
+            <span className="flex items-center gap-2 shrink-0">
               {saveError.conflict && posterId && (
                 <button
                   type="button"
@@ -1067,43 +1116,38 @@ export default function Generate() {
               <button
                 type="button"
                 onClick={handleRetrySave}
-                className="inline-flex items-center gap-1.5 rounded-btn border border-danger/40 bg-canvas px-3 py-1.5 text-xs font-semibold hover:bg-section"
+                className="inline-flex items-center gap-1.5 rounded-[4px] border border-[#DC2626]/30 bg-white px-2.5 py-1 text-xs font-medium hover:bg-[#FEF2F2]"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
+                <RefreshCw className="w-3 h-3" />
                 <span>Try again</span>
               </button>
             </span>
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          {/* Left Panel: Form Controls */}
-          <div className="lg:col-span-5 card-surface p-5 sm:p-6">
-            <form onSubmit={handleGenerate} className="space-y-5">
-              {/* 1. Large Textarea */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label
-                    htmlFor="event-copy"
-                    className="block text-sm font-semibold text-heading"
-                  >
-                    What do you want to create?
-                  </label>
-                  <span className="text-xs text-muted-foreground">
-                    Everyday words
-                  </span>
-                </div>
-                <textarea
+        <div className="flex flex-col lg:flex-row gap-8 items-start">
+          {/* Left Column: Form Controls (about 420px) */}
+          <div className="w-full lg:w-[420px] shrink-0">
+            <form onSubmit={handleGenerate} className="space-y-6">
+              {/* 1. Prompt Textarea */}
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="event-copy"
+                  className="block text-sm font-semibold text-[#111827]"
+                >
+                  What do you want to create?
+                </label>
+                <Textarea
                   id="event-copy"
                   rows={5}
                   required
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Describe your event. Mention the event name, date, time, and where it takes place..."
-                  className="input-field min-h-[130px] resize-y"
+                  className="min-h-[120px] resize-y rounded-[6px] border-[#E5E7EB] bg-white text-sm text-[#111827] placeholder:text-[#9CA3AF] focus-visible:border-[#2563EB] focus-visible:ring-1 focus-visible:ring-[#2563EB]"
                 />
-                <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  <span className="text-xs text-muted-foreground mr-1">
+                <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs text-[#6B7280] mr-1">
                     Suggestions:
                   </span>
                   {SAMPLE_PROMPTS.map((prompt) => (
@@ -1111,7 +1155,7 @@ export default function Generate() {
                       key={prompt}
                       type="button"
                       onClick={() => setDescription(prompt)}
-                      className="rounded-chip border border-line bg-canvas px-2.5 py-0.5 text-xs text-body hover:border-primary hover:text-heading transition-colors"
+                      className="rounded-[6px] border border-[#E5E7EB] bg-white px-2.5 py-1 text-xs text-[#6B7280] hover:text-[#111827] hover:border-[#9CA3AF] transition-colors"
                     >
                       {prompt.split(" on ")[0] || prompt.slice(0, 22)}
                     </button>
@@ -1136,17 +1180,17 @@ export default function Generate() {
                       venue: prev?.venue || "",
                       details: prev?.details || [],
                       ...prev,
-                      imageUrl: next || aiImageRef.current || "",
-                      image: next || aiImageRef.current || "",
+                      imageUrl: next,
+                      image: next,
                     };
                   });
                 }}
               />
 
-              {/* 3. How this poster gets designed */}
+              {/* 3. Design Chooser */}
               <Suspense
                 fallback={
-                  <div className="min-h-[140px] rounded-btn bg-line/40 animate-pulse" />
+                  <div className="min-h-[120px] rounded-[6px] bg-[#F3F4F6] animate-pulse" />
                 }
               >
                 <DesignChooser
@@ -1161,14 +1205,14 @@ export default function Generate() {
               </Suspense>
 
               {/* Generate Button */}
-              <button
+              <Button
                 type="submit"
                 disabled={isGenerating || loadingInitial || !description.trim()}
-                className="btn-primary w-full py-3.5 text-sm font-semibold shadow-soft"
+                className="w-full h-10 rounded-[6px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-sm font-medium transition-colors disabled:opacity-50"
               >
                 {isGenerating ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin mr-1.5" />
                     <span>
                       {designMode === MODE_AI
                         ? "Designing your poster..."
@@ -1177,34 +1221,45 @@ export default function Generate() {
                   </>
                 ) : (
                   <>
-                    <Sparkles className="w-4 h-4" />
+                    <Sparkles className="w-4 h-4 mr-1.5" />
                     <span>Generate poster</span>
                   </>
                 )}
-              </button>
+              </Button>
             </form>
           </div>
 
-          {/* Right Panel: Poster Preview Stage & Actions */}
-          <div className="lg:col-span-7 space-y-3">
+          {/* Right Column: Preview & Actions */}
+          <div className="flex-1 min-w-0 space-y-3">
             {/* Top Toolbar */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-chip bg-section border border-line text-xs text-muted-foreground">
-                <Lock className="w-3.5 h-3.5 text-primary shrink-0" />
-                <span>Brand locked</span>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5 text-xs text-[#6B7280]">
+                  <Lock className="w-3.5 h-3.5 text-[#6B7280]" />
+                  <span>Brand locked</span>
+                </div>
+                {feedback.type === "success" && (
+                  <div
+                    className="flex items-center gap-1.5 text-xs text-[#16A34A] font-medium"
+                    role="status"
+                  >
+                    <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>Poster ready. Download or refine below.</span>
+                  </div>
+                )}
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
                 {hasUnsavedChanges &&
                   saveStatus !== "saving" &&
                   !showSavedChip && (
-                    <span className="text-[11px] text-amber-600 font-medium">
+                    <span className="text-xs text-[#D97706] font-medium">
                       Unsaved changes
                     </span>
                   )}
                 {saveStatus === "saving" ? (
                   <span
-                    className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+                    className="inline-flex items-center gap-1.5 text-xs text-[#6B7280]"
                     role="status"
                   >
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1213,7 +1268,7 @@ export default function Generate() {
                 ) : (
                   showSavedChip && (
                     <span
-                      className="inline-flex items-center gap-1.5 text-xs text-success font-semibold"
+                      className="inline-flex items-center gap-1.5 text-xs text-[#16A34A] font-medium"
                       role="status"
                       title={`Saved (version ${currentVersion})`}
                     >
@@ -1224,54 +1279,60 @@ export default function Generate() {
                 )}
 
                 {ready && aiPoster && canManageTemplates && (
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={() =>
                       setTemplateDialog({ open: true, busy: false, error: "" })
                     }
-                    className="inline-flex items-center gap-1.5 rounded-btn border border-line bg-canvas px-3 py-1.5 text-xs font-semibold text-heading shadow-soft hover:bg-section hover:border-primary transition-colors"
+                    className="h-8 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB]"
                   >
-                    <LayoutTemplate className="w-3.5 h-3.5 text-primary" />
+                    <LayoutTemplate className="w-3.5 h-3.5 mr-1.5 text-[#6B7280]" />
                     <span>Save as template</span>
-                  </button>
+                  </Button>
                 )}
 
                 {ready && (
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={() => setIsEditOpen(true)}
-                    className="inline-flex items-center gap-1.5 rounded-btn border border-line bg-canvas px-3 py-1.5 text-xs font-semibold text-heading shadow-soft hover:bg-section hover:border-primary transition-colors"
+                    className="h-8 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB]"
                   >
-                    <Edit3 className="w-3.5 h-3.5 text-primary" />
+                    <Edit3 className="w-3.5 h-3.5 mr-1.5 text-[#6B7280]" />
                     <span>Edit text</span>
-                  </button>
+                  </Button>
                 )}
 
                 {ready && hasUnsavedChanges && (
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={handleSaveChanges}
                     disabled={isSavingEdits}
-                    className="inline-flex items-center gap-1.5 rounded-btn bg-primary px-3 py-1.5 text-xs font-semibold text-white shadow-soft transition-colors hover:bg-primary/90 disabled:opacity-60"
+                    className="h-8 rounded-[6px] border-[#2563EB] text-[#2563EB] hover:bg-[#EFF6FF] text-xs font-medium"
                   >
                     {isSavingEdits ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
                     ) : (
-                      <Save className="w-3.5 h-3.5" />
+                      <Save className="w-3.5 h-3.5 mr-1.5" />
                     )}
                     <span>{isSavingEdits ? "Saving…" : "Save changes"}</span>
-                  </button>
+                  </Button>
                 )}
               </div>
             </div>
 
-            {/* Poster Canvas Preview: big, centered, and editable where it stands */}
-            <div className="rounded-card bg-preview p-4 sm:p-8 min-h-[420px] flex flex-col items-center justify-center">
+            {/* Poster Canvas Preview Panel: Light gray panel (#FAFAFA, 1px border, 8px radius) */}
+            <div className="rounded-[8px] bg-[#FAFAFA] border border-[#E5E7EB] p-4 sm:p-6 min-h-[460px] flex flex-col items-center justify-center">
               {loadingInitial || isGenerating ? (
                 <SkeletonPoster />
               ) : ready ? (
                 <div
-                  className={`${STAGE_WIDTH} shadow-soft rounded-card overflow-hidden bg-canvas`}
+                  className={`${STAGE_WIDTH} rounded-[8px] overflow-hidden bg-white border border-[#E5E7EB]`}
                 >
                   <Suspense fallback={<SkeletonPoster />}>
                     <EditablePoster
@@ -1297,17 +1358,33 @@ export default function Generate() {
                   </Suspense>
                 </div>
               ) : (
-                <div className="text-center max-w-sm">
-                  <div className="aspect-[4/5] w-full max-w-[280px] mx-auto rounded-card border border-dashed border-line bg-canvas" />
-                  <p className="mt-4 text-sm text-muted-foreground">
+                <div className="w-full max-w-[360px] aspect-[4/5] rounded-[8px] border border-dashed border-[#D1D5DB] bg-white flex flex-col items-center justify-center p-6 text-center">
+                  <div className="w-10 h-10 rounded-full border border-[#E5E7EB] bg-[#F9FAFB] flex items-center justify-center mb-3">
+                    <Sparkles className="w-5 h-5 text-[#9CA3AF]" />
+                  </div>
+                  <p className="text-sm font-medium text-[#111827]">
+                    No poster yet
+                  </p>
+                  <p className="mt-1 text-xs text-[#6B7280]">
                     Describe an event on the left to see a live preview here.
+                  </p>
+                </div>
+              )}
+
+              {ready && (
+                <div className="mt-2 text-center text-xs text-[#6B7280]">
+                  <p>
+                    {posterContent?.isAiGenerated ? "AI text" : "Sample text (AI unavailable)"}
+                  </p>
+                  <p className="mt-0.5 text-[#6B7280]">
+                    {photoStatusLabel}
                   </p>
                 </div>
               )}
 
               {ready && viewIsDirty(posterView) ? (
                 <p
-                  className={`${STAGE_WIDTH} mt-2 text-center text-[11px] text-muted-foreground`}
+                  className={`${STAGE_WIDTH} mt-2 text-center text-[11px] text-[#6B7280]`}
                 >
                   Text size and photo shape apply on this screen and in the file
                   you download.
@@ -1317,16 +1394,16 @@ export default function Generate() {
               {/* Friendly Warnings */}
               {overflowWarning && (
                 <div
-                  className={`${STAGE_WIDTH} mt-3 p-3 rounded-card bg-amber-500/10 border border-amber-500/20 text-amber-900 text-xs flex items-center justify-between gap-2`}
+                  className={`${STAGE_WIDTH} mt-3 p-3 rounded-[6px] bg-[#FEF3C7] border border-[#FCD34D] text-[#92400E] text-xs flex items-center justify-between gap-2`}
                 >
                   <div className="flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <AlertTriangle className="w-4 h-4 text-[#D97706] shrink-0" />
                     <span>{overflowWarning}</span>
                   </div>
                   <button
                     type="button"
                     onClick={() => setIsEditOpen(true)}
-                    className="underline font-semibold shrink-0 hover:text-amber-950"
+                    className="underline font-medium shrink-0 hover:text-[#78350F]"
                   >
                     Edit text
                   </button>
@@ -1335,9 +1412,9 @@ export default function Generate() {
 
               {imageLoadError && (
                 <div
-                  className={`${STAGE_WIDTH} mt-3 p-3 rounded-card bg-amber-500/10 border border-amber-500/20 text-amber-900 text-xs flex items-center gap-2`}
+                  className={`${STAGE_WIDTH} mt-3 p-3 rounded-[6px] bg-[#FEF3C7] border border-[#FCD34D] text-[#92400E] text-xs flex items-center gap-2`}
                 >
-                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <AlertTriangle className="w-4 h-4 text-[#D97706] shrink-0" />
                   <span>
                     This photo could not be loaded. Choose another one or upload
                     from your device.
@@ -1347,22 +1424,22 @@ export default function Generate() {
 
               {posterId && designStale && (
                 <div
-                  className={`${STAGE_WIDTH} mt-3 p-3 rounded-card bg-primary/10 border border-primary/20 text-xs`}
+                  className={`${STAGE_WIDTH} mt-3 p-3 rounded-[6px] bg-[#EFF6FF] border border-[#BFDBFE] text-xs`}
                 >
                   <div className="flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                    <AlertTriangle className="w-4 h-4 text-[#2563EB] shrink-0 mt-0.5" />
                     <div className="flex-1 space-y-2">
-                      <p className="font-medium text-heading">
+                      <p className="font-medium text-[#111827]">
                         {DESIGN_STALE_MESSAGE}
                       </p>
                       {designError && (
-                        <p className="font-medium text-danger">{designError}</p>
+                        <p className="font-medium text-[#DC2626]">{designError}</p>
                       )}
                       <button
                         type="button"
                         onClick={handleApplyLatestDesign}
                         disabled={isApplyingDesign}
-                        className="inline-flex items-center gap-1.5 rounded-chip border border-primary bg-primary px-3 py-1.5 font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
+                        className="inline-flex items-center gap-1.5 rounded-[6px] bg-[#2563EB] px-3 py-1.5 font-medium text-white transition-colors hover:bg-[#1D4ED8] disabled:opacity-60"
                       >
                         {isApplyingDesign ? (
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1379,74 +1456,79 @@ export default function Generate() {
               )}
             </div>
 
-            {/* Quick Refinement Buttons: Regenerate, Shorter, Minimal, More professional, Emphasize date, Change image */}
+            {/* Below the poster: refine actions & download */}
             {ready && (
-              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-                {designMode === MODE_AI && (
-                  <button
-                    type="button"
-                    disabled={isGenerating || !description.trim()}
-                    onClick={() => runGenerate(undefined, { avoid: true })}
-                    className="inline-flex items-center gap-1.5 rounded-chip px-3 py-1.5 text-xs font-medium border transition-colors disabled:opacity-50 bg-primary text-white border-primary shadow-soft"
-                  >
-                    <Shuffle className="w-3.5 h-3.5" />
-                    <span>Try another design</span>
-                  </button>
-                )}
-                {REFINEMENT_BUTTONS.map((btn) => {
-                  const Icon = btn.icon;
-                  const isActive =
-                    btn.instruction && activeInstruction === btn.instruction;
-                  return (
-                    <button
-                      key={btn.label}
+              <div className="space-y-3 pt-1">
+                <div className="flex flex-wrap items-center justify-center gap-1">
+                  {designMode === MODE_AI && (
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="sm"
                       disabled={isGenerating || !description.trim()}
-                      onClick={() => {
-                        setActiveInstruction(btn.instruction || "");
-                        runGenerate(btn.instruction);
-                      }}
-                      className={`inline-flex items-center gap-1.5 rounded-chip px-3 py-1.5 text-xs font-medium border transition-colors disabled:opacity-50 ${
-                        isActive
-                          ? "bg-primary text-white border-primary shadow-soft"
-                          : "border-line bg-canvas text-body hover:border-primary hover:text-heading"
-                      }`}
+                      onClick={() => runGenerate(undefined, { avoid: true })}
+                      className="h-7 px-2.5 rounded-[6px] text-xs text-[#6B7280] hover:text-[#111827] hover:bg-[#F3F4F6]"
                     >
-                      <Icon className="w-3.5 h-3.5" />
-                      <span>{btn.label}</span>
-                    </button>
-                  );
-                })}
-                {canDrawPicture && (
-                  <button
-                    type="button"
-                    disabled={isGenerating || pictureDialog.busy}
-                    onClick={handleMakePicture}
-                    className="inline-flex items-center gap-1.5 rounded-chip border border-primary/60 bg-primary/5 px-3 py-1.5 text-xs font-medium text-heading transition-colors hover:bg-primary/10 disabled:opacity-50"
-                  >
-                    {pictureDialog.busy ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Sparkles className="w-3.5 h-3.5" />
-                    )}
-                    <span>
-                      {pictureDialog.busy
-                        ? "Making a picture…"
-                        : PICTURE_BUTTON_LABEL}
-                    </span>
-                  </button>
-                )}
-              </div>
-            )}
+                      <Shuffle className="w-3 h-3 mr-1" />
+                      <span>Try another design</span>
+                    </Button>
+                  )}
+                  {REFINEMENT_BUTTONS.map((btn) => {
+                    const Icon = btn.icon;
+                    const isActive =
+                      btn.instruction && activeInstruction === btn.instruction;
+                    return (
+                      <Button
+                        key={btn.label}
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={isGenerating || !description.trim()}
+                        onClick={() => {
+                          setActiveInstruction(btn.instruction || "");
+                          runGenerate(btn.instruction);
+                        }}
+                        className={`h-7 px-2.5 rounded-[6px] text-xs transition-colors ${
+                          isActive
+                            ? "bg-[#F3F4F6] text-[#111827] font-medium"
+                            : "text-[#6B7280] hover:text-[#111827] hover:bg-[#F3F4F6]"
+                        }`}
+                      >
+                        <Icon className="w-3 h-3 mr-1" />
+                        <span>{btn.label}</span>
+                      </Button>
+                    );
+                  })}
+                  {canDrawPicture && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={isGenerating || pictureDialog.busy}
+                      onClick={handleMakePicture}
+                      className="h-7 px-2.5 rounded-[6px] text-xs text-[#2563EB] hover:text-[#1D4ED8] hover:bg-[#EFF6FF]"
+                    >
+                      {pictureDialog.busy ? (
+                        <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                      ) : (
+                        <Sparkles className="w-3 h-3 mr-1" />
+                      )}
+                      <span>
+                        {pictureDialog.busy
+                          ? "Making a picture…"
+                          : PICTURE_BUTTON_LABEL}
+                      </span>
+                    </Button>
+                  )}
+                </div>
 
-            {/* Download Buttons: PNG / JPG / PDF */}
-            {ready && (
-              <PosterExportButtons
-                brandKit={drawBrandKit}
-                template={drawTemplate}
-                content={posterContent}
-                view={posterView}
-              />
+                <PosterExportButtons
+                  brandKit={drawBrandKit}
+                  template={drawTemplate}
+                  content={posterContent}
+                  view={posterView}
+                />
+              </div>
             )}
           </div>
         </div>

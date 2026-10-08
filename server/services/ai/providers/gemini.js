@@ -4,13 +4,13 @@
 export async function generateWithGemini({ prompt, systemPrompt, signal }) {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
-    const err = new Error('Gemini API key is not configured. Set GEMINI_API_KEY in your environment variables.');
+    const err = new Error('Gemini API key is not configured.');
     err.status = 500;
     throw err;
   }
 
   const model = process.env.GEMINI_MODEL?.trim() || 'gemini-2.0-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
 
   const payload = {
     contents: [
@@ -25,19 +25,32 @@ export async function generateWithGemini({ prompt, systemPrompt, signal }) {
     ],
     generationConfig: {
       responseMimeType: 'application/json',
-      temperature: 0.5,
-      maxOutputTokens: 500,
+      temperature: 0.3,
+      maxOutputTokens: 1000,
     },
   };
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-    signal,
-  });
+  const fetchSignal = signal
+    ? AbortSignal.any([signal, AbortSignal.timeout(7000)])
+    : AbortSignal.timeout(7000);
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
+      body: JSON.stringify(payload),
+      signal: fetchSignal,
+    });
+  } catch (fetchErr) {
+    if (signal?.aborted) throw fetchErr;
+    const timeoutErr = new Error(`Gemini request failed or timed out: ${fetchErr.message}`);
+    timeoutErr.status = 504;
+    throw timeoutErr;
+  }
 
   if (!res.ok) {
     const errorText = await res.text().catch(() => '');
@@ -61,7 +74,14 @@ export async function generateWithGemini({ prompt, systemPrompt, signal }) {
     throw err;
   }
 
-  return JSON.parse(rawText);
+  let cleanText = rawText.trim();
+  if (cleanText.startsWith('```json')) {
+    cleanText = cleanText.slice(7).replace(/```$/, '').trim();
+  } else if (cleanText.startsWith('```')) {
+    cleanText = cleanText.slice(3).replace(/```$/, '').trim();
+  }
+
+  return JSON.parse(cleanText);
 }
 
 export default { generateWithGemini };

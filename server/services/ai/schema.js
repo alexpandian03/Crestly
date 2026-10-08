@@ -29,6 +29,9 @@ export const posterContentJsonSchema = {
     },
     imageQuery: { type: 'string', maxLength: 60 },
     imageUrl: { type: 'string' },
+    photographer: { type: 'string', maxLength: 100 },
+    photographerUrl: { type: 'string' },
+    downloadLocation: { type: 'string' },
     /* Words filled into the template's own blanks. A poster written before fill-ins existed
        has none, and the strict shape (which keys, how long) is built from the template. */
     extras: {
@@ -110,6 +113,15 @@ export function truncateAtWordBoundary(str, max) {
     return truncated.slice(0, lastSpace).trim();
   }
   return truncated.trim();
+}
+
+/**
+ * Trim text to a maximum number of words
+ */
+export function trimToWords(text, maxWords = 6) {
+  if (!text) return '';
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  return words.slice(0, maxWords).join(' ');
 }
 
 /**
@@ -297,10 +309,14 @@ export function sanitizeAndTruncateDesign(raw, { avoidRecipeIds = [], variant = 
     tagline: part(raw.tagline, L.tagline),
     slogan: { line1: part(slogan.line1, L.sloganLine1), line2: part(slogan.line2, L.sloganLine2) },
     bullets: (Array.isArray(raw.bullets) ? raw.bullets : [])
-      .slice(0, L.maxBullets)
-      .map((line) => part(line, L.bullet))
+      .slice(0, 3)
+      .map((line) => trimToWords(part(line, L.bullet), 6))
       .filter((line) => line.length > 0),
-    info: { date: part(info.date, L.date), time: part(info.time, L.time), venue: part(info.venue, L.venue) },
+    info: {
+      date: part(info.date, L.date),
+      time: part(info.time, L.time),
+      venue: part(info.venue, L.venue) || 'Venue to be announced',
+    },
     cta: { line: part(cta.line, L.ctaLine), button: part(cta.button, L.ctaButton) },
     icon: normalizeIconName(sanitizeString(raw.icon)) || iconForWords(spoken),
     imageQuery: part(raw.imageQuery, L.imageQuery),
@@ -345,10 +361,10 @@ export function designToContent(design) {
     tagline: truncateAtWordBoundary(sanitizeString(source.tagline), 100),
     date: truncateAtWordBoundary(sanitizeString(source.info?.date), 30),
     time: truncateAtWordBoundary(sanitizeString(source.info?.time), 20),
-    venue: truncateAtWordBoundary(sanitizeString(source.info?.venue), 80),
+    venue: truncateAtWordBoundary(sanitizeString(source.info?.venue), 80) || 'Venue to be announced',
     details: (Array.isArray(source.bullets) ? source.bullets : [])
-      .slice(0, 4)
-      .map((line) => truncateAtWordBoundary(sanitizeString(line), 90))
+      .slice(0, 3)
+      .map((line) => trimToWords(truncateAtWordBoundary(sanitizeString(line), 90), 6))
       .filter((line) => line.length > 0),
     imageQuery: truncateAtWordBoundary(sanitizeString(source.imageQuery), 60),
     extras,

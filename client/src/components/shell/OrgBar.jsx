@@ -3,38 +3,37 @@ import { Building2, Check, Search, X } from "lucide-react";
 
 const idOf = (client) => client.id || client._id;
 
-/** Slim context bar under the top bar; h-11 is the offset the sidebar sticky position assumes. */
+/** Slim context bar under the top bar for superadmin. */
 export function OrgBar({ selected, onChange }) {
   return (
-    <div className="h-11 border-b border-line bg-section">
+    <div className="h-10 border-b border-[#E5E7EB] bg-[#F9FAFB]">
       <div className="mx-auto flex h-full w-full max-w-page items-center gap-3 px-4 sm:px-6">
         {selected ? (
           <>
-            <Building2 className="h-4 w-4 shrink-0 text-primary" />
-            <span className="hidden shrink-0 text-xs font-semibold uppercase tracking-wider text-muted-foreground sm:inline">
+            <Building2 className="h-4 w-4 shrink-0 text-[#2563EB]" />
+            <span className="hidden shrink-0 text-xs font-medium uppercase tracking-wider text-[#6B7280] sm:inline">
               Working on
             </span>
-            <span className="min-w-0 flex-1 truncate text-sm font-semibold text-heading">
+            <span className="min-w-0 flex-1 truncate text-sm font-medium text-[#111827]">
               {selected.name}
             </span>
             <button
               type="button"
               onClick={onChange}
-              className="shrink-0 rounded-btn px-2 py-1 text-sm font-semibold text-primary hover:bg-primary/10"
+              className="shrink-0 rounded-[6px] px-2 py-1 text-xs font-medium text-[#2563EB] hover:bg-[#EFF6FF] transition-colors"
             >
               Change
             </button>
           </>
         ) : (
           <>
-            <p className="min-w-0 flex-1 truncate text-sm text-body">
-              Select an organization to open its brand kit, templates and
-              posters
+            <p className="min-w-0 flex-1 truncate text-xs text-[#6B7280]">
+              Select an organization to open its brand kit, templates and posters
             </p>
             <button
               type="button"
               onClick={onChange}
-              className="btn-primary shrink-0 !px-3 !py-1.5 text-sm"
+              className="shrink-0 rounded-[6px] bg-[#2563EB] px-2.5 py-1 text-xs font-medium text-white hover:bg-[#1D4ED8] transition-colors"
             >
               Select organization
             </button>
@@ -86,7 +85,7 @@ export function OrgPicker({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-start justify-center bg-heading/40 p-4 backdrop-blur-sm sm:pt-24"
+      className="fixed inset-0 z-[60] flex items-start justify-center bg-[#111827]/40 p-4 backdrop-blur-xs sm:pt-24"
       role="dialog"
       aria-modal="true"
       aria-label="Choose an organization"
@@ -94,67 +93,62 @@ export function OrgPicker({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-md rounded-card border border-line bg-canvas shadow-soft">
-        <div className="flex items-center gap-2 border-b border-line px-4 py-3">
-          <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <div className="w-full max-w-md rounded-[8px] border border-[#E5E7EB] bg-white shadow-md">
+        <div className="flex items-center gap-2 border-b border-[#E5E7EB] px-4 py-3">
+          <Search className="h-4 w-4 shrink-0 text-[#6B7280]" />
           <input
             ref={inputRef}
-            type="search"
+            type="text"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search organizations"
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search organizations…"
             aria-label="Search organizations"
-            className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-heading placeholder:text-muted-foreground focus:outline-none focus:ring-0"
+            className="w-full bg-transparent text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:outline-none"
           />
           <button
             type="button"
             onClick={onClose}
-            className="text-muted-foreground hover:text-heading"
             aria-label="Close"
+            className="rounded-[6px] p-1 text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827]"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="max-h-[60vh] overflow-y-auto p-2">
-          {loading && clients.length === 0 ? (
-            <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+
+        <div className="max-h-72 overflow-y-auto p-2">
+          {loading ? (
+            <p className="p-4 text-center text-xs text-[#6B7280]">
               Loading organizations…
             </p>
           ) : matches.length === 0 ? (
-            <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-              {query
-                ? "No organization matches that name."
-                : "No organizations yet. Add one under Organizations."}
+            <p className="p-4 text-center text-xs text-[#6B7280]">
+              No organization found matching "{query}".
             </p>
           ) : (
-            matches.map((client) => {
-              const id = idOf(client);
-              const isActive = client.isActive !== false;
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  disabled={!isActive}
-                  onClick={() => {
-                    onPick(id);
-                    onClose();
-                  }}
-                  className={`flex w-full items-center gap-3 rounded-btn px-3 py-2.5 text-left text-sm transition-colors ${
-                    id === currentId
-                      ? "bg-primary/10 text-primary font-semibold"
-                      : "text-body hover:bg-section hover:text-heading"
-                  } disabled:cursor-not-allowed disabled:opacity-50`}
-                >
-                  <span className="min-w-0 flex-1 truncate">{client.name}</span>
-                  {!isActive && (
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      inactive
-                    </span>
-                  )}
-                  {id === currentId && <Check className="h-4 w-4 shrink-0" />}
-                </button>
-              );
-            })
+            <ul className="space-y-0.5">
+              {matches.map((client) => {
+                const id = idOf(client);
+                const isSelected = String(id) === String(currentId);
+                return (
+                  <li key={id}>
+                    <button
+                      type="button"
+                      onClick={() => onPick(client)}
+                      className={`flex w-full items-center justify-between gap-3 rounded-[6px] px-3 py-2 text-left text-sm transition-colors ${
+                        isSelected
+                          ? "bg-[#EFF6FF] text-[#2563EB] font-medium"
+                          : "text-[#374151] hover:bg-[#F3F4F6] hover:text-[#111827]"
+                      }`}
+                    >
+                      <span className="truncate">{client.name}</span>
+                      {isSelected && (
+                        <Check className="h-4 w-4 shrink-0 text-[#2563EB]" />
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </div>
       </div>

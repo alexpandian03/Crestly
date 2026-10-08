@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import AppShell from './components/shell/AppShell';
+import ErrorBoundary from './components/ErrorBoundary';
 import AccessDenied from './pages/AccessDenied';
 import Clients from './pages/Clients';
 import Dashboard from './pages/Dashboard';
@@ -64,7 +65,14 @@ export default function App() {
         }}
       />
       <AppShell>
-        <Routes>
+        <ErrorBoundary
+          fallback={
+            <div className="p-8 text-center text-sm text-[#6B7280]">
+              Something went wrong loading this page. Please refresh to try again.
+            </div>
+          }
+        >
+          <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/how-it-works" element={<HowItWorks />} />
           <Route path="/pricing" element={<Navigate to="/#pricing" replace />} />
@@ -143,7 +151,8 @@ export default function App() {
           <Route path="/generate" element={<Navigate to="/create" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      </AppShell>
+      </ErrorBoundary>
+    </AppShell>
     </AuthProvider>
   );
 }

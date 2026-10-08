@@ -1,35 +1,29 @@
-import React from "react";
-import { NavLink } from "react-router-dom";
-import { PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
-import Logo from "../Logo";
+import React from 'react';
+import { Link, NavLink } from 'react-router-dom';
+import { PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
+import Logo from '../Logo';
+import { Button } from '../ui/button';
+import { cn } from 'cn';
 
-const BASE =
-  "relative flex items-center gap-3 rounded-btn px-3 py-2.5 text-sm font-medium whitespace-nowrap transition-colors focus-visible:outline-offset-[-2px]";
+const BASE_ITEM =
+  'relative flex items-center gap-2.5 rounded-[6px] px-3 py-2 text-[14px] font-normal whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#E5E7EB]';
 
 function itemClass({ isActive }) {
-  return `${BASE} ${
+  return cn(
+    BASE_ITEM,
     isActive
-      ? "bg-primary/10 text-primary font-semibold"
-      : "text-body hover:bg-section hover:text-heading"
-  }`;
-}
-
-function ActiveBar() {
-  return (
-    <span
-      aria-hidden="true"
-      className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-primary"
-    />
+      ? 'bg-[#F3F4F6] text-[#111827] font-medium'
+      : 'text-[#374151] hover:bg-[#F3F4F6] hover:text-[#111827]'
   );
 }
 
-/** One nav row: a link when it can be opened, otherwise a button that asks for an organization. */
+/** One nav row: a link when accessible, or button requesting tenant selection. */
 function NavRow({ item, collapsed, disabled, onDisabled, onNavigate }) {
   const Icon = item.icon;
   const label = (
     <>
-      {Icon && <Icon className="h-[18px] w-[18px] shrink-0" />}
-      {!collapsed && <span className="truncate">{item.label}</span>}
+      {Icon && <Icon className="h-4 w-4 shrink-0 text-[#6B7280]" />}
+      {!collapsed && <span className="truncate leading-none">{item.label}</span>}
     </>
   );
 
@@ -40,7 +34,11 @@ function NavRow({ item, collapsed, disabled, onDisabled, onNavigate }) {
         onClick={onDisabled}
         aria-disabled="true"
         title="Select an organization first"
-        className={`${BASE} w-full cursor-not-allowed text-muted-foreground/70 hover:bg-transparent`}
+        className={cn(
+          BASE_ITEM,
+          'w-full cursor-not-allowed text-[#9CA3AF] hover:bg-transparent',
+          collapsed && 'justify-center px-2'
+        )}
       >
         {label}
       </button>
@@ -51,38 +49,27 @@ function NavRow({ item, collapsed, disabled, onDisabled, onNavigate }) {
     <NavLink
       to={item.to}
       className={({ isActive }) =>
-        `${itemClass({ isActive })} ${collapsed ? "justify-center px-2" : ""}`
+        cn(itemClass({ isActive }), collapsed && 'justify-center px-2')
       }
       title={collapsed ? item.label : undefined}
       onClick={onNavigate}
     >
-      {({ isActive }) => (
-        <>
-          {isActive && <ActiveBar />}
-          {label}
-        </>
-      )}
+      {label}
     </NavLink>
   );
 }
 
 export function NavList({
-  groups,
-  collapsed,
-  hasClient,
+  groups = [],
+  collapsed = false,
+  hasClient = false,
   onNeedClient,
   onNavigate,
 }) {
   return (
-    <nav className="flex flex-col gap-5 px-3 py-4" aria-label="Sections">
-      {groups.map((group) => (
-        <div key={group.label} className="space-y-1">
-          {!collapsed && (
-            <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              {group.label}
-            </p>
-          )}
-          {collapsed && <div className="mx-3 border-t border-line" />}
+    <nav className="flex flex-col gap-1" aria-label="Sidebar navigation">
+      {groups.map((group, groupIdx) => (
+        <div key={groupIdx} className="flex flex-col gap-0.5">
           {group.items.map((item) => (
             <NavRow
               key={item.to}
@@ -105,14 +92,28 @@ export default function SideBar({
   groups,
   hasClient,
   onNeedClient,
-  style,
 }) {
   return (
     <aside
-      className={`sticky z-30 hidden min-w-0 shrink-0 flex-col overflow-hidden border-r border-line bg-canvas transition-[width] duration-150 lg:flex ${collapsed ? "w-[68px]" : "w-60"}`}
-      style={style}
+      className={cn(
+        'sticky top-0 h-screen z-30 hidden min-w-0 shrink-0 flex-col overflow-hidden border-r border-[#E5E7EB] bg-[#FAFAFA] transition-[width] duration-150 lg:flex',
+        collapsed ? 'w-[64px]' : 'w-[240px]'
+      )}
     >
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      {/* Logo + "Brandframe" at top (small, 16px/600, no colored box around the logo) */}
+      <div
+        className={cn(
+          'h-[56px] flex items-center border-b border-[#E5E7EB] shrink-0',
+          collapsed ? 'justify-center px-2' : 'px-4'
+        )}
+      >
+        <Link to="/" className="flex items-center">
+          <Logo variant={collapsed ? 'icon' : 'full'} />
+        </Link>
+      </div>
+
+      {/* Nav items (no WORKSPACE label, 16px gray icons, 14px text) */}
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
         <NavList
           groups={groups}
           collapsed={collapsed}
@@ -120,94 +121,74 @@ export default function SideBar({
           onNeedClient={onNeedClient}
         />
       </div>
-      <div className="border-t border-line p-3">
-        <button
-          type="button"
+
+      {/* Collapse button at the bottom stays, styled as a ghost button */}
+      <div className="p-2 border-t border-[#E5E7EB] shrink-0">
+        <Button
+          variant="ghost"
           onClick={onToggle}
-          title={collapsed ? "Show menu labels" : "Hide menu labels"}
-          className="flex w-full items-center gap-3 rounded-btn px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-section hover:text-heading"
+          className={cn(
+            'w-full text-[#6B7280] hover:text-[#111827] hover:bg-[#F3F4F6] rounded-[6px] h-9 text-[13px] font-normal transition-colors',
+            collapsed ? 'justify-center px-0' : 'justify-start gap-2.5 px-3'
+          )}
+          title={collapsed ? 'Expand menu' : 'Collapse menu'}
         >
           {collapsed ? (
-            <PanelLeftOpen className="h-[18px] w-[18px] shrink-0" />
+            <PanelLeftOpen className="h-4 w-4 shrink-0 text-[#6B7280]" />
           ) : (
-            <PanelLeftClose className="h-[18px] w-[18px] shrink-0" />
+            <PanelLeftClose className="h-4 w-4 shrink-0 text-[#6B7280]" />
           )}
-          {!collapsed && <span>Collapse menu</span>}
-        </button>
+          {!collapsed && <span>Collapse</span>}
+        </Button>
       </div>
     </aside>
   );
 }
 
-/** Off-canvas version of the same menu, opened by the hamburger on small screens. */
+/** Off-canvas mobile menu for small screens */
 export function MobileMenu({
   open,
   onClose,
-  hiddenClass = "lg:hidden",
   groups,
-  flatItems,
   hasClient,
   onNeedClient,
 }) {
   if (!open) return null;
   return (
-    <div className={`fixed inset-0 z-50 ${hiddenClass}`}>
+    <div className="fixed inset-0 z-50 lg:hidden">
       <div
-        className="absolute inset-0 bg-heading/60"
+        className="absolute inset-0 bg-[#111827]/40 backdrop-blur-xs transition-opacity"
         aria-hidden="true"
         onClick={onClose}
       />
       <div
-        className="absolute inset-y-0 left-0 flex w-64 max-w-[85%] flex-col border-r border-line bg-canvas shadow-soft"
+        className="absolute inset-y-0 left-0 flex w-[240px] max-w-[85%] flex-col border-r border-[#E5E7EB] bg-[#FAFAFA] shadow-md"
         role="dialog"
         aria-modal="true"
-        aria-label="Menu"
+        aria-label="Navigation menu"
       >
-        <div className="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-line px-4">
-          <Logo variant="full" />
-          <button
-            type="button"
+        <div className="flex h-[56px] shrink-0 items-center justify-between border-b border-[#E5E7EB] px-4">
+          <Link to="/" onClick={onClose} className="flex items-center">
+            <Logo variant="full" />
+          </Link>
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={onClose}
             aria-label="Close menu"
-            className="rounded-btn border border-line p-2 text-heading hover:bg-section"
+            className="h-8 w-8 rounded-[6px] text-[#6B7280] hover:text-[#111827] hover:bg-[#F3F4F6]"
           >
-            <X className="h-5 w-5" />
-          </button>
+            <X className="h-4 w-4" />
+          </Button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {groups ? (
-            <NavList
-              groups={groups}
-              collapsed={false}
-              hasClient={hasClient}
-              onNeedClient={onNeedClient}
-              onNavigate={onClose}
-            />
-          ) : (
-            <nav className="flex flex-col gap-1 px-3 py-4" aria-label="Primary">
-              {flatItems.map((item) =>
-                item.href ? (
-                  <a
-                    key={item.href}
-                    href={item.href}
-                    onClick={onClose}
-                    className={`${BASE} text-body hover:bg-section hover:text-heading`}
-                  >
-                    {item.label}
-                  </a>
-                ) : (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    className={itemClass}
-                    onClick={onClose}
-                  >
-                    {item.label}
-                  </NavLink>
-                ),
-              )}
-            </nav>
-          )}
+        <div className="min-h-0 flex-1 overflow-y-auto p-2">
+          <NavList
+            groups={groups}
+            collapsed={false}
+            hasClient={hasClient}
+            onNeedClient={onNeedClient}
+            onNavigate={onClose}
+          />
         </div>
       </div>
     </div>

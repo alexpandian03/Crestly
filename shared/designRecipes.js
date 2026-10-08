@@ -449,8 +449,7 @@ export function charsPerLine(width, size, face = {}) {
 /**
  * How many lines a set of words takes.
  *
- * Words move whole to the next line, and one word longer than a line is broken inside it - which
- * is what the poster does, because its boxes wrap anywhere.
+ * Words move whole to the next line without breaking mid-word (wrap on spaces only).
  */
 export function linesOfWords(text, width, size, face = {}) {
   const per = charsPerLine(width, size, face);
@@ -470,14 +469,24 @@ export function linesOfWords(text, width, size, face = {}) {
       lines += 1;
       used = 0;
     }
-    let rest = word;
-    while (rest.length > per) {
-      rest = rest.slice(per);
-      lines += 1;
-    }
-    used = rest.length;
+    used = word.length;
   }
   return lines;
+}
+
+/** Shrink font size (down to minSize, min 22px) so long single words never overflow or break mid-word. */
+export function fitWordSize(text, width, initialSize, face = {}, minSize = 22) {
+  let size = Math.max(minSize, initialSize);
+  const words = (Array.isArray(text) ? text.join(' ') : String(text ?? ''))
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length === 0) return size;
+  const maxWordLen = Math.max(...words.map((w) => w.length));
+  while (size > minSize && Math.ceil(maxWordLen * charWidthOf(size, face)) > width) {
+    size = Math.max(minSize, size - 1);
+  }
+  return size;
 }
 
 /** How much room the mark beside a fact takes off its line. */
@@ -861,12 +870,13 @@ function resolveLine(c, entry, width) {
     uppercase: Boolean(styleLook.uppercase),
     letterSpacing: toIntOr(styleLook.letterSpacing, 0),
   };
-  const size = entry.fit
+  const listed = Array.isArray(words) ? words.filter(Boolean) : String(words || '').trim();
+  let size = entry.fit
     ? entry.fit(c, words, width, face, styleLook)
     : Math.max(MIN_RECIPE_FONT, toIntOr(c.sizes[entry.role], MIN_RECIPE_FONT));
+  size = fitWordSize(listed, width, size, face, 22);
   const style = textStyle(c, entry.role, { ...entry.look, size });
   const box = { kind: entry.field ? 'field' : 'text', field: entry.field, w: width, style };
-  const listed = Array.isArray(words) ? words.filter(Boolean) : String(words || '').trim();
   const height = estimatedTextHeight(box, listed);
   return { style, height: Math.max(entry.min || ELEMENT_LIMITS.minHeight, height) };
 }
@@ -913,26 +923,36 @@ function isDropped(c, key) {
   return c.dropped.has(key);
 }
 
+function hasEntryText(c, entry) {
+  if (!entry) return false;
+  if (isDropped(c, entry.key)) return false;
+  const words = entry.words ? entry.words(c) : c.words[entry.key || entry.field];
+  if (Array.isArray(words)) return words.filter(Boolean).length > 0;
+  return Boolean(String(words || '').trim());
+}
+
 /** How tall a group of lines is, with the smaller gap that belongs inside one block. */
-function groupHeight(c, entries, width) {
-  const kept = entries.filter((entry) => entry && !isDropped(c, entry.key));
+function groupHeight(c, entries, width, innerGapOverride = 0) {
+  const kept = entries.filter((entry) => hasEntryText(c, entry));
   if (kept.length === 0) return 0;
+  const gap = innerGapOverride || c.inner;
   const heights = kept.map((entry) => resolveLine(c, entry, width).height);
-  return heights.reduce((acc, height) => acc + height, 0) + c.inner * (kept.length - 1);
+  return heights.reduce((acc, height) => acc + height, 0) + gap * (kept.length - 1);
 }
 
 /** Place a group of lines in a box, top-down, optionally held in its middle. */
-function groupLines(c, entries, rect, { centre = false } = {}) {
-  const kept = entries.filter((entry) => entry && !isDropped(c, entry.key));
+function groupLines(c, entries, rect, { centre = false, innerGap = 0 } = {}) {
+  const kept = entries.filter((entry) => hasEntryText(c, entry));
   if (kept.length === 0) return [];
+  const gap = innerGap || c.inner;
   const resolved = kept.map((entry) => ({ entry, ...resolveLine(c, entry, rect.w) }));
   const heights = resolved.map((item) => item.height);
-  const used = heights.reduce((acc, height) => acc + height, 0) + c.inner * (kept.length - 1);
+  const used = heights.reduce((acc, height) => acc + height, 0) + gap * (kept.length - 1);
   let cursor = rect.y + (centre ? Math.max(0, Math.round((rect.h - used) / 2)) : 0);
   const items = [];
   resolved.forEach((row, index) => {
     const box = { x: rect.x, y: cursor, w: rect.w, h: heights[index] };
-    cursor += heights[index] + c.inner;
+    cursor += heights[index] + gap;
     items.push(
       row.entry.field
         ? fieldItem(c, row.entry.field, box, { style: row.style, z: 11 })
@@ -942,151 +962,129 @@ function groupLines(c, entries, rect, { centre = false } = {}) {
   return items;
 }
 
-/** The title: a short line above it when the poster brings one, then the title itself. */
+/** The title: kicker above it (when present), headline, and tagline/subtitle (when present). */
 function titleEntries(c, { includeTagline = true } = {}) {
   const room = Math.max(MIN_RECIPE_FONT * 2, Math.round(c.box.h * TITLE_LINE_SHARE));
-  const entries = [
-    blankLine('title_sub', 'lead'),
-    headlineLine(room),
-  ];
-  if (includeTagline) entries.push(fieldLine('tagline', 'tagline', 'regular'));
+  const entries = [];
+  if (c?.words?.title_sub && String(c.words.title_sub).trim()) {
+    entries.push(blankLine('title_sub', 'lead'));
+  }
+  entries.push(headlineLine(room));
+  if (includeTagline && c?.words?.tagline && String(c.words.tagline).trim()) {
+    entries.push(fieldLine('tagline', 'tagline', 'regular'));
+  }
   return entries;
 }
 
 function titleHeight(c, width, options) {
-  return groupHeight(c, titleEntries(c, options), width);
+  return groupHeight(c, titleEntries(c, options), width, 16);
 }
 
 function titleBlock(c, rect, options = {}) {
-  return groupLines(c, titleEntries(c, options), rect);
+  return groupLines(c, titleEntries(c, options), rect, { innerGap: 16 });
 }
 
-/** The two lines beside the round mark, and nothing else: the poster's own list is not drawn here. */
-function sloganEntries() {
-  return [blankLine('slogan_1', 'strong'), blankLine('slogan_2', 'regular')];
+/** The two lines beside the round mark, kept only when non-empty. */
+function sloganEntries(c) {
+  const list = [];
+  if (c?.words?.slogan_1 && String(c.words.slogan_1).trim()) {
+    list.push(blankLine('slogan_1', 'strong'));
+  }
+  if (c?.words?.slogan_2 && String(c.words.slogan_2).trim()) {
+    list.push(blankLine('slogan_2', 'regular'));
+  }
+  return list;
 }
 
-function wordsEntries() {
-  return [...sloganEntries(), fieldLine('details', 'details', 'regular')];
+function wordsEntries(c) {
+  const list = sloganEntries(c);
+  if (c?.words?.details && (Array.isArray(c.words.details) ? c.words.details.length > 0 : Boolean(c.words.details))) {
+    list.push(fieldLine('details', 'details', 'regular'));
+  }
+  return list;
 }
 
 function wordsHeight(c, width, entries) {
-  const list = entries.filter((entry) => !(entry.field === 'details' && c.words.details.length === 0));
+  const list = (entries || wordsEntries(c)).filter((entry) => hasEntryText(c, entry));
   return groupHeight(c, list, width);
 }
 
 function wordsBlock(c, rect, entries) {
-  const list = entries.filter((entry) => !(entry.field === 'details' && c.words.details.length === 0));
+  const list = (entries || wordsEntries(c)).filter((entry) => hasEntryText(c, entry));
   return groupLines(c, list, rect);
 }
 
 /**
  * A drawn rule: the thin mark that separates two facts, or underlines a heading.
- *
- * It is a filled shape, so the browser paints exactly this rectangle, and the shared rules let a
- * rule be thinner than a box of words. Accent colour, because a rule is a shape.
  */
 function ruleItem(c, id, rect) {
   return shapeItem(c, id, rect, { fill: c.palette.accent, radius: 0, z: 3 });
 }
 
 /**
- * Date, place and time.
- *
- * With `plate` they stand on a rounded pill; either way the three facts get equal columns and one
- * line, split by thin upright rules - never by a blob. The facts read smaller before they split:
- * only words that would not read at the smallest size take a line of their own, and the rules
- * then lie down between them.
+ * Date, time, venue as three separate equal cards.
  */
-function factPlan(c, width, { plate }) {
-  const keys = c.facts;
-  if (keys.length === 0) return null;
-  const padX = plate ? Math.round(c.unit * 0.9) : 0;
-  const padY = plate ? Math.round(c.unit * 0.55) : 0;
-  const rule = keys.length > 1 ? ruleThicknessOf(c.area.w) : 0;
-  const gap = Math.max(4, Math.round(c.unit * 0.6));
-  const inner = Math.max(MIN_TEXT_WIDTH, width - padX * 2);
-  const cellWidth = Math.floor((inner - (keys.length - 1) * (rule + gap * 2)) / keys.length);
-  /* One look for all three facts, and the very same look measures them and paints them. Where the
-     words stand inside their own box cannot change how tall a line is, so the size is settled
-     first and the alignment follows the choice below. */
-  const measured = textStyle(c, 'regular', { align: 'center', showIcon: true });
-  /* Equal columns for as long as every fact still reads in a couple of lines in its own column.
-     A column that needs more is the layout's cue to set the whole poster smaller - see
-     factsReadInColumns - because three facts on one line is the shape a pill has to keep. Only
-     when no size does it, each fact takes a line of its own and the rules lie down between them. */
-  const wraps = (style, w) =>
-    keys.some(
-      (key) =>
-        estimatedTextHeight({ kind: 'field', field: key, w, style }, c.words[key]) >
-        Math.round(style.size * numberOr(style.lineHeight, 1.2)) * FACT_CELL_MAX_LINES
-    );
-  const columns = keys.length > 1 && cellWidth >= MIN_CELL_WIDTH && !wraps(measured, cellWidth);
-  const look = { align: columns ? 'center' : c.align, showIcon: true };
-  const style = textStyle(c, 'regular', look);
-  const textWidth = columns ? cellWidth : inner;
-  const cells = keys.map((key) => {
-    const box = { kind: 'field', field: key, w: textWidth, style };
-    return { key, height: Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight(box, c.words[key])) };
-  });
-  const rows = columns ? [{ cells }] : cells.map((cell) => ({ cells: [cell] }));
-  const rowHeights = rows.map((row) => row.cells.reduce((acc, cell) => Math.max(acc, cell.height), 0));
-  const body = rowHeights.reduce((acc, height) => acc + height, 0) + (rows.length - 1) * gap;
-  return { keys, columns, rule, gap, padX, padY, inner, textWidth, rows, rowHeights, body, height: body + padY * 2, look, style };
+function factPlan(c, width, options) {
+  const keys = ['date', 'time', 'venue'];
+  const gap = 16;
+  const cellWidth = Math.floor((width - (keys.length - 1) * gap) / keys.length);
+  return { keys, columns: true, gap, inner: width, textWidth: cellWidth, height: 110 };
 }
 
 function factHeight(c, width, options) {
-  const plan = factPlan(c, width, options);
-  return plan ? plan.height : 0;
+  return 110;
 }
 
 function factBlock(c, rect, { plate = false } = {}) {
-  const plan = factPlan(c, rect.w, { plate });
-  if (!plan) return [];
+  const keys = ['date', 'time', 'venue'];
+  const gap = 16;
+  const cellWidth = Math.floor((rect.w - (keys.length - 1) * gap) / keys.length);
   const items = [];
-  const fill = plate ? c.palette.band : '';
-  if (plate) {
-    items.push(plateItem(c, 'fact-plate', rect, { fill, z: 2 }));
-  }
-  /* The same look that measured the row, only coloured for what stands behind it. */
-  const style = { ...plan.style, color: plate ? readableColorOn(fill, c.inks) : plan.style.color };
-  const innerX = rect.x + plan.padX;
-  /* Any height the row of blocks was given over what the words need is shared above and below. */
-  const free = Math.max(0, rect.h - plan.height);
-  let cursorY = rect.y + plan.padY + Math.round(free / 2);
-  plan.rows.forEach((row, rowIndex) => {
-    let cursorX = innerX;
-    row.cells.forEach((cell, cellIndex) => {
-      items.push(
-        fieldItem(c, cell.key, { x: cursorX, y: cursorY, w: plan.textWidth, h: plan.rowHeights[rowIndex] }, { style, z: 11 })
-      );
-      if (plan.columns && cellIndex < row.cells.length - 1) {
-        cursorX += plan.textWidth + plan.gap;
-        const side = Math.round(rect.h * PILL_DIVIDER_RATIO);
-        items.push(
-          ruleItem(c, `rule-${cell.key}`, {
-            x: cursorX,
-            y: rect.y + Math.round((rect.h - side) / 2),
-            w: plan.rule,
-            h: side,
-          })
-        );
-        cursorX += plan.rule + plan.gap;
-      }
-    });
-    if (!plan.columns && rowIndex < plan.rows.length - 1) {
-      const nextY = cursorY + plan.rowHeights[rowIndex] + plan.gap;
-      items.push(
-        ruleItem(c, `rule-row-${rowIndex}`, {
-          x: innerX,
-          y: nextY - Math.round(plan.gap / 2),
-          w: plan.inner,
-          h: plan.rule,
-        })
-      );
-    }
-    cursorY += plan.rowHeights[rowIndex] + plan.gap;
+
+  const fill = tint(c.palette.primary, 0.94);
+  const stroke = tint(c.palette.primary, 0.72);
+
+  keys.forEach((key, index) => {
+    const cardX = rect.x + index * (cellWidth + gap);
+    const cardRect = { x: cardX, y: rect.y, w: cellWidth, h: rect.h };
+
+    // 1. Separate card shape (1px border, 12px radius, light tint of primary)
+    items.push(
+      shapeItem(c, `card-${key}`, cardRect, {
+        fill,
+        stroke,
+        strokeWidth: 1,
+        radius: 12,
+        z: 2,
+      })
+    );
+
+    const val = String(c.words[key] || (key === 'venue' ? 'Venue to be announced' : '')).trim();
+    const isLongVenue = key === 'venue' && val.length > 18;
+    const valueSize = isLongVenue ? 24 : 32;
+
+    const padX = 8;
+    const padY = 8;
+    const textRect = {
+      x: cardX + padX,
+      y: rect.y + padY,
+      w: cellWidth - padX * 2,
+      h: rect.h - padY * 2,
+    };
+
+    const style = {
+      ...textStyle(c, 'regular'),
+      size: valueSize,
+      weight: 700,
+      align: 'center',
+      showLabel: true,
+      showIcon: false,
+      color: c.palette.primary ? shade(c.palette.primary, 0.45) : '#0f172a',
+    };
+
+    items.push(fieldItem(c, key, textRect, { style, z: 11 }));
   });
+
   return items;
 }
 
@@ -1100,82 +1098,72 @@ function plateItem(c, id, rect, { fill, radius, opacity = 1, z = 2 } = {}) {
   });
 }
 
-/**
- * The call to action: one line of words, then a button.
- *
- * The button's shape wears the accent colour and its words are chosen to read on it. The line
- * above it is words, not a shape, so it wears a readable brand ink instead.
- */
 function ctaEntries() {
   return [blankLine('cta_line', 'strong')];
 }
 
 function buttonStyle(c) {
-  return textStyle(c, 'button', { fill: c.palette.accent, align: 'center' });
+  return textStyle(c, 'button', { fill: c.palette.primary, align: 'center' });
 }
 
-/** The button's own words: what it says when the poster has nothing for it yet. */
 function buttonWords(c) {
-  return String(c.words.cta_button || '').trim() || 'Join us';
-}
-
-/**
- * How wide the button is: as wide as its words on one line, plus room to look like something to
- * press, and never wider than the space it was given.
- */
-function buttonWidth(c, style, limit) {
-  const text = buttonWords(c);
-  const face = { weight: style.weight, uppercase: style.uppercase, letterSpacing: style.letterSpacing };
-  const single = Math.ceil(text.length * charWidthOf(style.size, face));
-  return Math.round(clamp(single + style.size * 1.6, ELEMENT_LIMITS.minWidth, Math.max(ELEMENT_LIMITS.minWidth, limit)));
-}
-
-/** As tall as its words need at that width, plus the same breathing room all round. */
-function buttonHeight(c, style, width) {
-  const box = { kind: 'text', w: width, h: ELEMENT_LIMITS.minHeight, style };
-  const need = estimatedTextHeight(box, buttonWords(c));
-  return Math.max(ELEMENT_LIMITS.minHeight, need) + Math.round(c.unit * 0.9);
-}
-
-/** The button as the design means it: width first, then the height that width leaves for the words. */
-function buttonBox(c, limit) {
-  const style = buttonStyle(c);
-  const width = buttonWidth(c, style, limit);
-  return { style, width, height: buttonHeight(c, style, width) };
+  const raw = String(c.words.cta_button || c.words.cta_line || '').trim();
+  if (!raw || /^(join\s+us|come\s+celebrate|find\s+out\s+more)$/i.test(raw)) {
+    return 'Registration desk open from 7 AM';
+  }
+  return raw;
 }
 
 function ctaHeight(c, width) {
-  const lines = isDropped(c, 'cta_line') ? 0 : groupHeight(c, ctaEntries(), width);
-  const button = buttonBox(c, width);
-  return lines + (lines > 0 ? c.inner : 0) + button.height;
+  const hasLine = Boolean(c.words.cta_line && String(c.words.cta_line).trim() && !isDropped(c, 'cta_line'));
+  return (hasLine ? 32 + 16 : 0) + 54;
 }
 
 function ctaBlock(c, rect, { centre = false } = {}) {
   const items = [];
   let cursor = rect.y;
-  if (!isDropped(c, 'cta_line')) {
-    const entries = ctaEntries();
-    const block = { ...rect, y: cursor, h: groupHeight(c, entries, rect.w) };
-    items.push(...groupLines(c, entries, block));
-    cursor = block.y + block.h + c.inner;
+  const align = centre || c.align === 'center' ? 'center' : 'left';
+
+  const hasLine = Boolean(c.words.cta_line && String(c.words.cta_line).trim() && !isDropped(c, 'cta_line'));
+  if (hasLine) {
+    const lineBox = { x: rect.x, y: cursor, w: rect.w, h: 32 };
+    items.push(
+      blankItem(c, 'cta_line', lineBox, {
+        style: { ...textStyle(c, 'strong'), align, size: 20 },
+        z: 11,
+      })
+    );
+    cursor += 32 + 16;
   }
-  const button = buttonBox(c, rect.w);
-  const height = Math.max(ELEMENT_LIMITS.minHeight, Math.min(rect.y + rect.h - cursor, button.height));
-  const x =
-    centre || c.align === 'center'
-      ? rect.x + Math.round((rect.w - button.width) / 2)
-      : c.align === 'right'
-        ? rect.x + rect.w - button.width
-        : rect.x;
-  const box = { x, y: cursor, w: button.width, h: height };
+
+  const barH = 54;
+  const barBox = { x: rect.x, y: cursor, w: rect.w, h: barH };
+
+  // Full-width solid label bar
   items.push(
-    plateItem(c, 'button-plate', box, {
-      fill: c.palette.accent,
-      radius: Math.min(24, Math.round(height / 2)),
+    plateItem(c, 'button-plate', barBox, {
+      fill: c.palette.primary || c.palette.accent,
+      radius: 12,
       z: 5,
     })
   );
-  items.push(blankItem(c, 'cta_button', box, { style: button.style, z: 12 }));
+
+  const barText = buttonWords(c);
+  const face = { weight: 700, uppercase: false, letterSpacing: 0 };
+  let barSize = 22;
+  while (barSize > 16 && Math.ceil(barText.length * charWidthOf(barSize, face)) > rect.w - 32) {
+    barSize -= 1;
+  }
+
+  const barStyle = {
+    ...textStyle(c, 'button'),
+    size: barSize,
+    weight: 700,
+    align,
+    color: '#ffffff',
+  };
+  items.push(blankItem(c, 'cta_button', barBox, { style: barStyle, z: 12 }));
+
   return items;
 }
 
@@ -1377,32 +1365,50 @@ function present(c, specs) {
   return specs.filter((spec) => !isDropped(c, spec.key) && (!spec.when || spec.when(c)));
 }
 
+function minGapBetweenSpecs(a, b) {
+  const kA = a?.key;
+  const kB = b?.key;
+  if (kA === 'photo' && (kB === 'title' || kB === 'kicker')) return 32;
+  if (kA === 'title' && (kB === 'pill' || kB === 'facts' || kB === 'fact')) return 48;
+  if ((kA === 'pill' || kA === 'facts' || kA === 'fact') && (kB === 'words' || kB === 'cta')) return 40;
+  if (kA === 'words' && kB === 'cta') return 40;
+  if (kA === 'artwork' && (kB === 'pill' || kB === 'facts')) return 48;
+  if (kA === 'title' && kB === 'artwork') return 32;
+  return 32;
+}
+
 /**
  * The heights of one design's blocks in the space it has.
  *
- * Every block is as tall as its own words need. What is left over goes to the block that was
- * marked `flex` - the round mark, the picture - so the poster is filled from the top band to the
- * bottom one. When the words do not fit, the gaps close first, then the flexible block, and the
- * answer says whether anything still spills.
+ * Minimum gaps: 32px photo to kicker, 16px kicker to title to subtitle,
+ * 48px title group to info row, 40px info row to bullets to CTA.
+ * Leftover height is distributed evenly so no more than 10% stays empty.
  */
 function layoutOf(c, box, specs) {
   const live = present(c, specs);
-  if (live.length === 0) return { live, heights: [], gap: 0, spare: 0, fits: true };
+  if (live.length === 0) return { live, heights: [], gaps: [], spare: 0, fits: true };
   const mins = live.map((spec) => (spec.min ? Math.max(0, spec.min(c, box.w)) : 0));
-  /* A block that paints nothing but a rule is only as tall as that rule: the shared rules let a
-     rule be thinner than a box of words, and a taller block would leave a strip of nothing. */
   const heights = live.map((spec, index) =>
     Math.max(
       mins[index],
       spec.thin ? Math.max(1, spec.height(c, box.w)) : Math.max(ELEMENT_LIMITS.minHeight, spec.height(c, box.w))
     )
   );
-  let gap = c.gap;
-  let total = heights.reduce((acc, height) => acc + height, 0) + gap * (live.length - 1);
-  while (total > box.h && gap > 2) {
-    gap -= 2;
-    total = heights.reduce((acc, height) => acc + height, 0) + gap * (live.length - 1);
+
+  const gaps = [];
+  for (let i = 0; i < live.length - 1; i += 1) {
+    gaps.push(minGapBetweenSpecs(live[i], live[i + 1]));
   }
+
+  let total = heights.reduce((acc, height) => acc + height, 0) + gaps.reduce((acc, g) => acc + g, 0);
+
+  while (total > box.h && gaps.some((g, i) => g > minGapBetweenSpecs(live[i], live[i + 1]) * 0.7)) {
+    for (let i = 0; i < gaps.length; i += 1) {
+      if (gaps[i] > 16) gaps[i] -= 2;
+    }
+    total = heights.reduce((acc, height) => acc + height, 0) + gaps.reduce((acc, g) => acc + g, 0);
+  }
+
   if (total > box.h) {
     live.forEach((spec, index) => {
       if (!spec.flex || heights[index] <= mins[index]) return;
@@ -1411,49 +1417,19 @@ function layoutOf(c, box, specs) {
       total -= cut;
     });
   }
+
   let leftover = Math.max(0, box.h - total);
-  const flexes = live.map((spec, index) => (spec.flex ? index : -1)).filter((index) => index >= 0);
-  /* The space a design can still use: a flexible block grows until the mark it draws is as large
-     as it can be, then the gaps open by half a rhythm step, and what still stays is kept clear -
-     never added to a block that would only paint a hole around its own mark. */
-  const roomOf = (index) => {
-    if (!live[index].ceiling) return 0;
-    return Math.max(heights[index], Math.round(live[index].ceiling(c, heights[index])));
-  };
-  if (leftover > 0 && flexes.length > 0) {
-    const share = Math.floor(leftover / flexes.length);
-    flexes.forEach((index, order) => {
-      const wanted = order === flexes.length - 1 ? leftover - share * (flexes.length - 1) : share;
-      const room = roomOf(index);
-      const add = room ? Math.min(wanted, room - heights[index]) : wanted;
-      if (add > 0) {
-        heights[index] += add;
-        leftover -= add;
-      }
-    });
-  }
-  if (leftover > 0 && live.length > 1) {
-    const gaps = live.length - 1;
-    const open = Math.max(0, Math.round(c.gap + c.unit * 0.5) - gap);
-    const add = Math.min(Math.floor(leftover / gaps), open);
-    if (add > 0) {
-      gap += add;
-      leftover -= add * gaps;
+  if (leftover > 0 && gaps.length > 0) {
+    const extraPerGap = Math.floor(leftover / gaps.length);
+    for (let i = 0; i < gaps.length; i += 1) {
+      gaps[i] += extraPerGap;
     }
   }
-  const last = flexes.length > 0 ? flexes[flexes.length - 1] : live.length - 1;
-  if (leftover > 0) {
-    const room = roomOf(last);
-    const add = room ? Math.min(leftover, room - heights[last]) : leftover;
-    if (add > 0) {
-      heights[last] += add;
-      leftover -= add;
-    }
-  }
-  const used = heights.reduce((acc, height) => acc + height, 0) + gap * (live.length - 1);
-  /* What a design cannot place stays as air above and below the whole block of it, so the poster
-     is centred rather than hollow in the middle. */
-  return { live, heights, gap, spare: Math.max(0, box.h - used), fits: used <= box.h };
+
+  const finalUsed = heights.reduce((acc, height) => acc + height, 0) + gaps.reduce((acc, g) => acc + g, 0);
+  const spare = Math.max(0, box.h - finalUsed);
+
+  return { live, heights, gaps, spare, fits: finalUsed <= box.h };
 }
 
 /** True while a block that asks for its columns on one line still gets them at this size. */
@@ -1465,30 +1441,22 @@ function holdsColumns(c, spec, width) {
 
 /**
  * Lay the blocks out, giving up words in order until they fit.
- *
- * The ladder is DROP_ORDER itself: a design that does not use a line simply does not change when
- * that line is given up, and the next try is one line shorter. The headline and the button are
- * never on the list.
- *
- * A poster is only set larger while its pill still reads as three columns on one line: the facts
- * keep their shape, and the type stays in the five looks the design has.
  */
 function stack(c, box, specs, gapOverride = 0) {
   for (let dropCount = 0; dropCount <= DROP_ORDER.length; dropCount += 1) {
     const dropped = new Set(DROP_ORDER.slice(0, dropCount));
     for (const scale of SCALES) {
       const plan = planOf(c, scale, dropped);
-      if (gapOverride) plan.gap = gapOverride;
       const laid = layoutOf(plan, box, specs);
       const keepsShape = scale <= 1 || laid.live.every((spec) => holdsColumns(plan, spec, box.w));
       if ((laid.fits && keepsShape) || (dropCount === DROP_ORDER.length && scale === SCALES[SCALES.length - 1])) {
         const items = [];
-        let cursor = box.y + Math.max(0, Math.round(laid.spare / 2));
+        let cursor = box.y;
         laid.live.forEach((spec, index) => {
           const rect = { x: box.x, y: cursor, w: box.w, h: laid.heights[index] };
           const made = spec.make(plan, rect);
           items.push(...(Array.isArray(made) ? made : [made]));
-          cursor += laid.heights[index] + laid.gap;
+          cursor += laid.heights[index] + (laid.gaps[index] || 0);
         });
         return items;
       }
@@ -1579,14 +1547,31 @@ function heroStackedSide(c) {
   return Math.max(60, Math.round(heroMiddleMin(c) * 0.7));
 }
 
-function heroMiddleHeight(c, width, { stacked }) {
-  const words = groupHeight(c, sloganEntries(), heroWordsWidth(c, width, { stacked }));
-  return Math.max(heroMiddleMin(c), words + (stacked ? heroStackedSide(c) + c.inner : 0));
+function heroWordsEntries(c) {
+  const slogans = sloganEntries(c).filter((e) => hasEntryText(c, e));
+  if (slogans.length > 0) return slogans;
+  if (c.hasWords('details')) {
+    return [fieldLine('details', 'details', 'regular')];
+  }
+  return [];
 }
 
-/** The middle of a hero: the round mark on one side, one slogan block on the other, a rule between. */
+function heroMiddleHeight(c, width, { stacked }) {
+  const words = heroWordsEntries(c);
+  if (words.length === 0) {
+    return heroMiddleMin(c);
+  }
+  const wordsH = groupHeight(c, words, heroWordsWidth(c, width, { stacked }));
+  return Math.max(heroMiddleMin(c), wordsH + (stacked ? heroStackedSide(c) + c.inner : 0));
+}
+
+/** The middle of a hero: round mark and text, or full-width centered mark when text is empty. */
 function heroMiddle(c, rect, { stacked, artLeft }) {
-  const words = sloganEntries();
+  const words = heroWordsEntries(c);
+  if (words.length === 0) {
+    return artBlock(c, rect, { centre: true });
+  }
+
   if (stacked) {
     const side = Math.min(rect.w, heroStackedSide(c));
     const art = { x: rect.x + Math.round((rect.w - side) / 2), y: rect.y, w: side, h: side };
@@ -1658,6 +1643,7 @@ function photoTopRecipe(area, brandKit, slots, options = {}, design = null) {
     },
     {
       key: 'words',
+      when: (ctx) => wordsEntries(ctx).some((e) => hasEntryText(ctx, e)),
       height: (ctx, width) => wordsHeight(ctx, width, words),
       make: (ctx, rect) => wordsBlock(ctx, rect, words),
     },
@@ -1709,6 +1695,7 @@ function splitPhotoRecipe(area, brandKit, slots, options = {}, design = null) {
         },
         {
           key: 'words',
+          when: (ctx) => wordsEntries(ctx).some((e) => hasEntryText(ctx, e)),
           height: (ctx, width) => wordsHeight(ctx, width, words),
           make: (ctx, inner) => wordsBlock(ctx, inner, words),
         },
@@ -1784,6 +1771,7 @@ function typographicRecipe(area, brandKit, slots, options = {}, design = null) {
       },
       {
         key: 'words',
+        when: (ctx) => wordsEntries(ctx).some((e) => hasEntryText(ctx, e)),
         height: (ctx, width) => wordsHeight(ctx, width, words),
         make: (ctx, rect) => wordsBlock(ctx, rect, words),
       },
@@ -1849,6 +1837,7 @@ function boldBandRecipe(area, brandKit, slots, options = {}, design = null) {
     },
     {
       key: 'words',
+      when: (ctx) => wordsEntries(ctx).some((e) => hasEntryText(ctx, e)),
       height: (ctx, width) => wordsHeight(ctx, width, words),
       make: (ctx, rect) => wordsBlock(ctx, rect, words),
     },
@@ -1902,7 +1891,7 @@ export const DESIGN_RECIPES = [
   {
     id: 'photoTop',
     name: 'Photo on top',
-    suits: ['health', 'awareness', 'education', 'corporate', 'general'],
+    suits: ['sports', 'festival', 'celebration', 'health', 'awareness', 'education', 'corporate', 'general'],
     needsPhoto: true,
     recipeVersion: RECIPE_VERSION,
     recipe: photoTopRecipe,
@@ -1910,7 +1899,7 @@ export const DESIGN_RECIPES = [
   {
     id: 'splitPhoto',
     name: 'Photo beside the words',
-    suits: ['health', 'education', 'meeting', 'corporate', 'notice', 'general'],
+    suits: ['sports', 'festival', 'celebration', 'health', 'education', 'meeting', 'corporate', 'notice', 'general'],
     needsPhoto: true,
     recipeVersion: RECIPE_VERSION,
     recipe: splitPhotoRecipe,
