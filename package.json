@@ -30,6 +30,7 @@
     "start": "node server/dev.js"
   },
   "dependencies": {
+    "@sentry/node": "11.6.0",
     "ajv": "^8.20.0",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.11.0",
@@ -40,9 +41,25 @@
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^8.9.5",
     "multer": "^2.4.0",
+    "pino": "10.4.0",
+    "pino-http": "11.0.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "@axe-core/playwright": "4.13.0",
+    "@eslint/js": "9.39.5",
+    "@playwright/test": "1.64.0",
+    "concurrently": "^9.1.2",
+    "eslint": "9.39.5",
+    "eslint-plugin-jsx-a11y": "6.10.2",
+    "eslint-plugin-react": "7.37.5",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.13.0",
+    "husky": "9.1.7",
+    "lint-staged": "17.6.0",
+    "mongodb-memory-server": "11.3.0",
+    "prettier": "3.9.9",
+    "supertest": "7.3.1",
+    "vitest": "4.1.11"
   }
 }
