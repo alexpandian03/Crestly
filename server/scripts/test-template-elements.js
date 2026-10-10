@@ -13,11 +13,16 @@ import {
   elementsOfDesign,
   jsonBytes,
   legacyToElements,
+  legacyToSections,
   normalizeElements,
   plainText,
+  resolveBrandText,
   resolveContentValues,
+  resolveStyleTokens,
+  rotatedBoundingBox,
   tenantImagePrefix,
   validateElements,
+  validateTemplateSections,
   variableSlotsOf,
 } from '../../shared/templateElements.js';
 
@@ -477,5 +482,120 @@ assert(
   'the blanks are read back out of a poster design snapshot'
 );
 assert(variableSlotsOf([]).texts.length === 0 && elementsOfDesign(undefined).length === 0, 'an old design snapshot offers no blanks');
+
+// 13. Sections Model: header, footer, content sections, rotation & brand tokens
+const validCustomHeader = {
+  mode: 'custom',
+  height: 120,
+  elements: [
+    {
+      id: 'hdr-title',
+      kind: 'text',
+      text: 'Annual Charity Gala',
+      x: 50,
+      y: 20,
+      w: 400,
+      h: 60,
+      style: { size: 36, color: '#ffffff' },
+    },
+  ],
+};
+
+const customSections = {
+  header: validCustomHeader,
+  content: {
+    page: { background: { mode: 'brand' } },
+    elements: [fieldElement('headline')],
+  },
+  footer: {
+    mode: 'brand',
+    height: 100,
+    elements: [],
+  },
+};
+
+const customHeaderProblems = validateTemplateSections(customSections, { brandKit, template: legacyTemplate, ...urlContext });
+assert(customHeaderProblems.length === 0, 'a custom header saves');
+
+const variableInHeaderSections = {
+  header: {
+    mode: 'custom',
+    height: 120,
+    elements: [
+      {
+        id: 'hdr-var',
+        kind: 'text',
+        text: 'Fill in name',
+        variable: true,
+        key: 'hdr_name',
+        x: 50,
+        y: 20,
+        w: 300,
+        h: 50,
+      },
+    ],
+  },
+  content: {
+    elements: [fieldElement('headline')],
+  },
+  footer: { mode: 'brand', height: 80, elements: [] },
+};
+const varHeaderProblems = validateTemplateSections(variableInHeaderSections, { brandKit, template: legacyTemplate, ...urlContext });
+assert(varHeaderProblems.some((p) => p.includes('variable in the header is not allowed')), 'a variable in the header is rejected');
+
+const unknownTokenProblems = validateElements(
+  [
+    fieldElement('headline', {
+      style: { color: 'brand:invalid_token' },
+    }),
+  ],
+  { brandKit, template: legacyTemplate, ...urlContext }
+);
+assert(unknownTokenProblems.some((p) => p.includes('not a brand color token this app offers')), 'an unknown token is rejected');
+
+// Rotated item outside its section: an element near the top edge rotated 45 deg exceeds bounds
+const rotatedOutsideProblems = validateElements(
+  [
+    fieldElement('headline', {
+      x: 0,
+      y: 120,
+      w: 200,
+      h: 80,
+      rotation: 45,
+    }),
+  ],
+  { brandKit, template: legacyTemplate, ...urlContext }
+);
+assert(rotatedOutsideProblems.some((p) => p.includes('must sit fully inside the poster')), 'a rotated item outside its section is rejected');
+
+// Legacy template conversion
+const convertedSections = legacyToSections(legacyTemplate, brandKit);
+assert(
+  convertedSections.header.mode === 'brand' &&
+    convertedSections.footer.mode === 'brand' &&
+    convertedSections.content.elements.length === 7,
+  'a legacy template converts'
+);
+
+// Brand text resolution
+const brandKitWithContacts = {
+  ...brandKit,
+  orgName: 'Greenpeace Foundation',
+  footer: {
+    website: 'greenpeace.org',
+    phone: '+1-555-0199',
+    email: 'info@greenpeace.org',
+    address: '123 Forest Way',
+    legalText: 'All rights reserved.',
+  },
+};
+const resolvedBrandText = resolveBrandText(
+  'Organized by {{brand.orgName}}. Visit {{brand.website}} or call {{brand.phone}}.',
+  brandKitWithContacts
+);
+assert(
+  resolvedBrandText === 'Organized by Greenpeace Foundation. Visit greenpeace.org or call +1-555-0199.',
+  'resolveBrandText replaces all brand contact placeholders'
+);
 
 console.log(`\nShared template element tests passed: ${passed} assertions`);

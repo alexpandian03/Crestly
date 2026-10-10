@@ -1530,6 +1530,185 @@ async function run() {
     'extractKicker derives contextual kicker instead of defaulting to FEATURED EVENT'
   );
 
+  // 20. Sections model Part 1
+  // A. A custom header saves
+  const customHeaderRes = await createTemplate(admin, `Custom Header ${runId}`, {
+    sections: {
+      header: {
+        mode: 'custom',
+        height: 120,
+        background: { type: 'color', color: '#112233' },
+        elements: [
+          {
+            id: 'hdr-txt-1',
+            kind: 'text',
+            text: 'Annual Charity Gala',
+            x: 60,
+            y: 20,
+            w: 500,
+            h: 60,
+            style: { color: '#ffffff', size: 28 },
+          },
+        ],
+      },
+      content: {
+        elements: [
+          {
+            id: 'cnt-headline-sec',
+            kind: 'field',
+            field: 'headline',
+            x: 70,
+            y: 180,
+            w: 940,
+            h: 120,
+            text: 'Empowering Next Generation',
+          },
+        ],
+      },
+      footer: {
+        mode: 'brand',
+        height: 80,
+        elements: [],
+      },
+    },
+    editorVersion: 2,
+  });
+  assert(customHeaderRes.status === 201, 'a custom header saves');
+  const savedCustomHeader = customHeaderRes.body.data.template;
+  assert(savedCustomHeader.sections.header.mode === 'custom', 'custom header mode is stored');
+  assert(savedCustomHeader.sections.header.elements[0].locked === true, 'header elements are forced locked');
+
+  // B. A variable in the header is rejected
+  const varInHeaderRes = await createTemplate(admin, `Var In Header ${runId}`, {
+    sections: {
+      header: {
+        mode: 'custom',
+        height: 120,
+        elements: [
+          {
+            id: 'hdr-var-1',
+            kind: 'text',
+            text: 'Fill in speaker',
+            variable: true,
+            key: 'speaker_name',
+            x: 60,
+            y: 20,
+            w: 300,
+            h: 50,
+          },
+        ],
+      },
+      content: {
+        elements: [
+          {
+            id: 'cnt-headline-var',
+            kind: 'field',
+            field: 'headline',
+            x: 70,
+            y: 180,
+            w: 940,
+            h: 120,
+            text: 'Headline',
+          },
+        ],
+      },
+    },
+    editorVersion: 2,
+  });
+  assert(varInHeaderRes.status === 400, 'a variable in the header is rejected');
+
+  // C. An unknown token is rejected
+  const unknownTokenRes = await createTemplate(admin, `Unknown Token Section ${runId}`, {
+    sections: {
+      content: {
+        elements: [
+          {
+            id: 'cnt-headline-badtok',
+            kind: 'field',
+            field: 'headline',
+            x: 70,
+            y: 180,
+            w: 940,
+            h: 120,
+            text: 'Headline with bad token',
+            style: { color: 'brand:invalid_token' },
+          },
+        ],
+      },
+    },
+    editorVersion: 2,
+  });
+  assert(unknownTokenRes.status === 400, 'an unknown token is rejected');
+
+  // D. A rotated item outside its section is rejected
+  const rotatedOutsideRes = await createTemplate(admin, `Rotated Outside Section ${runId}`, {
+    sections: {
+      header: {
+        mode: 'custom',
+        height: 120,
+        elements: [
+          {
+            id: 'hdr-rot-item',
+            kind: 'shape',
+            shape: { type: 'rect', fill: '#ff0000' },
+            x: 10,
+            y: 10,
+            w: 100,
+            h: 100,
+            rotation: 45,
+          },
+        ],
+      },
+      content: {
+        elements: [
+          {
+            id: 'cnt-headline-rot',
+            kind: 'field',
+            field: 'headline',
+            x: 70,
+            y: 180,
+            w: 940,
+            h: 120,
+            text: 'Valid Headline',
+          },
+        ],
+      },
+    },
+    editorVersion: 2,
+  });
+  assert(rotatedOutsideRes.status === 400, 'a rotated item outside its section is rejected');
+
+  // E. A legacy template converts
+  const legacySectionsDocId = new mongoose.Types.ObjectId();
+  await Template.collection.insertOne({
+    _id: legacySectionsDocId,
+    clientId: clientA._id,
+    name: `Legacy Auto Convert ${runId}`,
+    category: 'Event',
+    size: { width: 1080, height: 1350 },
+    zones: zones(),
+    editorVersion: 1,
+    isActive: true,
+    version: 1,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  created.templateIds.push(legacySectionsDocId);
+
+  const legacyConvRead = await request(`/api/templates/${legacySectionsDocId}`, { token: admin.token });
+  assert(legacyConvRead.status === 200, 'legacy template loaded');
+  const legacyConvTpl = legacyConvRead.body.data.template;
+  assert(
+    legacyConvTpl.sections &&
+      legacyConvTpl.sections.header.mode === 'brand' &&
+      legacyConvTpl.sections.footer.mode === 'brand' &&
+      Array.isArray(legacyConvTpl.sections.content.elements) &&
+      legacyConvTpl.sections.content.elements.length > 0,
+    'a legacy template converts'
+  );
+  const rawDocBeforeSave = await Template.collection.findOne({ _id: legacySectionsDocId });
+  assert(!rawDocBeforeSave.sections, 'legacy template has no sections in database before admin saves');
+
   console.log(`\nStage 9 tests passed: ${passed} assertions`);
 }
 

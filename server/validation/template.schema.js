@@ -13,11 +13,13 @@ import {
   ELEMENT_KINDS,
   ELEMENT_LIMITS,
   IMAGE_FITS,
+  IMAGE_MASKS,
   SHAPE_TYPES,
   TEXT_ALIGNS,
   VARIABLE_KEY_PATTERN,
   VARIABLE_LIMITS,
   validateElements,
+  validateTemplateSections,
 } from '../../shared/templateElements.js';
 import { templatePageSchema } from './brandKit.schema.js';
 
@@ -125,7 +127,7 @@ const elementStyleSchema = z.object({
 });
 
 const elementShapeSchema = z.object({
-  type: z.enum(SHAPE_TYPES, { error: 'A shape can only be a box, a circle or a line.' }).optional(),
+  type: z.enum(SHAPE_TYPES, { error: 'A shape can only be a box, a circle, a line, a triangle, a star, a hexagon or a diamond.' }).optional(),
   fill: z.string().optional(),
   stroke: z.string().optional(),
   strokeWidth: z.number().optional(),
@@ -153,6 +155,15 @@ const elementSchema = z.object({
   h: itemPixel('size'),
   z: z.number().int({ error: 'The stacking order must be a whole number' }).optional(),
   locked: z.boolean().optional(),
+  rotation: z
+    .number({ error: 'Rotation must be a number' })
+    .min(-180, 'Rotation must be between -180 and 180 degrees')
+    .max(180, 'Rotation must be between -180 and 180 degrees')
+    .optional(),
+  mask: z.enum(IMAGE_MASKS, { error: 'Invalid image mask' }).optional(),
+  groupId: z.string().trim().max(50).optional(),
+  hidden: z.boolean().optional(),
+  src: z.string().max(600).optional(),
   style: elementStyleSchema.optional(),
   text: z
     .string()
@@ -195,6 +206,46 @@ export function templateElementsSchema(context = {}) {
     });
 }
 
+const sectionHeaderFooterSchema = (context = {}, sectionName = 'header') =>
+  z.object({
+    mode: z.enum(['brand', 'custom'], { error: `${sectionName} mode must be brand or custom` }).default('brand'),
+    height: z
+      .number({ error: `${sectionName} height must be a number` })
+      .int(`${sectionName} height must be a whole number`)
+      .min(60, `${sectionName} height must be at least 60`)
+      .max(260, `${sectionName} height cannot be above 260`)
+      .default(sectionName === 'header' ? 80 : 70),
+    background: z.any().optional(),
+    elements: z
+      .array(elementSchema)
+      .max(15, `The ${sectionName} can hold at most 15 items.`)
+      .optional()
+      .default([]),
+  });
+
+const sectionContentSchema = (context = {}) =>
+  z.object({
+    page: templatePageSchema(context.clientId).optional(),
+    elements: z
+      .array(elementSchema)
+      .max(ELEMENT_LIMITS.maxItems, `A template can hold at most ${ELEMENT_LIMITS.maxItems} items.`)
+      .optional()
+      .default([]),
+  });
+
+export const templateSectionsSchema = (context = {}) =>
+  z
+    .object({
+      header: sectionHeaderFooterSchema(context, 'header').optional(),
+      content: sectionContentSchema(context).optional(),
+      footer: sectionHeaderFooterSchema(context, 'footer').optional(),
+    })
+    .superRefine((sections, ctx) => {
+      for (const problem of validateTemplateSections(sections, context)) {
+        ctx.addIssue({ code: 'custom', message: problem });
+      }
+    });
+
 function elementContextOf(req) {
   return { cloudName: process.env.CLOUDINARY_CLOUD_NAME, clientId: req?.clientId };
 }
@@ -207,6 +258,10 @@ const templateWriteSchema = (context) => ({
   layout: layoutSchema.optional(),
   page: templatePageSchema(context.clientId).optional(),
   elements: templateElementsSchema(context).optional(),
+  sections: templateSectionsSchema(context).optional(),
+  header: sectionHeaderFooterSchema(context, 'header').optional(),
+  footer: sectionHeaderFooterSchema(context, 'footer').optional(),
+  content: sectionContentSchema(context).optional(),
 });
 
 export const createTemplateSchemaFor = (req) => z.object(templateWriteSchema(elementContextOf(req)));
@@ -222,12 +277,18 @@ export const updateTemplateSchemaFor = (req) => {
       layout: shape.layout,
       page: shape.page,
       elements: shape.elements,
+      sections: shape.sections,
+      header: shape.header,
+      footer: shape.footer,
+      content: shape.content,
       note: z.string().trim().max(120).optional(),
       expectedVersion: z.coerce.number().int().min(1, 'Invalid version number').optional(),
     })
     .refine(
       (value) =>
-        ['name', 'category', 'size', 'zones', 'layout', 'page', 'elements'].some((key) => value[key] !== undefined),
+        ['name', 'category', 'size', 'zones', 'layout', 'page', 'elements', 'sections', 'header', 'footer', 'content'].some(
+          (key) => value[key] !== undefined
+        ),
       { message: 'Provide at least one change' }
     );
 };

@@ -13,17 +13,18 @@ import {
 import {
   assertTemplateDocSize,
   cleanElements,
+  cleanSections,
   editorVersionFor,
   elementContext,
   elementsForRead,
   storedEditorVersion,
 } from '../services/template/elements.js';
-import { defaultPage, normalizePage } from '../../shared/templateElements.js';
+import { defaultPage, legacyToSections, normalizePage, normalizeSections } from '../../shared/templateElements.js';
 
 /* The list also carries the placed items: every miniature a template is shown in draws the
    items it really stores, so a list can never disagree with the poster the editor saved. */
 const LIST_FIELDS =
-  'clientId name category isActive isDefault version editorVersion updatedAt size layout zones page elements';
+  'clientId name category isActive isDefault version editorVersion updatedAt size layout zones page elements sections header content footer';
 const LIST_SORT = { isDefault: -1, createdAt: -1 };
 const CONFLICT_MESSAGE = 'This template was changed somewhere else. Reload to continue.';
 
@@ -115,6 +116,10 @@ function snapshotOf(template, note, byUser) {
     layout: normalizeLayout(plain(template.layout), zones),
     page: plain(template.page),
     elements: plain(template.elements || []),
+    sections: plain(template.sections),
+    header: plain(template.header),
+    content: plain(template.content),
+    footer: plain(template.footer),
     editorVersion: storedEditorVersion(template),
     size: normalizeTemplateSize(template.size),
     note: sanitizeString(note || 'Edited').trim().slice(0, 120),
@@ -129,6 +134,10 @@ function snapshotOf(template, note, byUser) {
  */
 function cleanItemsFor(req, elements, { brandKit, size }) {
   return cleanElements(elements, elementContext({ brandKit, clientId: req.clientId, size }));
+}
+
+function cleanSectionsFor(req, sections, { brandKit, size }) {
+  return cleanSections(sections, elementContext({ brandKit, clientId: req.clientId, size }));
 }
 
 export async function getTemplates(req, res, next) {
@@ -160,6 +169,9 @@ export async function getTemplateById(req, res, next) {
     /* A template that predates the editor opens as items converted from its areas; nothing
        is written back until an admin saves. */
     const brandKit = await brandKitFor(req);
+    const sections = template.sections
+      ? normalizeSections(template.sections, brandKit, template)
+      : legacyToSections(template, brandKit);
     return res.status(200).set('Cache-Control', NO_STORE).json({
       success: true,
       data: {
@@ -167,6 +179,10 @@ export async function getTemplateById(req, res, next) {
           ...template,
           editorVersion: storedEditorVersion(template),
           elements: elementsForRead(template, brandKit),
+          sections,
+          header: sections.header,
+          content: sections.content,
+          footer: sections.footer,
         },
       },
     });
@@ -190,6 +206,16 @@ export async function createTemplate(req, res, next) {
       ? cleanItemsFor(req, req.body.elements, { brandKit, size })
       : [];
 
+    let sections;
+    if (req.body.sections || req.body.header || req.body.footer || req.body.content) {
+      const rawSections = req.body.sections || {
+        header: req.body.header,
+        content: req.body.content,
+        footer: req.body.footer,
+      };
+      sections = cleanSectionsFor(req, rawSections, { brandKit, size });
+    }
+
     if (await nameTaken(req.clientId, name)) return duplicateName(res);
 
     const doc = {
@@ -208,6 +234,15 @@ export async function createTemplate(req, res, next) {
       isDefault: false,
       createdBy: req.user._id,
     };
+    if (sections) {
+      doc.sections = sections;
+      doc.header = sections.header;
+      doc.content = sections.content;
+      doc.footer = sections.footer;
+      doc.elements = sections.content.elements;
+      doc.page = sections.content.page;
+      doc.editorVersion = editorVersionFor(doc.elements);
+    }
     assertTemplateDocSize(doc);
 
     const template = await Template.create(doc);
@@ -249,6 +284,27 @@ export async function updateTemplate(req, res, next) {
     };
     if (req.body.category !== undefined) changes.category = req.body.category;
     if (req.body.page !== undefined) changes.page = normalizePage(req.body.page);
+    if (
+      req.body.sections !== undefined ||
+      req.body.header !== undefined ||
+      req.body.footer !== undefined ||
+      req.body.content !== undefined
+    ) {
+      const existingSections = template.sections ? plain(template.sections) : legacyToSections(template, brandKit);
+      const rawSections = req.body.sections || {
+        header: req.body.header ?? existingSections.header,
+        content: req.body.content ?? existingSections.content,
+        footer: req.body.footer ?? existingSections.footer,
+      };
+      const updatedSections = cleanSectionsFor(req, rawSections, { brandKit, size });
+      changes.sections = updatedSections;
+      changes.header = updatedSections.header;
+      changes.content = updatedSections.content;
+      changes.footer = updatedSections.footer;
+      changes.elements = updatedSections.content.elements;
+      changes.page = updatedSections.content.page;
+      changes.editorVersion = editorVersionFor(changes.elements, storedEditorVersion(template));
+    }
     if (req.body.name !== undefined) {
       const name = cleanName(req.body.name);
       if (!name) return sendBadRequest('Give the template a name.', res);

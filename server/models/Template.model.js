@@ -23,6 +23,7 @@ import {
   ELEMENT_STYLE_DEFAULTS,
   ELEMENT_WEIGHTS,
   IMAGE_FITS,
+  IMAGE_MASKS,
   LEGACY_EDITOR_VERSION,
   SHAPE_TYPES,
   TEMPLATE_DOC_MAX_BYTES,
@@ -244,6 +245,11 @@ const elementSchema = new mongoose.Schema(
     h: { type: Number, required: [true, 'Every item needs a size'], min: 0 },
     z: { type: Number, default: 0, min: ELEMENT_LIMITS.z.min, max: ELEMENT_LIMITS.z.max },
     locked: { type: Boolean, default: false },
+    rotation: { type: Number, min: -180, max: 180, default: 0 },
+    mask: { type: String, enum: IMAGE_MASKS, default: 'none' },
+    groupId: { type: String, trim: true, maxlength: 50 },
+    hidden: { type: Boolean, default: false },
+    src: { type: String, trim: true, maxlength: 600, default: '' },
     style: { type: elementStyleSchema, default: () => ({}) },
     text: { type: String, trim: true, maxlength: ELEMENT_LIMITS.textChars, default: '' },
     imageUrl: { type: String, trim: true, maxlength: 600, default: '' },
@@ -318,6 +324,33 @@ const pageSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const sectionHeaderFooterSchema = new mongoose.Schema(
+  {
+    mode: { type: String, enum: ['brand', 'custom'], default: 'brand' },
+    height: { type: Number, min: 60, max: 260, default: 80 },
+    background: { type: mongoose.Schema.Types.Mixed, default: undefined },
+    elements: { type: [elementSchema], default: [] },
+  },
+  { _id: false }
+);
+
+const sectionContentSchema = new mongoose.Schema(
+  {
+    page: { type: pageSchema, default: undefined },
+    elements: { type: [elementSchema], default: [] },
+  },
+  { _id: false }
+);
+
+const sectionsSchema = new mongoose.Schema(
+  {
+    header: { type: sectionHeaderFooterSchema, default: undefined },
+    content: { type: sectionContentSchema, default: undefined },
+    footer: { type: sectionHeaderFooterSchema, default: undefined },
+  },
+  { _id: false }
+);
+
 const templateVersionSchema = new mongoose.Schema(
   {
     version: { type: Number, min: 1 },
@@ -326,6 +359,10 @@ const templateVersionSchema = new mongoose.Schema(
     layout: { type: layoutSchema, default: () => ({}) },
     page: { type: pageSchema, default: undefined },
     elements: { type: [elementSchema], default: [] },
+    sections: { type: sectionsSchema, default: undefined },
+    header: { type: sectionHeaderFooterSchema, default: undefined },
+    content: { type: sectionContentSchema, default: undefined },
+    footer: { type: sectionHeaderFooterSchema, default: undefined },
     editorVersion: { type: Number, min: 1, default: LEGACY_EDITOR_VERSION },
     size: {
       width: { type: Number },
@@ -388,6 +425,22 @@ const templateSchema = new mongoose.Schema(
     elements: {
       type: [elementSchema],
       default: [],
+    },
+    sections: {
+      type: sectionsSchema,
+      default: undefined,
+    },
+    header: {
+      type: sectionHeaderFooterSchema,
+      default: undefined,
+    },
+    content: {
+      type: sectionContentSchema,
+      default: undefined,
+    },
+    footer: {
+      type: sectionHeaderFooterSchema,
+      default: undefined,
     },
     editorVersion: {
       type: Number,

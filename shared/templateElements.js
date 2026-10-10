@@ -22,7 +22,8 @@ export const TEXT_FIELDS = ['headline', 'tagline', 'date', 'time', 'venue', 'det
 
 export const TEXT_ALIGNS = ['left', 'center', 'right'];
 export const IMAGE_FITS = ['cover', 'contain'];
-export const SHAPE_TYPES = ['rect', 'circle', 'line'];
+export const SHAPE_TYPES = ['rect', 'circle', 'line', 'triangle', 'star', 'hexagon', 'diamond'];
+export const IMAGE_MASKS = ['none', 'rounded', 'circle', 'triangle', 'hexagon', 'star', 'diamond', 'blob'];
 
 export function isSamplePlaceholder(text) {
   if (!text || typeof text !== 'string') return true;
@@ -173,7 +174,7 @@ export const ELEMENT_FONTS = [
 export const ELEMENT_WEIGHTS = [400, 500, 600, 700, 800];
 
 /** Brand tokens that can be used in place of explicit colors or fonts. */
-export const BRAND_COLOR_TOKENS = [
+export const BRAND_STYLE_TOKENS = [
   'brand:primary',
   'brand:secondary',
   'brand:accent',
@@ -183,10 +184,24 @@ export const BRAND_COLOR_TOKENS = [
   'brand:body',
 ];
 
-export const BRAND_FONT_TOKENS = [
-  'brand:heading',
-  'brand:body',
+export const BRAND_COLOR_TOKENS = BRAND_STYLE_TOKENS;
+export const BRAND_FONT_TOKENS = BRAND_STYLE_TOKENS;
+
+export const BRAND_TEXT_TOKENS = [
+  '{{brand.orgName}}',
+  '{{brand.website}}',
+  '{{brand.phone}}',
+  '{{brand.email}}',
+  '{{brand.address}}',
+  '{{brand.legalText}}',
 ];
+
+export const SECTION_KINDS = ['text', 'image', 'shape', 'icon'];
+export const SECTION_LIMITS = {
+  header: { minHeight: 60, maxHeight: 260, maxItems: 15 },
+  footer: { minHeight: 60, maxHeight: 260, maxItems: 15 },
+  content: { maxItems: 30 },
+};
 
 export const PAGE_MODES = ['brand', 'custom'];
 export const CONTENT_BACKGROUND_TYPES = ['color', 'gradient', 'image', 'pattern'];
@@ -339,6 +354,11 @@ export const ELEMENT_KEYS = [
   'label',
   'hint',
   'maxLength',
+  'rotation',
+  'mask',
+  'groupId',
+  'hidden',
+  'src',
 ];
 
 export const ELEMENT_STYLE_KEYS = [
@@ -493,12 +513,54 @@ export function resolveFontToken(token, brandKit) {
   const content = kit.content || {};
   switch (key) {
     case 'brand:heading':
+    case 'brand:primary':
       return content.headingFont || fonts.heading || 'Outfit';
     case 'brand:body':
+    case 'brand:secondary':
+    case 'brand:text':
+    case 'brand:accent':
+    case 'brand:background':
       return content.bodyFont || fonts.body || 'Inter';
     default:
       return token;
   }
+}
+
+export function resolveBrandText(text, brandKit) {
+  if (typeof text !== 'string' || !text.includes('{{')) return text || '';
+  const kit = toPlain(brandKit) || {};
+  const footer = kit.footer || {};
+  const replacements = {
+    'brand.orgName': kit.orgName || '',
+    'brand.website': footer.website || kit.website || '',
+    'brand.phone': footer.phone || kit.phone || '',
+    'brand.email': footer.email || kit.email || '',
+    'brand.address': footer.address || kit.address || '',
+    'brand.legalText': footer.legalText || kit.legalText || '',
+  };
+  return text.replace(/\{\{\s*(brand\.(?:orgName|website|phone|email|address|legalText))\s*\}\}/g, (_, key) => {
+    return replacements[key] ?? '';
+  });
+}
+
+export function rotatedBoundingBox(rect, rotation = 0) {
+  const rot = toNumber(rotation, 0);
+  if (!rot || rot % 360 === 0) {
+    return { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
+  }
+  const rad = (rot * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(rad));
+  const sin = Math.abs(Math.sin(rad));
+  const newW = rect.w * cos + rect.h * sin;
+  const newH = rect.w * sin + rect.h * cos;
+  const cx = rect.x + rect.w / 2;
+  const cy = rect.y + rect.h / 2;
+  return {
+    x: cx - newW / 2,
+    y: cy - newH / 2,
+    w: newW,
+    h: newH,
+  };
 }
 
 export function resolveStyleTokens(styleOrElement, brandKit) {
@@ -516,6 +578,23 @@ export function resolveStyleTokens(styleOrElement, brandKit) {
   }
   if (out.fontFamily && typeof out.fontFamily === 'string' && isBrandFontToken(out.fontFamily)) {
     out.fontFamily = resolveFontToken(out.fontFamily, brandKit);
+  }
+  const kit = toPlain(brandKit) || {};
+  const logoUrl =
+    kit.logos?.find((l) => l.isPrimary)?.url ||
+    kit.logos?.[0]?.url ||
+    kit.logoUrl ||
+    kit.logo ||
+    kit.header?.logoUrl ||
+    '';
+  if (out.imageUrl === 'brand:logo') {
+    out.imageUrl = logoUrl;
+  }
+  if (out.src === 'brand:logo') {
+    out.src = logoUrl;
+  }
+  if (typeof out.text === 'string' && out.text.includes('{{')) {
+    out.text = resolveBrandText(out.text, brandKit);
   }
   if (out.style && typeof out.style === 'object') {
     out.style = resolveStyleTokens(out.style, brandKit);
@@ -814,10 +893,11 @@ function normalizeVariable(raw, index) {
 }
 
 /** Fills in everything an element may be missing and drops keys it should not carry. */
-export function normalizeElement(element, index = 0) {
+export function normalizeElement(element, index = 0, context = {}) {
   const raw = toPlain(element) || {};
   const kind = ELEMENT_KINDS.includes(raw.kind) ? raw.kind : 'text';
   const field = kind === 'field' && ELEMENT_FIELDS.includes(raw.field) ? raw.field : null;
+  const isSectionBand = context.section === 'header' || context.section === 'footer';
   const out = {
     id: plainText(raw.id, ELEMENT_LIMITS.idChars) || `item-${index + 1}`,
     kind,
@@ -826,9 +906,20 @@ export function normalizeElement(element, index = 0) {
     w: toInt(raw.w, ELEMENT_LIMITS.minWidth),
     h: toInt(raw.h, ELEMENT_LIMITS.minHeight),
     z: clamp(toInt(raw.z, index), ELEMENT_LIMITS.z.min, ELEMENT_LIMITS.z.max),
-    locked: Boolean(raw.locked),
+    locked: isSectionBand ? true : Boolean(raw.locked),
+    rotation: clamp(toInt(raw.rotation, 0), -180, 180),
     style: normalizeStyle(raw.style),
   };
+  if (typeof raw.groupId === 'string' && raw.groupId.trim()) {
+    out.groupId = raw.groupId.trim().slice(0, 50);
+  }
+  if (raw.hidden) {
+    out.hidden = true;
+  }
+  const rawMask = typeof raw.mask === 'string' ? raw.mask.trim().toLowerCase() : typeof raw.style?.mask === 'string' ? raw.style.mask.trim().toLowerCase() : '';
+  if (rawMask && IMAGE_MASKS.includes(rawMask)) {
+    out.mask = rawMask;
+  }
   if (out.kind === 'field') out.field = field || 'headline';
   if (out.kind === 'text' || out.kind === 'field') out.text = plainText(raw.text);
   if (out.kind === 'icon') {
@@ -843,12 +934,21 @@ export function normalizeElement(element, index = 0) {
     };
   }
   if (out.kind === 'image' || out.field === 'photo') {
-    const url = typeof raw.imageUrl === 'string' ? raw.imageUrl.trim().slice(0, 600) : '';
-    out.imageUrl = /^https:\/\//i.test(url) ? url : '';
+    const rawUrl = typeof raw.imageUrl === 'string' ? raw.imageUrl.trim() : typeof raw.src === 'string' ? raw.src.trim() : '';
+    if (rawUrl === 'brand:logo') {
+      out.imageUrl = 'brand:logo';
+      out.src = 'brand:logo';
+    } else {
+      const url = rawUrl.slice(0, 600);
+      out.imageUrl = /^https:\/\//i.test(url) ? url : '';
+      if (raw.src) out.src = out.imageUrl;
+    }
   }
   if (out.kind === 'shape') out.shape = normalizeShape(raw.shape);
-  const variable = normalizeVariable({ ...raw, kind: out.kind }, index);
-  if (variable && (out.kind === 'text' || out.kind === 'image')) Object.assign(out, variable);
+  if (!isSectionBand) {
+    const variable = normalizeVariable({ ...raw, kind: out.kind }, index);
+    if (variable && (out.kind === 'text' || out.kind === 'image')) Object.assign(out, variable);
+  }
   return out;
 }
 
@@ -992,6 +1092,10 @@ export function tenantImagePrefix(cloudName) {
 export function checkElementImageUrl(url, { cloudName, clientId } = {}) {
   const value = typeof url === 'string' ? url.trim() : '';
   if (!value) return { ok: true };
+  if (value === 'brand:logo') return { ok: true };
+  if (value.startsWith('brand:')) {
+    return { ok: false, reason: `"${value}" is not a brand picture token this app offers.` };
+  }
   if (!value.startsWith(tenantImagePrefix(cloudName))) {
     return { ok: false, reason: 'Photos must come from your own image library.' };
   }
@@ -1133,9 +1237,49 @@ export function validateElements(elements, context = {}) {
       if (!check.ok) problems.push(`The ${label}: ${check.reason}`);
     }
 
+    if (context.section === 'header' || context.section === 'footer') {
+      if (element.kind === 'field' || !SECTION_KINDS.includes(sent.kind)) {
+        problems.push(`A ${context.section} cannot contain a poster field.`);
+      }
+      if (sent.variable || sent.key || sent.label || sent.hint || sent.field) {
+        problems.push(`A variable in the ${context.section} is not allowed.`);
+      }
+    }
+
+    if (sent.rotation !== undefined && sent.rotation !== null) {
+      if (!isNumber(sent.rotation) || toNumber(sent.rotation) < -180 || toNumber(sent.rotation) > 180) {
+        problems.push(`The ${label} rotation must be between -180 and 180 degrees.`);
+      }
+    }
+
     const rawStyle = isPlainObject(toPlain(sent.style)) ? toPlain(sent.style) : null;
     if (sent.style !== undefined && !rawStyle) {
       problems.push(`The ${label} has look settings that are not a set of choices.`);
+    }
+
+    const maskVal = sent.mask !== undefined ? sent.mask : rawStyle?.mask;
+    if (maskVal !== undefined && maskVal !== null && maskVal !== '') {
+      if (typeof maskVal !== 'string' || !IMAGE_MASKS.includes(maskVal.trim().toLowerCase())) {
+        problems.push(`"${maskVal}" is not an image mask this app offers.`);
+      }
+    }
+
+    if (sent.groupId !== undefined && sent.groupId !== null && typeof sent.groupId !== 'string') {
+      problems.push(`The ${label} group name must be text.`);
+    }
+
+    if (sent.hidden !== undefined && sent.hidden !== null && typeof sent.hidden !== 'boolean') {
+      problems.push(`The ${label} hidden setting must be true or false.`);
+    }
+
+    if (typeof sent.text === 'string' && sent.text.includes('{{')) {
+      const tokenMatches = sent.text.match(/\{\{[^}]*\}\}/g) || [];
+      for (const tokenMatch of tokenMatches) {
+        const cleanToken = tokenMatch.replace(/\s+/g, '');
+        if (!BRAND_TEXT_TOKENS.includes(cleanToken)) {
+          problems.push(`"${tokenMatch}" is not a brand text token this app offers.`);
+        }
+      }
     }
     const colours = [
       ['colour', rawStyle?.color],
@@ -1143,12 +1287,26 @@ export function validateElements(elements, context = {}) {
       ['outline colour', toPlain(sent.shape)?.stroke],
     ];
     for (const [name, value] of colours) {
-      if (value !== undefined && value !== null && value !== '' && !isHexColor(value) && !isBrandColorToken(value)) {
-        problems.push(`The ${label} has a ${name} that is not a hex value such as #1a2b3c.`);
+      if (value !== undefined && value !== null && value !== '') {
+        if (typeof value === 'string' && value.startsWith('brand:')) {
+          if (!isBrandColorToken(value)) {
+            problems.push(
+              `"${value}" is not a brand color token this app offers. Provide a hex value such as #1a2b3c or a known brand token.`
+            );
+          }
+        } else if (!isHexColor(value)) {
+          problems.push(`The ${label} has a ${name} that is not a hex value such as #1a2b3c.`);
+        }
       }
     }
-    if (rawStyle?.fontFamily !== undefined && !ELEMENT_FONTS.includes(rawStyle.fontFamily) && !isBrandFontToken(rawStyle.fontFamily)) {
-      problems.push(`"${rawStyle.fontFamily}" is not one of the fonts this app offers.`);
+    if (rawStyle?.fontFamily !== undefined && rawStyle?.fontFamily !== null && rawStyle?.fontFamily !== '') {
+      if (typeof rawStyle.fontFamily === 'string' && rawStyle.fontFamily.startsWith('brand:')) {
+        if (!isBrandFontToken(rawStyle.fontFamily)) {
+          problems.push(`"${rawStyle.fontFamily}" is not a brand font token this app offers.`);
+        }
+      } else if (!ELEMENT_FONTS.includes(rawStyle.fontFamily)) {
+        problems.push(`"${rawStyle.fontFamily}" is not one of the fonts this app offers.`);
+      }
     }
     const size = rawStyle?.size;
     const minSize = rawStyle?.minSize;
@@ -1173,6 +1331,7 @@ export function validateElements(elements, context = {}) {
     }
 
     const rect = { x: element.x, y: element.y, w: element.w, h: element.h };
+    const bbox = rotatedBoundingBox(rect, element.rotation || 0);
     const rule = isThinRule(element);
     if (!rule && (rect.w < ELEMENT_LIMITS.minWidth || rect.h < ELEMENT_LIMITS.minHeight)) {
       problems.push(
@@ -1189,19 +1348,35 @@ export function validateElements(elements, context = {}) {
         `The ${label} is a rule, so one side must be ${RULE_THICKNESS.min}-${RULE_THICKNESS.max} pixels thick.`
       );
     }
-    if (knowsBounds && !isInsideArea(rect, area)) {
-      problems.push(`The ${label} must sit fully inside the poster, clear of the header and footer.`);
+    if (knowsBounds) {
+      const isInside =
+        bbox.x >= area.x - 0.001 &&
+        bbox.y >= area.y - 0.001 &&
+        bbox.x + bbox.w <= area.x + area.w + 0.001 &&
+        bbox.y + bbox.h <= area.y + area.h + 0.001;
+      if (!isInside) {
+        const sectionName = context.section || 'content';
+        if (sectionName === 'header') {
+          problems.push(`The ${label} must sit fully inside the header.`);
+        } else if (sectionName === 'footer') {
+          problems.push(`The ${label} must sit fully inside the footer.`);
+        } else {
+          problems.push(`The ${label} must sit fully inside the poster, clear of the header and footer.`);
+        }
+      }
     }
   }
 
-  const headlineCount = fieldCounts.headline || 0;
-  if (headlineCount !== 1) {
-    problems.push(headlineCount === 0 ? 'A template needs a headline.' : 'A template can have only one headline.');
-  }
-  for (const field of ELEMENT_FIELDS) {
-    if (field === 'headline') continue;
-    if ((fieldCounts[field] || 0) > 1) {
-      problems.push(`A template can show the ${labelFor({ kind: 'field', field })} only once.`);
+  if (context.section !== 'header' && context.section !== 'footer') {
+    const headlineCount = fieldCounts.headline || 0;
+    if (headlineCount !== 1) {
+      problems.push(headlineCount === 0 ? 'A template needs a headline.' : 'A template can have only one headline.');
+    }
+    for (const field of ELEMENT_FIELDS) {
+      if (field === 'headline') continue;
+      if ((fieldCounts[field] || 0) > 1) {
+        problems.push(`A template can show the ${labelFor({ kind: 'field', field })} only once.`);
+      }
     }
   }
   if (counts.text > ELEMENT_LIMITS.maxText) {
@@ -1368,4 +1543,178 @@ export function resolveContentValues(content, { elements = [], cloudName = '', c
     images: Object.keys(images).length ? images : undefined,
     problems,
   };
+}
+
+export function normalizeSections(sections, brandKit = null, template = null) {
+  const raw = toPlain(sections) || {};
+  const kit = toPlain(brandKit) || {};
+  const tpl = toPlain(template) || {};
+
+  const rawHeader = isPlainObject(raw.header) ? raw.header : {};
+  const rawFooter = isPlainObject(raw.footer) ? raw.footer : {};
+  const rawContent = isPlainObject(raw.content) ? raw.content : {};
+
+  const headerHeight = clamp(
+    toInt(rawHeader.height, kit.header?.height ?? 80),
+    60,
+    260
+  );
+  const footerHeight = clamp(
+    toInt(rawFooter.height, kit.footer?.height ?? 70),
+    60,
+    260
+  );
+
+  const headerElements = (Array.isArray(rawHeader.elements) ? rawHeader.elements : []).slice(0, 15).map((el, idx) => {
+    const norm = normalizeElement(el, idx, { section: 'header' });
+    norm.locked = true;
+    norm.variable = false;
+    delete norm.field;
+    delete norm.key;
+    delete norm.label;
+    delete norm.hint;
+    delete norm.maxLength;
+    return norm;
+  });
+
+  const footerElements = (Array.isArray(rawFooter.elements) ? rawFooter.elements : []).slice(0, 15).map((el, idx) => {
+    const norm = normalizeElement(el, idx, { section: 'footer' });
+    norm.locked = true;
+    norm.variable = false;
+    delete norm.field;
+    delete norm.key;
+    delete norm.label;
+    delete norm.hint;
+    delete norm.maxLength;
+    return norm;
+  });
+
+  const contentElements = normalizeElements(
+    Array.isArray(rawContent.elements) ? rawContent.elements : (tpl.elements || [])
+  );
+
+  return {
+    header: {
+      mode: rawHeader.mode === 'custom' ? 'custom' : 'brand',
+      height: headerHeight,
+      background: rawHeader.background ? { ...rawHeader.background } : (kit.header?.background ? { ...kit.header.background } : { ...DEFAULT_PAGE_BACKGROUND }),
+      elements: headerElements,
+    },
+    content: {
+      page: rawContent.page ? normalizePage(rawContent.page) : (tpl.page ? normalizePage(tpl.page) : defaultPage()),
+      elements: contentElements,
+    },
+    footer: {
+      mode: rawFooter.mode === 'custom' ? 'custom' : 'brand',
+      height: footerHeight,
+      background: rawFooter.background ? { ...rawFooter.background } : (kit.footer?.background ? { ...kit.footer.background } : { ...DEFAULT_PAGE_BACKGROUND }),
+      elements: footerElements,
+    },
+  };
+}
+
+export function legacyToSections(template, brandKit = null) {
+  const tpl = toPlain(template) || {};
+  const kit = toPlain(brandKit) || {};
+  if (tpl.sections && isPlainObject(tpl.sections)) {
+    return normalizeSections(tpl.sections, kit, tpl);
+  }
+  const headerHeight = clamp(toInt(kit.header?.height, 80), 60, 260);
+  const footerHeight = clamp(toInt(kit.footer?.height, 70), 60, 260);
+  const elements = Array.isArray(tpl.elements) && tpl.elements.length > 0
+    ? normalizeElements(tpl.elements)
+    : legacyToElements(tpl, kit);
+
+  return {
+    header: {
+      mode: 'brand',
+      height: headerHeight,
+      background: kit.header?.background ? { ...kit.header.background } : { ...DEFAULT_PAGE_BACKGROUND },
+      elements: [],
+    },
+    content: {
+      page: tpl.page ? normalizePage(tpl.page) : defaultPage(),
+      elements,
+    },
+    footer: {
+      mode: 'brand',
+      height: footerHeight,
+      background: kit.footer?.background ? { ...kit.footer.background } : { ...DEFAULT_PAGE_BACKGROUND },
+      elements: [],
+    },
+  };
+}
+
+export function validateTemplateSections(sections, context = {}) {
+  if (!sections || typeof sections !== 'object') {
+    return ['A template needs sections.'];
+  }
+  const raw = toPlain(sections);
+  const problems = [];
+  const brandKit = toPlain(context.brandKit) || {};
+  const template = toPlain(context.template) || {};
+  const size = templateSizeOf(template);
+
+  const header = isPlainObject(raw.header) ? raw.header : {};
+  const footer = isPlainObject(raw.footer) ? raw.footer : {};
+  const content = isPlainObject(raw.content) ? raw.content : {};
+
+  if (header.mode !== undefined && !['brand', 'custom'].includes(header.mode)) {
+    problems.push('Header mode must be brand or custom.');
+  }
+  const headerHeight = header.height !== undefined ? toInt(header.height, 80) : clamp(toInt(brandKit.header?.height, 80), 60, 260);
+  if (header.height !== undefined && (headerHeight < 60 || headerHeight > 260)) {
+    problems.push('Header height must be between 60 and 260.');
+  }
+
+  if (footer.mode !== undefined && !['brand', 'custom'].includes(footer.mode)) {
+    problems.push('Footer mode must be brand or custom.');
+  }
+  const footerHeight = footer.height !== undefined ? toInt(footer.height, 70) : clamp(toInt(brandKit.footer?.height, 70), 60, 260);
+  if (footer.height !== undefined && (footerHeight < 60 || footerHeight > 260)) {
+    problems.push('Footer height must be between 60 and 260.');
+  }
+
+  const headerElements = Array.isArray(header.elements) ? header.elements : [];
+  if (headerElements.length > 15) {
+    problems.push('The header can hold at most 15 items.');
+  }
+  const headerArea = { x: 0, y: 0, w: size.width, h: headerHeight };
+  const headerProblems = validateElements(headerElements, {
+    ...context,
+    section: 'header',
+    area: headerArea,
+  });
+  problems.push(...headerProblems);
+
+  const footerElements = Array.isArray(footer.elements) ? footer.elements : [];
+  if (footerElements.length > 15) {
+    problems.push('The footer can hold at most 15 items.');
+  }
+  const footerArea = { x: 0, y: Math.max(0, size.height - footerHeight), w: size.width, h: footerHeight };
+  const footerProblems = validateElements(footerElements, {
+    ...context,
+    section: 'footer',
+    area: footerArea,
+  });
+  problems.push(...footerProblems);
+
+  const contentAreaBox = {
+    x: 0,
+    y: headerHeight,
+    w: size.width,
+    h: Math.max(0, size.height - headerHeight - footerHeight),
+  };
+  const contentElements = Array.isArray(content.elements) ? content.elements : [];
+  if (contentElements.length > ELEMENT_LIMITS.maxItems) {
+    problems.push(`A template can hold at most ${ELEMENT_LIMITS.maxItems} items.`);
+  }
+  const contentProblems = validateElements(contentElements, {
+    ...context,
+    section: 'content',
+    area: contentAreaBox,
+  });
+  problems.push(...contentProblems);
+
+  return [...new Set(problems)];
 }

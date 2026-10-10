@@ -13,9 +13,10 @@ import {
   jsonBytes,
   legacyToElements,
   normalizeElements,
+  normalizeSections,
   templateSizeOf,
 } from '../../../shared/templateElements.js';
-import { templateElementsSchema } from '../../validation/template.schema.js';
+import { templateElementsSchema, templateSectionsSchema } from '../../validation/template.schema.js';
 import { badRequest } from './zones.js';
 
 function plain(value) {
@@ -55,9 +56,21 @@ export function cleanElements(elements, context) {
   return normalizeElements(parsed.data);
 }
 
+export function cleanSections(sections, context) {
+  const parsed = templateSectionsSchema(context).safeParse(plain(sections) ?? {});
+  if (!parsed.success) {
+    const issue = parsed.error?.issues?.[0];
+    throw badRequest(issue?.message || GENERIC_ITEMS_MESSAGE);
+  }
+  return normalizeSections(parsed.data, context.brandKit, context.template);
+}
+
 /** Items an old template does not have yet: converted from its areas, never written back. */
 export function elementsForRead(template, brandKit) {
   const raw = plain(template) || {};
+  if (raw.sections?.content?.elements?.length > 0) {
+    return normalizeElements(plain(raw.sections.content.elements));
+  }
   const stored = Array.isArray(raw.elements) ? plain(raw.elements) : [];
   if (stored.length > 0) return normalizeElements(stored);
   return legacyToElements(raw, plain(brandKit));
