@@ -10,7 +10,7 @@ import { generateContent, generateDesign } from '../services/ai/index.js';
 import { resolveImage, resolveImageDetails, resolvePosterImage, searchPhotos, triggerDownload } from '../services/images.js';
 import { sanitizeString, designToContent, sanitizeAndTruncateDesign } from '../services/ai/schema.js';
 import { generateWithMock } from '../services/ai/providers/mock.js';
-import { normalizePosterContent, normalizeImageUrl, contentValuesContext } from '../services/poster/content.js';
+import { normalizePosterContent, normalizeImageUrl, contentValuesContext, remapContentToDesign } from '../services/poster/content.js';
 import { captureDesign } from '../services/poster/design.js';
 import {
   buildRecipeDesign,
@@ -731,20 +731,28 @@ export async function restorePosterVersionController(req, res, next) {
       });
     }
 
-    /* A stored version is validated against the design it was written for. */
-    const content = normalizePosterContent(
+    const targetDesign = plainDesign(source.design) ?? plainDesign(poster.design);
+    const { content: remapped, droppedCount } = remapContentToDesign(
       source.content,
-      contentValuesContext(plainDesign(source.design) ?? plainDesign(poster.design), req.clientId)
+      plainDesign(source.design) ?? plainDesign(poster.design),
+      targetDesign
     );
+    const content = normalizePosterContent(
+      remapped,
+      contentValuesContext(targetDesign, req.clientId)
+    );
+    const note = droppedCount > 0
+      ? `Restored version ${wanted} (${droppedCount} unused space${droppedCount > 1 ? 's were' : ' was'} dropped)`
+      : `Restored version ${wanted}`;
     const updated = await appendVersion(
       req,
       poster,
       content,
-      `Restored version ${wanted}`,
+      note,
       {
         templateVersion: source.templateVersion ?? poster.templateVersion,
         /* Restoring brings the old look back with the old words. */
-        design: plainDesign(source.design) ?? plainDesign(poster.design),
+        design: targetDesign,
       }
     );
     if (!updated) return conflictResponse(res);
@@ -817,8 +825,16 @@ export async function applyLatestDesignController(req, res, next) {
       scopedFilter(req, { _id: poster.templateId })
     ).lean();
     const design = await designForPoster(req, poster, template);
-    const content = normalizePosterContent(poster.content, contentValuesContext(poster.design, req.clientId));
-    const updated = await appendVersion(req, poster, content, 'Updated to the latest brand design', {
+    const { content: remapped, droppedCount } = remapContentToDesign(
+      poster.content,
+      poster.design,
+      design
+    );
+    const content = normalizePosterContent(remapped, contentValuesContext(design, req.clientId));
+    const note = droppedCount > 0
+      ? `Updated to the latest brand design (${droppedCount} unused space${droppedCount > 1 ? 's were' : ' was'} dropped)`
+      : 'Updated to the latest brand design';
+    const updated = await appendVersion(req, poster, content, note, {
       templateVersion: template?.version || poster.templateVersion,
       design,
     });

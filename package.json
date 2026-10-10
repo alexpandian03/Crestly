@@ -4,6 +4,9 @@
   "description": "Multi-client SaaS AI Poster Generator deployable on Vercel",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev:server": "node --watch server/dev.js",
     "dev:client": "npm --prefix client run dev",
@@ -27,7 +30,24 @@
     "test:aidesign": "node server/scripts/test-poster-ai-design.js",
     "test:image": "node server/scripts/test-poster-image.js",
     "test:e2e-generate": "node server/scripts/test-e2e-generate.js",
-    "start": "node server/dev.js"
+    "start": "node server/dev.js",
+    "test": "npm run test:server && npm run test:client",
+    "test:server": "vitest run",
+    "test:client": "npm --prefix client run test",
+    "lint": "eslint .",
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
+    "test:e2e": "playwright test",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{js,jsx,mjs}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
   },
   "dependencies": {
     "@sentry/node": "11.6.0",

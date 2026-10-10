@@ -32,6 +32,10 @@ export function isSamplePlaceholder(text) {
   if (/^a heading of your own/i.test(t) || /^a smaller line under it/i.test(t) || /^a paragraph of plain words/i.test(t)) return true;
   if (/^line above the title/i.test(t) || /^button words/i.test(t) || /^call to action/i.test(t)) return true;
   if (/the person filling this in/i.test(t) || /chooses the picture/i.test(t)) return true;
+  if (/^complimentary registration and certificate/i.test(t)) return true;
+  if (/^interactive keynote and practical walkthroughs/i.test(t)) return true;
+  if (/^networking session with industry practitioners/i.test(t)) return true;
+  if (/^empowering communities,? transforming futures/i.test(t)) return true;
   return false;
 }
 
@@ -782,7 +786,7 @@ export function normalizeIconName(value) {
 }
 
 function derivedKey(kind, index) {
-  return `${kind === 'image' ? 'photo' : 'words'}-slot-${index + 1}`.slice(0, VARIABLE_LIMITS.key.max);
+  return `${kind === 'image' ? 'photo' : 'words'}_slot_${index + 1}`.slice(0, VARIABLE_LIMITS.key.max);
 }
 
 /**
@@ -1308,7 +1312,9 @@ export function resolveContentValues(content, { elements = [], cloudName = '', c
       for (const [key, value] of Object.entries(rawExtras)) {
         const slot = texts.get(key);
         if (!slot) {
-          problems.push(`"${key}" is not a blank this poster offers.`);
+          const validNames = Array.from(texts.values()).map((s) => s.label || s.key);
+          const validList = validNames.length ? ` Valid blanks: ${validNames.join(', ')}.` : ' This poster offers no text blanks.';
+          problems.push(`"${key}" is not a blank this poster offers.${validList}`);
           continue;
         }
         if (typeof value !== 'string') {
@@ -1333,7 +1339,9 @@ export function resolveContentValues(content, { elements = [], cloudName = '', c
       for (const [key, value] of Object.entries(rawImages)) {
         const slot = pictures.get(key);
         if (!slot) {
-          problems.push(`"${key}" is not a photo this poster offers.`);
+          const validNames = Array.from(pictures.values()).map((s) => s.label || s.key);
+          const validList = validNames.length ? ` Valid photos: ${validNames.join(', ')}.` : ' This poster offers no photo spaces.';
+          problems.push(`"${key}" is not a photo this poster offers.${validList}`);
           continue;
         }
         if (typeof value !== 'string') {

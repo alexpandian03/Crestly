@@ -126,3 +126,132 @@ export function normalizePosterContent(raw, valuesContext = null) {
   if (values.images) content.images = values.images;
   return content;
 }
+
+/**
+ * Maps filled-in blank answers from an old design snapshot to a target design snapshot:
+ * 1. By exact key match
+ * 2. By slot label match
+ * 3. By slot position match
+ * Unmatched answers are dropped and counted so callers can inform the user.
+ */
+export function remapContentToDesign(content, sourceDesign, targetDesign) {
+  const plainSource = plainish(sourceDesign);
+  const plainTarget = plainish(targetDesign);
+  const oldSlots = variableSlotsOf(elementsOfDesign(plainSource));
+  const newSlots = variableSlotsOf(elementsOfDesign(plainTarget));
+
+  const oldExtras = content?.extras && typeof content.extras === 'object' ? content.extras : {};
+  const newExtras = {};
+  const usedNewTextKeys = new Set();
+  const mappedTextKeys = new Set();
+  const droppedTexts = [];
+
+  const oldExtraEntries = Object.entries(oldExtras);
+
+  // 1. Exact key match for texts
+  for (const [key, val] of oldExtraEntries) {
+    const match = newSlots.texts.find((s) => s.key === key && !usedNewTextKeys.has(s.key));
+    if (match) {
+      newExtras[key] = val;
+      usedNewTextKeys.add(key);
+      mappedTextKeys.add(key);
+    }
+  }
+
+  // 2. Label match for texts
+  for (const [key, val] of oldExtraEntries) {
+    if (mappedTextKeys.has(key)) continue;
+    const oldSlot = oldSlots.texts.find((s) => s.key === key);
+    if (oldSlot?.label) {
+      const match = newSlots.texts.find(
+        (s) => s.label && s.label.toLowerCase() === oldSlot.label.toLowerCase() && !usedNewTextKeys.has(s.key)
+      );
+      if (match) {
+        newExtras[match.key] = val;
+        usedNewTextKeys.add(match.key);
+        mappedTextKeys.add(key);
+      }
+    }
+  }
+
+  // 3. Position match for texts
+  for (const [key, val] of oldExtraEntries) {
+    if (mappedTextKeys.has(key)) continue;
+    let pos = oldSlots.texts.findIndex((s) => s.key === key);
+    if (pos < 0) {
+      pos = oldExtraEntries.findIndex(([k]) => k === key);
+    }
+    if (pos >= 0 && pos < newSlots.texts.length && !usedNewTextKeys.has(newSlots.texts[pos].key)) {
+      const targetSlot = newSlots.texts[pos];
+      newExtras[targetSlot.key] = val;
+      usedNewTextKeys.add(targetSlot.key);
+      mappedTextKeys.add(key);
+    } else {
+      droppedTexts.push(key);
+    }
+  }
+
+  const oldImages = content?.images && typeof content.images === 'object' ? content.images : {};
+  const newImages = {};
+  const usedNewImageKeys = new Set();
+  const mappedImageKeys = new Set();
+  const droppedImages = [];
+
+  const oldImageEntries = Object.entries(oldImages);
+
+  // 1. Exact key match for images
+  for (const [key, val] of oldImageEntries) {
+    const match = newSlots.images.find((s) => s.key === key && !usedNewImageKeys.has(s.key));
+    if (match) {
+      newImages[key] = val;
+      usedNewImageKeys.add(key);
+      mappedImageKeys.add(key);
+    }
+  }
+
+  // 2. Label match for images
+  for (const [key, val] of oldImageEntries) {
+    if (mappedImageKeys.has(key)) continue;
+    const oldSlot = oldSlots.images.find((s) => s.key === key);
+    if (oldSlot?.label) {
+      const match = newSlots.images.find(
+        (s) => s.label && s.label.toLowerCase() === oldSlot.label.toLowerCase() && !usedNewImageKeys.has(s.key)
+      );
+      if (match) {
+        newImages[match.key] = val;
+        usedNewImageKeys.add(match.key);
+        mappedImageKeys.add(key);
+      }
+    }
+  }
+
+  // 3. Position match for images
+  for (const [key, val] of oldImageEntries) {
+    if (mappedImageKeys.has(key)) continue;
+    let pos = oldSlots.images.findIndex((s) => s.key === key);
+    if (pos < 0) {
+      pos = oldImageEntries.findIndex(([k]) => k === key);
+    }
+    if (pos >= 0 && pos < newSlots.images.length && !usedNewImageKeys.has(newSlots.images[pos].key)) {
+      const targetSlot = newSlots.images[pos];
+      newImages[targetSlot.key] = val;
+      usedNewImageKeys.add(targetSlot.key);
+      mappedImageKeys.add(key);
+    } else {
+      droppedImages.push(key);
+    }
+  }
+
+  const droppedCount = droppedTexts.length + droppedImages.length;
+  const remapped = {
+    ...(content || {}),
+    extras: Object.keys(newExtras).length ? newExtras : undefined,
+    images: Object.keys(newImages).length ? newImages : undefined,
+  };
+
+  return {
+    content: remapped,
+    droppedCount,
+    droppedKeys: [...droppedTexts, ...droppedImages],
+  };
+}

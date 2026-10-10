@@ -287,7 +287,7 @@ export function setItemMeta(item, items, patch, area) {
   const merged = { ...item, ...patch };
   if (patch.label !== undefined) {
     merged.label = labelFromWords(patch.label) || item.label || (item.kind === 'image' ? 'Photo' : 'Text');
-    merged.key = uniqueKey(merged.label, items, item.id);
+    merged.key = item.key || uniqueKey(merged.label, items, item.id);
     /* A hint nobody wrote still follows the name; a written one keeps its own words. */
     const untouched = !merged.hint || merged.hint === defaultHint(item.label || '');
     merged.hint = item.kind === 'text' ? (untouched ? defaultHint(merged.label) : plainText(merged.hint, VARIABLE_LIMITS.hintChars)) : '';
@@ -402,7 +402,7 @@ export function commitItemText(item, items, words, area) {
   const text = plainText(words, ELEMENT_LIMITS.textChars);
   if (!item?.variable || item.kind !== 'text') return patchItem(item, { text }, area);
   const merged = { ...item, text, label: labelFromWords(text) || item.label };
-  merged.key = uniqueKey(merged.label, items, item.id);
+  merged.key = item.key || uniqueKey(merged.label, items, item.id);
   /* Erasing the box leaves the name standing in it, which is what a blank is for. */
   if (!merged.text.trim()) merged.text = merged.label;
   /* Only a hint nobody touched follows the new name; a written one stays. */
@@ -439,8 +439,13 @@ export function duplicateItem(item, items, area) {
     locked: false,
   };
   if (copy.variable) {
-    copy.label = copyLabel(copy.label || copy.text);
-    copy.key = uniqueKey(copy.label, items);
+    const rawLabel = copy.label || copy.text || (copy.kind === 'image' ? 'Photo space' : 'Text space');
+    copy.label = copyLabel(rawLabel);
+    let newKey = uniqueKey(copy.label, items);
+    if (newKey === item.key) {
+      newKey = uniqueKey(`${copy.label} copy`, items);
+    }
+    copy.key = newKey;
     /* A copied blank asks for the same thing the first one did, in its own words. */
     if (copy.kind === 'text') copy.text = copy.label;
   }

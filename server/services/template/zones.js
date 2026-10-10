@@ -119,7 +119,7 @@ export function normalizeZones(zones = []) {
       if (zone?.[field] !== undefined) clean[field] = zone[field];
     }
     clean.id = String(clean.id ?? `zone-${clean.type}`).trim().slice(0, 80);
-    clean.type = clean.type;
+    clean.type = String(clean.type ?? '').trim();
     clean.x = toInt(clean.x ?? 0);
     clean.y = toInt(clean.y ?? 0);
     clean.w = toInt(clean.w ?? 0);

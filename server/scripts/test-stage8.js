@@ -820,6 +820,230 @@ async function run() {
     'a poster saved the old way still has no design of its own'
   );
 
+  // 19. Bug bundle fixes: template saving with/without image slot, photo precedence, remap on restore/apply-latest-design
+  // (a) & (b) Template mode saving with an image slot added in the template
+  const tplWithImage = await Template.create({
+    ...getDefaultTemplateData(clientA._id, `Image Slot Template ${runId}`),
+    editorVersion: 2,
+    elements: [
+      {
+        id: 'headline_1',
+        kind: 'text',
+        field: 'headline',
+        x: 50, y: 150, w: 800, h: 100,
+        text: 'Annual Charity Gala',
+      },
+      {
+        id: 'photo_slot_1',
+        kind: 'image',
+        field: 'photo',
+        variable: true,
+        key: 'speaker_photo',
+        label: 'Speaker photo',
+        x: 50, y: 300, w: 600, h: 400,
+      },
+    ],
+  });
+  created.templateIds.push(tplWithImage._id);
+
+  // Saving a poster with template mode against this template (with speaker_photo filled)
+  const posterWithImageSlot = await request('/api/posters', {
+    method: 'POST',
+    token: owner.token,
+    body: {
+      templateId: tplWithImage._id.toString(),
+      prompt: `Charity Gala ${runId}`,
+      content: validContent({
+        imageUrl: folderPhoto,
+        images: { speaker_photo: folderPhoto },
+      }),
+    },
+  });
+  assert(posterWithImageSlot.status === 201, 'poster in template mode with image slot saves successfully');
+  created.posterIds.push(posterWithImageSlot.body.data.poster._id);
+  assert(
+    posterWithImageSlot.body.data.poster.content.images.speaker_photo === folderPhoto,
+    'saved poster in template mode preserves the photo in the image slot'
+  );
+  assert(
+    posterWithImageSlot.body.data.poster.content.imageUrl === folderPhoto,
+    'saved poster in template mode preserves user photo url'
+  );
+
+  // If client sends an invalid/unoffered slot key (e.g. photo_space_1), server error lists valid slots in plain words
+  const unofferedSlotSave = await request('/api/posters', {
+    method: 'POST',
+    token: owner.token,
+    body: {
+      templateId: tplWithImage._id.toString(),
+      prompt: `Invalid slot ${runId}`,
+      content: validContent({
+        images: { photo_space_1: folderPhoto },
+      }),
+    },
+  });
+  assert(unofferedSlotSave.status === 400, 'unoffered photo slot is rejected');
+  assert(
+    /Valid photos: Speaker photo/.test(unofferedSlotSave.body.error.message),
+    'rejection lists valid photos in plain words'
+  );
+
+  // (c) Photo priority: user's own photo > AI picture dialog > stock photo
+  // The saved poster stores the user photo that the preview shows
+  const userPhotoPoster = await request('/api/posters', {
+    method: 'POST',
+    token: owner.token,
+    body: {
+      templateId: tplWithImage._id.toString(),
+      prompt: `Photo precedence test ${runId}`,
+      content: validContent({
+        imageUrl: folderPhoto,
+        images: { speaker_photo: folderPhoto },
+      }),
+    },
+  });
+  assert(userPhotoPoster.status === 201, 'poster with user photo saves');
+  created.posterIds.push(userPhotoPoster.body.data.poster._id);
+  assert(
+    userPhotoPoster.body.data.poster.content.imageUrl === folderPhoto,
+    'saved poster stores user photo url, not stock photo'
+  );
+
+  // (d) apply-latest-design and restore map old keys to new ones and drop obsolete keys with a friendly note
+  // Create a template with 2 text blanks
+  const dynamicTpl = await Template.create({
+    ...getDefaultTemplateData(clientA._id, `Dynamic Blanks Template ${runId}`),
+    editorVersion: 2,
+    elements: [
+      {
+        id: 'head_1',
+        kind: 'text',
+        field: 'headline',
+        x: 50, y: 150, w: 800, h: 100,
+        text: 'Main Event',
+      },
+      {
+        id: 'text_var_1',
+        kind: 'text',
+        variable: true,
+        key: 'sub_kicker',
+        label: 'Sub kicker',
+        maxLength: 40,
+        x: 50, y: 300, w: 400, h: 60,
+        text: 'Kicker words',
+      },
+      {
+        id: 'text_var_2',
+        kind: 'text',
+        variable: true,
+        key: 'old_extra',
+        label: 'Old extra',
+        maxLength: 50,
+        x: 50, y: 400, w: 400, h: 60,
+        text: 'Old extra words',
+      },
+    ],
+  });
+  created.templateIds.push(dynamicTpl._id);
+
+  // Save poster V1
+  const dynamicPosterRes = await request('/api/posters', {
+    method: 'POST',
+    token: owner.token,
+    body: {
+      templateId: dynamicTpl._id.toString(),
+      prompt: `Dynamic poster ${runId}`,
+      content: validContent({
+        extras: { sub_kicker: 'Exciting News', old_extra: 'Obsolete detail' },
+      }),
+    },
+  });
+  assert(dynamicPosterRes.status === 201, 'poster with dynamic blanks saved');
+  const dynamicPoster = dynamicPosterRes.body.data.poster;
+  created.posterIds.push(dynamicPoster._id);
+
+  // Update template: keep sub_kicker but drop old_extra
+  await Template.updateOne(
+    { _id: dynamicTpl._id },
+    {
+      $set: {
+        elements: [
+          {
+            id: 'head_1',
+            kind: 'text',
+            field: 'headline',
+            x: 50, y: 150, w: 800, h: 100,
+            text: 'Main Event Updated',
+          },
+          {
+            id: 'text_var_1',
+            kind: 'text',
+            variable: true,
+            key: 'sub_kicker',
+            label: 'Sub kicker',
+            maxLength: 40,
+            x: 50, y: 300, w: 400, h: 60,
+            text: 'Kicker words',
+          },
+        ],
+      },
+      $inc: { currentVersion: 1 },
+    }
+  );
+
+  // Call apply-latest-design: old_extra dropped with friendly note
+  const applyLatestRes = await request(`/api/posters/${dynamicPoster._id}/apply-latest-design`, {
+    method: 'POST',
+    token: owner.token,
+    body: { expectedVersion: dynamicPoster.currentVersion },
+  });
+  assert(applyLatestRes.status === 200, 'apply-latest-design succeeds with remapping');
+  const applyLatestPoster = applyLatestRes.body.data.poster;
+  assert(
+    applyLatestPoster.content.extras.sub_kicker === 'Exciting News',
+    'mapped blank sub_kicker is preserved'
+  );
+  assert(
+    applyLatestPoster.content.extras.old_extra === undefined,
+    'dropped blank old_extra is removed'
+  );
+  const latestVersion = applyLatestPoster.versions[applyLatestPoster.versions.length - 1];
+  assert(
+    /1 unused space was dropped/.test(latestVersion.note),
+    'version note contains friendly dropped spaces note'
+  );
+
+  // Restore V1 against the latest design: maps and drops with friendly note
+  await Poster.updateOne(
+    { _id: dynamicPoster._id, 'versions.versionNumber': 1 },
+    { $set: { 'versions.$.design': null } }
+  );
+
+  const restoreMappedRes = await request(`/api/posters/${dynamicPoster._id}/restore`, {
+    method: 'POST',
+    token: owner.token,
+    body: {
+      versionNumber: 1,
+      expectedVersion: applyLatestPoster.currentVersion,
+    },
+  });
+  assert(restoreMappedRes.status === 200, 'restore succeeds with remapping');
+  const restoreMappedPoster = restoreMappedRes.body.data.poster;
+  assert(
+    restoreMappedPoster.content.extras.sub_kicker === 'Exciting News',
+    'restored blank is preserved'
+  );
+  assert(
+    restoreMappedPoster.content.extras.old_extra === undefined,
+    'restored dropped blank is safely omitted'
+  );
+  const restoreMappedVersion = restoreMappedPoster.versions[restoreMappedPoster.versions.length - 1];
+  assert(
+    /1 unused space was dropped/.test(restoreMappedVersion.note),
+    'restore version note contains friendly dropped spaces note'
+  );
+
+
   console.log(`\nStage 8 tests passed: ${passed} assertions`);
 }
 

@@ -40,6 +40,7 @@ import {
 import {
   blankAnswersProblem,
   blankPayloadOf,
+  blanksOfDesign,
   canUploadBlankImage,
   mergeGeneratedBlanks,
 } from "../utils/posterVariables";
@@ -106,9 +107,9 @@ const PICTURE_IDLE = {
   subject: "",
 };
 
-function buildContentPayload(content) {
+function buildContentPayload(content, design = null) {
   if (!content) return null;
-  const blanks = blankPayloadOf(content);
+  const blanks = blankPayloadOf(content, design);
   return {
     title: String(content.title || "").trim(),
     tagline: String(content.tagline || "").trim(),
@@ -242,8 +243,8 @@ export default function Generate() {
 
   useEffect(() => () => clearTimeout(savedChipTimerRef.current), []);
 
-  const markSaved = (content) => {
-    savedSnapshotRef.current = JSON.stringify(buildContentPayload(content));
+  const markSaved = (content, targetDesign = null) => {
+    savedSnapshotRef.current = JSON.stringify(buildContentPayload(content, targetDesign || blanksSource));
   };
 
   useEffect(() => {
@@ -429,8 +430,21 @@ export default function Generate() {
         if (nextDesign) setPosterDesign(nextDesign);
         else if (designChanges) setPosterDesign(null);
 
-        setRawGeneratedContent(merged);
-        setGeneratedContent(merged);
+        const targetDesign = nextDesign || posterDesign || selectedTemplate;
+        const targetSlots = blanksOfDesign(targetDesign);
+        const resolvedImages = { ...(merged.images || {}) };
+        if (targetSlots.images.length > 0 && chosenImage) {
+          resolvedImages[targetSlots.images[0].key] = chosenImage;
+        }
+        const contentToSave = {
+          ...merged,
+          imageUrl: chosenImage,
+          image: chosenImage,
+          images: resolvedImages,
+        };
+
+        setRawGeneratedContent(contentToSave);
+        setGeneratedContent(contentToSave);
         setHistoryStack([]);
         setActiveInstruction(inst || "");
         setFeedback({
@@ -440,8 +454,8 @@ export default function Generate() {
             : "Poster ready! Download your file or refine the wording below.",
         });
 
-        const savedPayload = buildContentPayload(merged);
-        if (!savedPayload.title) return;
+        const savedPayload = buildContentPayload(contentToSave, targetDesign);
+        if (!savedPayload?.title) return;
 
         if (newDesignNeeded || !posterIdRef.current) {
           if (!resolvedTemplateId) {
@@ -635,8 +649,10 @@ export default function Generate() {
 
   const contentSnapshot = useMemo(
     () =>
-      posterContent ? JSON.stringify(buildContentPayload(posterContent)) : "",
-    [generatedContent, userImageUrl],
+      posterContent
+        ? JSON.stringify(buildContentPayload(posterContent, blanksSource))
+        : "",
+    [posterContent, blanksSource],
   );
   const hasUnsavedChanges =
     Boolean(posterContent) && contentSnapshot !== savedSnapshotRef.current;
@@ -805,7 +821,7 @@ export default function Generate() {
       const savedDesign = poster.design || posterDesign;
       setPosterDesign(savedDesign || null);
 
-      markSaved(op.content);
+      markSaved(op.content, savedDesign || blanksSource);
       retryOpRef.current = null;
       setSaveStatus("saved");
       setShowSavedChip(true);
@@ -881,7 +897,7 @@ export default function Generate() {
       if (!isEditOpen) setFeedback({ type: "error", message: tooMuch });
       return;
     }
-    const payload = buildContentPayload(posterContent);
+    const payload = buildContentPayload(posterContent, blanksSource);
     if (!payload || !payload.title) {
       setDrawerSaveError("Please add a headline before saving.");
       setDrawerConflict(false);

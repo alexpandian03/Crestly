@@ -1,5 +1,5 @@
 import { designsFor, recipeIds, RECIPE_VARIANTS } from '../../../../shared/designRecipes.js';
-import { iconForWords } from '../../../../shared/templateElements.js';
+import { iconForWords, isSamplePlaceholder } from '../../../../shared/templateElements.js';
 import {
   matchCategoryFromText,
   preferredArchetypesFor,
@@ -143,11 +143,13 @@ export function extractVenue(text) {
     }
   }
 
-  // 2. Specific places
+// 2. Specific places
   const knownPlaces = [
+    'community hall', 'village hall', 'town hall', 'city hall', 'banquet hall', 'memorial hall',
+    'community center', 'community centre', 'community grounds',
     'school ground', 'college ground', 'town square', 'city center', 'city centre',
-    'town hall', 'main stadium', 'campus auditorium', 'auditorium', 'community grounds',
-    'grand ballroom', 'green valley park', 'central park', 'sports complex'
+    'main stadium', 'campus auditorium', 'auditorium', 'grand ballroom',
+    'green valley park', 'central park', 'sports complex', 'sports ground'
   ];
   for (const place of knownPlaces) {
     const rx = new RegExp(`\\b([A-Za-z0-9'\\s]{0,25}?\\b${place})\\b`, 'i');
@@ -160,7 +162,7 @@ export function extractVenue(text) {
   return '';
 }
 
-/** Turn phrases like "Include registration desk and medals" into up to 3 short bullets (<=6 words). */
+/** Turn phrases like "Include registration desk and medals" or clauses into up to 3 short bullets (<=6 words). */
 export function extractBullets(text, fallbackBullets = []) {
   const t = String(text || '').trim();
   const includeMatch = t.match(/\b(?:include|including|featuring|with|add|make|create|have)\s+([A-Za-z0-9\s,'&/-]+?)(?:\.|$|(?:\s+on\s+\d+)|\s+at\s+[A-Z])/i);
@@ -171,16 +173,71 @@ export function extractBullets(text, fallbackBullets = []) {
       .map((p) => p.trim())
       .filter((p) => p.length > 2 && !/^(?:on|at|from)\s+/i.test(p));
     if (parts.length > 0) {
-      return parts.slice(0, 3).map((part) => {
+      const extracted = parts.slice(0, 3).map((part) => {
         const cleaned = stripInstructionWords(part);
         return trimToWords(cleaned, 6);
-      }).filter(Boolean);
+      }).filter((b) => b && !isSamplePlaceholder(b));
+      if (extracted.length > 0) return extracted;
     }
   }
-  return (fallbackBullets || []).slice(0, 3).map((b) => {
-    const cleaned = stripInstructionWords(b);
-    return trimToWords(cleaned, 6);
-  }).filter(Boolean);
+
+  // Extract descriptive clauses from the user's description
+  const headline = firstClauseOf(t).toLowerCase();
+  const venue = extractVenue(t).toLowerCase();
+
+  let rawClauses = [];
+  const sentences = t
+    .split(/[\n;.]/)
+    .map((c) => c.trim())
+    .filter(Boolean);
+
+  for (const s of sentences) {
+    const parts = s.split(/,\s*/).map((p) => p.trim()).filter(Boolean);
+    if (parts.length > 1) {
+      rawClauses.push(...parts);
+    } else {
+      rawClauses.push(s);
+    }
+  }
+
+  const extracted = [];
+  for (const clause of rawClauses) {
+    const lowerClause = clause.toLowerCase();
+    if (lowerClause === headline || (headline.length > 5 && lowerClause.includes(headline))) continue;
+    if (/\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{1,2}(?:st|nd|rd|th)?|\d{4})\b/i.test(clause)) continue;
+    if (/\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/i.test(clause)) continue;
+    if (venue && lowerClause.includes(venue)) continue;
+    if (/\b(?:at|in|venue:?|location:?)\s+/i.test(clause)) continue;
+
+    const cleaned = stripInstructionWords(clause);
+    if (!cleaned || cleaned.length < 3) continue;
+    if (isSamplePlaceholder(cleaned)) continue;
+
+    const bullet = trimToWords(cleaned.charAt(0).toUpperCase() + cleaned.slice(1), 6);
+    if (bullet && !extracted.includes(bullet)) {
+      extracted.push(bullet);
+      if (extracted.length >= 3) break;
+    }
+  }
+
+  if (extracted.length > 0) {
+    return extracted;
+  }
+
+  const safeFallbacks = (fallbackBullets || [])
+    .filter((b) => b && !isSamplePlaceholder(b))
+    .slice(0, 3)
+    .map((b) => {
+      const cleaned = stripInstructionWords(b);
+      return trimToWords(cleaned, 6);
+    })
+    .filter(Boolean);
+
+  if (safeFallbacks.length > 0) {
+    return safeFallbacks;
+  }
+
+  return ['Open to all participants', 'Everyone welcome to join'];
 }
 
 /** Extract CTA text from the description, never using "JOIN US", "COME CELEBRATE" or "FIND OUT MORE". */
@@ -208,7 +265,18 @@ export function extractCta(text) {
   return 'Open to all';
 }
 
-function defaultKicker(category) {
+export function extractKicker(text, title = '', category = 'general', sample = null) {
+  if (sample?.title?.sub) {
+    return trimToWords(sample.title.sub, 4);
+  }
+  const t = String(text || '').trim();
+  const colonMatch = t.match(/^([A-Za-z0-9\s]{3,20}):\s+/);
+  if (colonMatch) {
+    const candidate = stripInstructionWords(colonMatch[1].trim());
+    if (candidate && !isSamplePlaceholder(candidate)) {
+      return trimToWords(candidate, 4);
+    }
+  }
   switch (category) {
     case 'sports': return 'Annual Sports';
     case 'festival': return 'Festival Celebration';
@@ -216,11 +284,56 @@ function defaultKicker(category) {
     case 'awards': return 'Staff Recognition';
     case 'workshop': return 'Training Workshop';
     case 'notice': return 'Official Notice';
-    default: return 'Featured Event';
+    default: {
+      const lower = (t + ' ' + title).toLowerCase();
+      if (lower.includes('art') || lower.includes('music') || lower.includes('dance')) return 'Arts & Culture';
+      if (lower.includes('food') || lower.includes('bake') || lower.includes('cook')) return 'Food & Community';
+      if (lower.includes('book') || lower.includes('read') || lower.includes('library')) return 'Community Reading';
+      if (lower.includes('fair')) return 'Community Fair';
+      if (lower.includes('meet') || lower.includes('gather')) return 'Community Meetup';
+      if (lower.includes('youth') || lower.includes('kids') || lower.includes('student')) return 'Youth Initiative';
+      if (lower.includes('clean') || lower.includes('green') || lower.includes('plant')) return 'Green Initiative';
+      return 'Community Gathering';
+    }
   }
 }
 
-function defaultSubtitle(category) {
+export function extractSubtitle(text, title = '', category = 'general', sample = null) {
+  if (sample?.tagline) {
+    return trimToWords(sample.tagline, 10);
+  }
+
+  const t = String(text || '').trim();
+  const headline = (title || firstClauseOf(t)).toLowerCase();
+  const venue = extractVenue(t).toLowerCase();
+
+  const clauses = t
+    .split(/[\n;.]/)
+    .map((c) => c.trim())
+    .filter(Boolean);
+
+  for (const clause of clauses) {
+    const lower = clause.toLowerCase();
+    if (lower === headline || (headline.length > 5 && lower.includes(headline))) continue;
+    if (/\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{1,2}(?:st|nd|rd|th)?|\d{4})\b/i.test(clause)) continue;
+    if (/\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/i.test(clause)) continue;
+    if (venue && lower.includes(venue)) continue;
+    if (/\b(?:at|in|venue:?|location:?)\s+/i.test(clause)) continue;
+    const cleaned = stripInstructionWords(clause);
+    if (!cleaned || cleaned.length < 5) continue;
+    if (isSamplePlaceholder(cleaned)) continue;
+
+    return trimToWords(cleaned.charAt(0).toUpperCase() + cleaned.slice(1), 10);
+  }
+
+  const dashMatch = t.match(/^[^-–—]+[-–—]\s*([^.,;\n]+)/);
+  if (dashMatch) {
+    const candidate = stripInstructionWords(dashMatch[1].trim());
+    if (candidate && !isSamplePlaceholder(candidate) && candidate.length >= 5) {
+      return trimToWords(candidate.charAt(0).toUpperCase() + candidate.slice(1), 10);
+    }
+  }
+
   switch (category) {
     case 'sports': return 'Celebrating athletic excellence and community spirit';
     case 'festival': return 'Celebrate the season with festive joy and community';
@@ -228,7 +341,13 @@ function defaultSubtitle(category) {
     case 'awards': return 'Honouring dedication and outstanding achievement';
     case 'workshop': return 'Gain practical skills and hands-on experience';
     case 'notice': return 'Important operational updates and schedule details';
-    default: return 'Empowering communities and transforming futures together';
+    default: {
+      const cleanTitle = title || firstClauseOf(t);
+      if (cleanTitle && cleanTitle.length > 5 && !isSamplePlaceholder(cleanTitle)) {
+        return `A special gathering celebrating ${cleanTitle.toLowerCase()}`;
+      }
+      return 'Bringing our community together';
+    }
   }
 }
 
@@ -257,16 +376,18 @@ function designAnswer({ text, date, time, venue, avoidRecipeIds, variant, instru
     variant,
     instruction,
   });
-  const archetype = selection.archetype;
+  let archetype = selection.archetype;
   const forcedVariant = selection.variant;
+
+  const wantsPhoto = lower.includes('sport') || lower.includes('fest') || lower.includes('pongal') || lower.includes('cultural') || lower.includes('blood') || lower.includes('diwali') || Boolean(sample?.imageQuery);
+  const avoids = (Array.isArray(avoidRecipeIds) ? avoidRecipeIds : []).map((id) => String(id).toLowerCase());
+  if (wantsPhoto && !avoids.includes('photo-hero') && !instruction) {
+    archetype = 'photo-hero';
+  }
 
   const words = [text, venue].filter(Boolean).join(' ');
   const venueVal = venue || 'Venue to be announced';
   const cta = extractCta(text);
-
-  const kicker = sample?.title?.sub
-    ? trimToWords(sample.title.sub, 4)
-    : defaultKicker(category);
 
   let title = '';
   if (sample?.title?.main) {
@@ -276,9 +397,13 @@ function designAnswer({ text, date, time, venue, avoidRecipeIds, variant, instru
     title = headline.length > 5 ? headline : 'Featured Community Event';
   }
 
+  const kicker = sample?.title?.sub
+    ? trimToWords(sample.title.sub, 4)
+    : extractKicker(text, title, category, sample);
+
   const subtitle = sample?.tagline
     ? trimToWords(sample.tagline, 10)
-    : defaultSubtitle(category);
+    : extractSubtitle(text, title, category, sample);
 
   const bullets = extractBullets(text, sample?.bullets || ['Everyone is welcome to join']);
   const photoKeywords = defaultKeywords(category, sample?.imageQuery);
@@ -388,8 +513,10 @@ export async function generateWithMock({
     .slice(0, 60);
 
   // 5. Derive Kicker & Subtitle
-  let kicker = 'Featured Event';
-  let subtitle = 'Empowering Communities, Transforming Futures';
+  const sample = sampleFor(lower);
+  const category = sample ? sample.category : (matchCategoryFromText(text) || 'general');
+  let kicker = extractKicker(text, title, category, sample);
+  let subtitle = extractSubtitle(text, title, category, sample);
   if (lower.includes('sport') || lower.includes('athletic')) {
     kicker = 'Cheer For Your Team';
     subtitle = 'A day of races, relays and records';
@@ -414,11 +541,7 @@ export async function generateWithMock({
   }
 
   // 6. Derive Details (3 items built from user words)
-  let details = extractBullets(text, [
-    'Complimentary registration and certificate',
-    'Interactive keynote and practical walkthroughs',
-    'Networking session with industry practitioners',
-  ]).slice(0, 3);
+  let details = extractBullets(text).slice(0, 3);
 
   // 7. Derive CTA
   const cta = extractCta(text);

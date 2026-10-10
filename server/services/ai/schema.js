@@ -243,7 +243,7 @@ export const designJsonSchema = {
 const validateDesignCompiled = ajv.compile(designJsonSchema);
 
 export const CATEGORY_ARCHETYPES = {
-  sports: ['date-block', 'bold-type'],
+  sports: ['photo-hero', 'date-block', 'bold-type'],
   awards: ['centered-award'],
   workshop: ['agenda'],
   seminar: ['agenda'],

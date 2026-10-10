@@ -116,12 +116,31 @@ export function withBlankImage(content, key, url) {
 }
 
 /** The two answer sets as they should go to the API: absent when there is nothing to store. */
-export function blankPayloadOf(content) {
+export function blankPayloadOf(content, design = null) {
   const extras = withoutEmpty(plainish(content)?.extras);
   const images = withoutEmpty(plainish(content)?.images);
+  if (!design) {
+    return {
+      extras: Object.keys(extras).length ? extras : undefined,
+      images: Object.keys(images).length ? images : undefined,
+    };
+  }
+  const slots = blanksOfDesign(design);
+  const offeredTexts = new Set(slots.texts.map((s) => s.key));
+  const offeredImages = new Set(slots.images.map((s) => s.key));
+
+  const filteredExtras = {};
+  for (const [k, v] of Object.entries(extras)) {
+    if (offeredTexts.has(k)) filteredExtras[k] = v;
+  }
+  const filteredImages = {};
+  for (const [k, v] of Object.entries(images)) {
+    if (offeredImages.has(k)) filteredImages[k] = v;
+  }
+
   return {
-    extras: Object.keys(extras).length ? extras : undefined,
-    images: Object.keys(images).length ? images : undefined,
+    extras: Object.keys(filteredExtras).length ? filteredExtras : undefined,
+    images: Object.keys(filteredImages).length ? filteredImages : undefined,
   };
 }
 

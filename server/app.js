@@ -12,8 +12,20 @@ import uploadRoutes from './routes/upload.routes.js';
 import templateRoutes from './routes/template.routes.js';
 import posterRoutes from './routes/poster.routes.js';
 
+import { initServerSentry, captureServerException } from './config/sentry.js';
+import { httpLogger } from './utils/logger.js';
+
+initServerSentry();
+
 const app = express();
 app.set('trust proxy', 1);
+
+// HTTP logging via pino-http (attaches request ID, strips secrets/tokens/bodies)
+app.use(httpLogger);
+app.use((req, res, next) => {
+  if (req.id) res.setHeader('x-request-id', req.id);
+  next();
+});
 
 // Security headers
 app.use(
@@ -82,7 +94,10 @@ app.use((req, res, next) => {
 app.use((err, req, res, next) => {
   const duplicateEmail = err?.code === 11000 && err?.keyPattern?.email;
   const status = duplicateEmail ? 409 : err.status || err.statusCode || 500;
-  if (status >= 500) console.error('Unhandled server error:', err);
+  if (status >= 500) {
+    console.error('Unhandled server error:', err);
+    captureServerException(err);
+  }
   const message = duplicateEmail
     ? 'That email is already in use'
     : status === 500 && process.env.NODE_ENV === 'production'

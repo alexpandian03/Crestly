@@ -29,6 +29,17 @@ import {
   resolveStyleTokens,
 } from '../../shared/templateElements.js';
 import { generateToken } from '../services/auth.service.js';
+import {
+  commitItemText,
+  duplicateItem,
+  setItemMeta,
+} from '../../client/src/utils/templateEditorItems.js';
+import {
+  extractVenue,
+  extractBullets,
+  extractSubtitle,
+  extractKicker,
+} from '../services/ai/providers/mock.js';
 
 if (process.env.NODE_ENV === 'production') {
   throw new Error('Stage 9 tests cannot run in production.');
@@ -1390,6 +1401,134 @@ async function run() {
   assert(resolvedElAfter.style.color === resolvedElBefore.style.color, 'snapshot tokens resolve identical color after brand kit changes');
   assert(resolvedElAfter.style.fontFamily === resolvedElBefore.style.fontFamily, 'snapshot tokens resolve identical font after brand kit changes');
   assert(effPageAfter.background.color === effPageBefore.background.color, 'snapshot effectivePage resolves identical after brand kit changes');
+
+  // 19. Bug bundle fixes: slot key stability, uniqueness on duplicate, plain-word error messages, and mock AI extraction
+  // (a) Slot key stability on text edit
+  const testArea = { x: 50, y: 150, w: 980, h: 1050 };
+  const originalSlot = {
+    id: 'slot_item_1',
+    kind: 'text',
+    variable: true,
+    key: 'sponsor_name',
+    label: 'Sponsor name',
+    text: 'Sponsor Organization',
+    x: 60,
+    y: 200,
+    w: 300,
+    h: 50,
+  };
+  const listWithSlot = [originalSlot];
+  const editedItem = commitItemText(originalSlot, listWithSlot, 'Updated Sponsor Text', testArea);
+  assert(
+    editedItem.key === 'sponsor_name',
+    'slot key remains stable when text is edited in commitItemText'
+  );
+  const metaEditedItem = setItemMeta(originalSlot, listWithSlot, { label: 'Sponsor name', maxLength: 50 }, testArea);
+  assert(
+    metaEditedItem.key === 'sponsor_name',
+    'slot key remains stable when metadata is updated with existing key in setItemMeta'
+  );
+
+  // (b) Duplicated slot gets a brand-new unique key that does not collide
+  const duplicatedItem = duplicateItem(originalSlot, listWithSlot, testArea);
+  assert(
+    originalSlot.key !== duplicatedItem.key,
+    'duplicated slot gets a unique key that does not collide with the original item key'
+  );
+  assert(
+    duplicatedItem.key.startsWith('sponsor_name_'),
+    'duplicated slot key is derived uniquely from label'
+  );
+
+  // (c) Server errors list valid slot names in plain words
+  const unofferedSlotTemplate = await Template.create({
+    ...getDefaultTemplateData(clientA._id, `Slot Error Template ${runId}`),
+    editorVersion: 2,
+    elements: [
+      {
+        id: 'head_el_1',
+        kind: 'text',
+        field: 'headline',
+        x: 50,
+        y: 150,
+        w: 800,
+        h: 100,
+        text: 'Spring Conference',
+      },
+      {
+        id: 'text_var_el_1',
+        kind: 'text',
+        variable: true,
+        key: 'speaker_bio',
+        label: 'Speaker bio',
+        maxLength: 60,
+        x: 50,
+        y: 300,
+        w: 400,
+        h: 60,
+        text: 'Keynote biography',
+      },
+    ],
+  });
+  created.templateIds.push(unofferedSlotTemplate._id);
+
+  const invalidBlankPoster = await request('/api/posters', {
+    method: 'POST',
+    token: admin.token,
+    body: {
+      templateId: unofferedSlotTemplate._id.toString(),
+      prompt: `Invalid blank ${runId}`,
+      content: {
+        title: 'Spring Conference',
+        tagline: 'Join us for talks',
+        date: '10 May',
+        time: '10 AM',
+        venue: 'Town Hall',
+        details: ['Session 1'],
+        imageQuery: 'conference',
+        extras: { unoffered_blank: 'Something' },
+      },
+    },
+  });
+  assert(invalidBlankPoster.status === 400, 'unoffered blank is rejected');
+  assert(
+    /Valid blanks: Speaker bio/.test(invalidBlankPoster.body.error.message),
+    'rejection message lists valid blanks in plain words'
+  );
+
+  // (d) Mock AI extraction fixes: venue 'community hall', non-sample bullets, dynamic kicker/subtitle
+  const venueResult = extractVenue('Community health checkup camp, community hall, 15 Oct, 10 AM');
+  assert(
+    venueResult === 'Community Hall',
+    'extractVenue correctly parses "community hall" into "Community Hall"'
+  );
+
+  const extractedBullets = extractBullets(
+    'Youth Technology Fair. Robotics showcase, chemical demonstrations, solar project exhibits. Community hall, 10 AM.'
+  );
+  assert(extractedBullets.length === 3, 'extracts 3 descriptive clauses as bullets');
+  assert(
+    !extractedBullets.some((b) => /complimentary registration/i.test(b)),
+    'extractBullets never falls back to template sample copy'
+  );
+
+  const extractedSub = extractSubtitle(
+    'Coding Bootcamp 2026. Fast-track your engineering career with industry mentors. Community hall, 10 AM.',
+    'Coding Bootcamp 2026'
+  );
+  assert(
+    extractedSub === 'Fast-track your engineering career with industry mentors',
+    'extractSubtitle extracts user descriptive sentence rather than canned sample copy'
+  );
+
+  const extractedKickerVal = extractKicker(
+    'Youth Art Exhibition, inspiring young artists, community hall, 10 AM',
+    'Youth Art Exhibition'
+  );
+  assert(
+    extractedKickerVal === 'Arts & Culture',
+    'extractKicker derives contextual kicker instead of defaulting to FEATURED EVENT'
+  );
 
   console.log(`\nStage 9 tests passed: ${passed} assertions`);
 }
