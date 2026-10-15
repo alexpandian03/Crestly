@@ -26,5 +26,8 @@ Thumbs.db
 # Testing
 test-results/
 playwright-report/
+*.sarif
+results.sarif
 
 .backups/
+
