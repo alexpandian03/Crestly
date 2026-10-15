@@ -1,4 +1,5 @@
-import React, { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   ExternalLink,
@@ -15,16 +16,12 @@ import {
   ColorInput,
   FONT_OPTIONS,
   Field,
-  LIMITS,
   SectionCard,
-  Segmented,
   Select,
-  SliderNumber,
   SOCIAL_OPTIONS,
   TextInput,
   TextStyleEditor,
   Toggle,
-  BackgroundEditor,
 } from "../components/brand/controls";
 import {
   BRAND_RENDER_DEFAULTS,
@@ -32,8 +29,10 @@ import {
 } from "../utils/brandRender";
 import { applyBrandPreset, BRAND_PRESET_LIST } from "../utils/brandPresets";
 import { friendlyError } from "../utils/brandImage";
+import { kitBandIsLaidOut, resetBandPayload } from "../utils/brandBands";
 import { contrastLabel, wcagLevel } from "../utils/contrast";
-import { templateIdOf } from "../utils/templateRender";
+import { resolveTemplateSize, templateIdOf } from "../utils/templateRender";
+import { resolveBands } from "../../../shared/templateElements.js";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Skeleton } from "../components/ui/skeleton";
@@ -43,11 +42,6 @@ import {
   TabsTrigger,
   TabsContent,
 } from "../components/ui/tabs";
-
-/** Only the Create page's two settings, loaded when that section is opened. */
-const DesignModesCard = lazy(
-  () => import("../components/brand/DesignModesCard"),
-);
 
 const SAMPLE_CONTENT = {
   title: "Community Health Camp",
@@ -118,7 +112,7 @@ function blankKit() {
       primary: "#2563eb",
       secondary: "#111827",
       accent: "#f59e0b",
-      text: "#ffffff",
+      text: "#111827",
       background: "#ffffff",
     },
     fonts: { heading: "Outfit", body: "Inter" },
@@ -139,6 +133,12 @@ function socialLabel(platform) {
   return labels[platform] || platform;
 }
 
+const TAB_TRIGGER =
+  "h-10 px-0 pb-3 text-sm font-medium text-[#6B7280] hover:text-[#111827] border-b-2 border-transparent data-[state=active]:border-[#2563EB] data-[state=active]:text-[#111827] rounded-none bg-transparent shadow-none data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-colors shrink-0";
+
+/** How wide a band preview is drawn, in screen pixels. */
+const BAND_STRIP_WIDTH = 360;
+
 /** Measured contrast of a colour the poster actually paints. */
 function Readout({ foreground, background, large = false }) {
   const level = wcagLevel(foreground, background, { large });
@@ -155,7 +155,41 @@ function Readout({ foreground, background, large = false }) {
   );
 }
 
+/**
+ * One band exactly as a poster draws it: the real poster is painted at full width and the strip
+ * shows only the band's own part of it, so this preview cannot disagree with the poster.
+ */
+function BandStrip({ band, brandKit, posterSize, posterTemplate }) {
+  if (!band || !posterSize?.width) return null;
+  const scale = BAND_STRIP_WIDTH / posterSize.width;
+  const stripHeight = Math.max(8, Math.round(band.height * scale));
+  return (
+    <div
+      className="relative overflow-hidden rounded-[6px] border border-[#E5E7EB] bg-white"
+      style={{ width: `${BAND_STRIP_WIDTH}px`, height: `${stripHeight}px` }}
+      aria-hidden="true"
+    >
+      <div
+        className="absolute left-0"
+        style={{
+          top: `${-(band.y || 0) * scale}px`,
+          width: `${BAND_STRIP_WIDTH}px`,
+        }}
+      >
+        <TemplatePreview
+          eager
+          size={BAND_STRIP_WIDTH}
+          brandKit={brandKit}
+          template={posterTemplate}
+          sample={SAMPLE_CONTENT}
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function BrandKit() {
+  const navigate = useNavigate();
   const { user, activeClientId } = useAuth();
   const [loading, setLoading] = useState(true);
   const [loadNote, setLoadNote] = useState("");
@@ -166,11 +200,15 @@ export default function BrandKit() {
   const [template, setTemplate] = useState(FALLBACK_TEMPLATE);
   const [saving, setSaving] = useState(false);
   const [pendingPreset, setPendingPreset] = useState(null);
+  const [presetsOpen, setPresetsOpen] = useState(false);
   const [previewOverflow, setPreviewOverflow] = useState(null);
 
   const [activeTab, setActiveTab] = useState(() => {
     try {
-      return sessionStorage.getItem("brand-kit-tab") || "identity";
+      const stored = sessionStorage.getItem("brand-kit-tab");
+      return stored === "identity" || stored === "colors-fonts" || stored === "bands"
+        ? stored
+        : "identity";
     } catch {
       return "identity";
     }
@@ -262,6 +300,14 @@ export default function BrandKit() {
     [kit, template],
   );
 
+  /* Where each band sits and how tall it is on the poster being previewed. */
+  const bands = useMemo(
+    () => (kit ? resolveBands(kit, template) : null),
+    [kit, template],
+  );
+
+  const posterSize = useMemo(() => resolveTemplateSize(template), [template]);
+
   const setTop = (over) => setKit((prev) => ({ ...prev, ...over }));
   const setSection = (section, over) =>
     setKit((prev) => ({
@@ -298,36 +344,6 @@ export default function BrandKit() {
       return next;
     });
     toast.success("That part is back to its saved values.");
-  };
-
-  const resetContentArea = () => {
-    if (!saved) return;
-    setKit((prev) => ({
-      ...prev,
-      content: {
-        ...(prev.content || {}),
-        background: clone(saved.content?.background ?? prev.content?.background),
-        decoration: saved.content?.decoration ?? prev.content?.decoration,
-        decorationColor:
-          saved.content?.decorationColor ?? prev.content?.decorationColor,
-        watermark: clone(saved.content?.watermark ?? prev.content?.watermark),
-        defaultImageUrl:
-          saved.content?.defaultImageUrl ?? prev.content?.defaultImageUrl,
-      },
-    }));
-    toast.success("Area behind poster text is back to saved values.");
-  };
-
-  const resetInfoCard = () => {
-    if (!saved) return;
-    setKit((prev) => ({
-      ...prev,
-      content: {
-        ...(prev.content || {}),
-        infoCard: clone(saved.content?.infoCard ?? prev.content?.infoCard),
-      },
-    }));
-    toast.success("Cards for date, time and place are back to saved values.");
   };
 
   const resetFontsAndSizes = () => {
@@ -376,6 +392,33 @@ export default function BrandKit() {
     };
   };
 
+  /** Write the form to the organization's kit and start again from what comes back. */
+  const persist = async (source) => {
+    setSaving(true);
+    setSaveError("");
+    try {
+      const response = await api.put("/brand-kit", buildPayload(source));
+      if (!response.data?.success)
+        throw new Error(response.data?.error?.message || "");
+      const returned = response.data.data.brandKit;
+      setKit(returned);
+      setSaved(clone(returned));
+      setLoadNote("");
+      toast.success("Brand kit saved.");
+      return true;
+    } catch (err) {
+      setSaveError(
+        friendlyError(
+          err,
+          "The brand kit could not be saved. Please try again.",
+        ),
+      );
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!kit) return;
     const name = String(kit.orgName || "").trim();
@@ -403,28 +446,7 @@ export default function BrandKit() {
       );
       return;
     }
-
-    setSaving(true);
-    setSaveError("");
-    try {
-      const response = await api.put("/brand-kit", buildPayload(kit));
-      if (!response.data?.success)
-        throw new Error(response.data?.error?.message || "");
-      const returned = response.data.data.brandKit;
-      setKit(returned);
-      setSaved(clone(returned));
-      setLoadNote("");
-      toast.success("Brand kit saved.");
-    } catch (err) {
-      setSaveError(
-        friendlyError(
-          err,
-          "The brand kit could not be saved. Please try again.",
-        ),
-      );
-    } finally {
-      setSaving(false);
-    }
+    await persist(kit);
   };
 
   const handleDiscard = () => {
@@ -436,13 +458,39 @@ export default function BrandKit() {
     toast.success("Changes discarded.");
   };
 
+  /**
+   * One band, put back to being drawn from the logo and contact details. Saved straight away,
+   * because the place it was arranged is the header and footer editor, not this form.
+   */
+  const resetBand = async (kind) => {
+    if (!kit) return;
+    const label = kind === "header" ? "header" : "footer";
+    if (
+      !window.confirm(
+        `Reset the ${label} to the default from your logo and contact details? The arrangement you made for it will be cleared.`
+      )
+    )
+      return;
+    const nextKit = {
+      ...kit,
+      [kind]: {
+        ...(kit[kind] || {}),
+        ...resetBandPayload(kit, kind, kit.defaultPosterSize),
+      },
+    };
+    setKit(nextKit);
+    const savedOk = await persist(nextKit);
+    if (savedOk) toast.success(`Your ${label} is back to its default look.`);
+  };
+
   const applyPreset = (presetId) => {
     setKit((prev) => applyBrandPreset(prev, presetId));
     setPendingPreset(null);
+    setPresetsOpen(false);
     toast.success("Preset applied. Everything below is still editable.");
   };
 
-  if (loading || !kit || !resolved) {
+  if (loading || !kit || !resolved || !bands) {
     return (
       <div className="bg-white min-h-[calc(100vh-56px)]">
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
@@ -476,9 +524,27 @@ export default function BrandKit() {
   const logoUrl = primaryLogoUrl(kit);
   const posterName = header.orgName?.text || kit.orgName || "Organization name";
 
+  const bandCards = [
+    {
+      kind: "header",
+      title: "Header",
+      desc: "The top of every poster: your logo, your name and anything else you place there.",
+      plain: kitBandIsLaidOut(kit, "header")
+        ? "This header is arranged by hand. Move its parts in the header editor."
+        : "This header is drawn from your logo and name. Edit it to place its parts yourself.",
+    },
+    {
+      kind: "footer",
+      title: "Footer",
+      desc: "The bottom of every poster: your contact details and anything else you place there.",
+      plain: kitBandIsLaidOut(kit, "footer")
+        ? "This footer is arranged by hand. Move its parts in the footer editor."
+        : "This footer is drawn from your contact details. Edit it to place its parts yourself.",
+    },
+  ];
+
   return (
     <div className="bg-white min-h-[calc(100vh-56px)]">
-      {/* 1. Page Header (stays as is) */}
       <div className="sticky top-0 z-30 bg-white border-b border-[#E5E7EB] px-4 sm:px-6 py-3.5">
         <div className="max-w-[1400px] mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -486,7 +552,9 @@ export default function BrandKit() {
               Brand kit
             </h1>
             <p className="text-xs sm:text-sm text-[#6B7280] mt-0.5">
-              {kit.orgName || "This organization"} · everything here is locked onto every poster, so the assistant only writes the words in the middle.
+              {kit.orgName || "This organization"} · everything here is locked
+              onto every poster, so the assistant only writes the words in the
+              middle.
             </p>
           </div>
           <div className="flex items-center gap-3 shrink-0">
@@ -544,73 +612,39 @@ export default function BrandKit() {
           </div>
         )}
 
-        {/* 4. Tabs root wraps BOTH TabsList and the two-column grid */}
         <Tabs
           value={activeTab}
           onValueChange={handleTabChange}
           className="w-full flex flex-col gap-6"
         >
-          {/* 2. ONE full-width horizontal tab row (underline style) */}
           <div className="w-full border-b border-[#E5E7EB] overflow-x-auto">
             <TabsList
               variant="line"
               className="h-10 p-0 gap-6 bg-transparent flex justify-start min-w-max border-b-0 whitespace-nowrap"
             >
-              <TabsTrigger
-                value="identity"
-                className="h-10 px-0 pb-3 text-sm font-medium text-[#6B7280] hover:text-[#111827] border-b-2 border-transparent data-[state=active]:border-[#2563EB] data-[state=active]:text-[#111827] rounded-none bg-transparent shadow-none data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-colors shrink-0"
-              >
-                Identity and logo
+              <TabsTrigger value="identity" className={TAB_TRIGGER}>
+                Identity and contact
               </TabsTrigger>
-              <TabsTrigger
-                value="header"
-                className="h-10 px-0 pb-3 text-sm font-medium text-[#6B7280] hover:text-[#111827] border-b-2 border-transparent data-[state=active]:border-[#2563EB] data-[state=active]:text-[#111827] rounded-none bg-transparent shadow-none data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-colors shrink-0"
-              >
-                Header
+              <TabsTrigger value="colors-fonts" className={TAB_TRIGGER}>
+                Colours and fonts
               </TabsTrigger>
-              <TabsTrigger
-                value="background"
-                className="h-10 px-0 pb-3 text-sm font-medium text-[#6B7280] hover:text-[#111827] border-b-2 border-transparent data-[state=active]:border-[#2563EB] data-[state=active]:text-[#111827] rounded-none bg-transparent shadow-none data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-colors shrink-0"
-              >
-                Poster background
-              </TabsTrigger>
-              <TabsTrigger
-                value="footer"
-                className="h-10 px-0 pb-3 text-sm font-medium text-[#6B7280] hover:text-[#111827] border-b-2 border-transparent data-[state=active]:border-[#2563EB] data-[state=active]:text-[#111827] rounded-none bg-transparent shadow-none data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-colors shrink-0"
-              >
-                Footer
-              </TabsTrigger>
-              <TabsTrigger
-                value="colors-fonts"
-                className="h-10 px-0 pb-3 text-sm font-medium text-[#6B7280] hover:text-[#111827] border-b-2 border-transparent data-[state=active]:border-[#2563EB] data-[state=active]:text-[#111827] rounded-none bg-transparent shadow-none data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-colors shrink-0"
-              >
-                Colors and fonts
-              </TabsTrigger>
-              <TabsTrigger
-                value="presets"
-                className="h-10 px-0 pb-3 text-sm font-medium text-[#6B7280] hover:text-[#111827] border-b-2 border-transparent data-[state=active]:border-[#2563EB] data-[state=active]:text-[#111827] rounded-none bg-transparent shadow-none data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-colors shrink-0"
-              >
-                Presets
-              </TabsTrigger>
-              <TabsTrigger
-                value="design"
-                className="h-10 px-0 pb-3 text-sm font-medium text-[#6B7280] hover:text-[#111827] border-b-2 border-transparent data-[state=active]:border-[#2563EB] data-[state=active]:text-[#111827] rounded-none bg-transparent shadow-none data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-colors shrink-0"
-              >
-                Poster design
+              <TabsTrigger value="bands" className={TAB_TRIGGER}>
+                Header and footer
               </TabsTrigger>
             </TabsList>
           </div>
 
-          {/* 3. Below the tab row, a two-column grid ONLY for content */}
           <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_380px]">
-            {/* Left column (min-w-0, space-y-8): TabsContent for active tab */}
             <div className="min-w-0 space-y-8">
-              {/* Tab 1: Identity and logo */}
-              <TabsContent value="identity" className="mt-0 outline-none space-y-8">
+              {/* Tab 1: Identity and contact */}
+              <TabsContent
+                value="identity"
+                className="mt-0 outline-none space-y-8"
+              >
                 <SectionCard
                   title="Organization identity"
                   desc="The name and mark that appear on every poster this organization creates."
-                  onReset={() => resetSection(["orgName", "logos"])}
+                  onReset={() => resetSection(["orgName", "logos", "header"])}
                 >
                   <TextInput
                     id="orgName"
@@ -632,19 +666,9 @@ export default function BrandKit() {
                           : [],
                       })
                     }
-                    hint="A transparent PNG works best. It is used in the header and, if you switch it on, as a faint watermark."
+                    hint="A transparent PNG works best. It is used at the top of every poster and, if you switch it on, as a faint watermark."
                   />
-                </SectionCard>
-              </TabsContent>
-
-              {/* Tab 2: Header */}
-              <TabsContent value="header" className="mt-0 outline-none space-y-8">
-                <SectionCard
-                  title="Header text"
-                  desc="What appears in the header at the top of every poster."
-                  onReset={() => resetSection("header")}
-                >
-                  <div className="space-y-3">
+                  <div className="space-y-3 pt-1">
                     <Toggle
                       label="Show the logo"
                       checked={header.logo?.show !== false}
@@ -691,253 +715,8 @@ export default function BrandKit() {
                 </SectionCard>
 
                 <SectionCard
-                  title="Header dimensions and background"
-                  desc="Height, placement, background and dividers for the top banner."
-                  onReset={() => resetSection("header")}
-                >
-                  <div className="grid grid-cols-2 gap-4">
-                    <SliderNumber
-                      label="Header height"
-                      value={header.height ?? LIMITS.headerHeight.min}
-                      onChange={(next) => setSection("header", { height: next })}
-                      min={LIMITS.headerHeight.min}
-                      max={LIMITS.headerHeight.max}
-                      step={LIMITS.headerHeight.step}
-                      unit="px"
-                    />
-                    <Segmented
-                      label="Alignment"
-                      value={header.alignment || "left"}
-                      onChange={(next) =>
-                        setSection("header", { alignment: next })
-                      }
-                      options={["left", "center", "right"]}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <SliderNumber
-                      label="Logo size"
-                      value={header.logo?.size ?? LIMITS.logoSize.min}
-                      onChange={(next) =>
-                        setSub("header", "logo", { size: next })
-                      }
-                      min={LIMITS.logoSize.min}
-                      max={LIMITS.logoSize.max}
-                      step={LIMITS.logoSize.step}
-                      unit="px"
-                      hint="The logo shrinks automatically if the header is too short for it."
-                    />
-                    <Segmented
-                      label="Logo position"
-                      value={header.logo?.position || "left"}
-                      onChange={(next) =>
-                        setSub("header", "logo", { position: next })
-                      }
-                      options={["left", "top", "bottom", "right"]}
-                    />
-                  </div>
-
-                  <BackgroundEditor
-                    label="Header background"
-                    value={header.background}
-                    types={["color", "gradient", "image"]}
-                    uploadKind="header"
-                    uploadLabel="Upload header image"
-                    onChange={(next) =>
-                      setSection("header", { background: next })
-                    }
-                    hint="The name and tagline are always re-colored so they stay readable on top of this."
-                  />
-
-                  <TextStyleEditor
-                    label="Organization name style"
-                    value={header.orgName?.style}
-                    onSurface={resolved.header.surface}
-                    sample={posterName}
-                    onChange={(next) =>
-                      setSub("header", "orgName", { style: next })
-                    }
-                  />
-
-                  <TextStyleEditor
-                    label="Tagline style"
-                    value={header.tagline?.style}
-                    onSurface={resolved.header.surface}
-                    sample={header.tagline?.text || "Tagline appears like this"}
-                    onChange={(next) =>
-                      setSub("header", "tagline", { style: next })
-                    }
-                  />
-
-                  <div className="space-y-3 rounded-[8px] border border-[#E5E7EB] bg-[#FAFAFA] p-3.5">
-                    <Toggle
-                      label="Show a line under the header"
-                      checked={Boolean(header.border?.show)}
-                      onChange={(next) =>
-                        setSub("header", "border", { show: next })
-                      }
-                    />
-                    {header.border?.show && (
-                      <div className="grid grid-cols-2 gap-4 pt-2">
-                        <ColorInput
-                          label="Line color"
-                          value={header.border?.color}
-                          onChange={(next) =>
-                            setSub("header", "border", { color: next })
-                          }
-                        />
-                        <SliderNumber
-                          label="Line thickness"
-                          value={header.border?.thickness ?? 2}
-                          onChange={(next) =>
-                            setSub("header", "border", { thickness: next })
-                          }
-                          min={LIMITS.borderThickness.min}
-                          max={LIMITS.borderThickness.max}
-                          step={LIMITS.borderThickness.step}
-                          unit="px"
-                        />
-                      </div>
-                    )}
-                  </div>
-                </SectionCard>
-              </TabsContent>
-
-              {/* Tab 3: Poster background */}
-              <TabsContent value="background" className="mt-0 outline-none space-y-8">
-                <SectionCard
-                  title="Area behind the poster text"
-                  desc="Fills the center of the poster behind the headline and details."
-                  onReset={resetContentArea}
-                >
-                  <BackgroundEditor
-                    label="Fill"
-                    value={content.background}
-                    types={["color", "gradient", "image", "pattern"]}
-                    uploadKind="content"
-                    uploadLabel="Upload background image"
-                    onChange={(next) =>
-                      setSection("content", { background: next })
-                    }
-                  />
-                  <Segmented
-                    label="Decoration"
-                    value={content.decoration || "none"}
-                    onChange={(next) =>
-                      setSection("content", { decoration: next })
-                    }
-                    options={[
-                      { value: "none", label: "None" },
-                      { value: "band", label: "Band" },
-                      { value: "circle", label: "Circle" },
-                      { value: "corners", label: "Corners" },
-                    ]}
-                  />
-                  {content.decoration !== "none" && (
-                    <div className="grid grid-cols-2 gap-4">
-                      <ColorInput
-                        label="Decoration color"
-                        value={content.decorationColor}
-                        onChange={(next) =>
-                          setSection("content", { decorationColor: next })
-                        }
-                        onSurface={resolved.content.surface}
-                      />
-                    </div>
-                  )}
-                  <div className="space-y-3 rounded-[8px] border border-[#E5E7EB] bg-[#FAFAFA] p-3.5">
-                    <Toggle
-                      label="Show a faint logo watermark"
-                      checked={Boolean(content.watermark?.show)}
-                      hint="Needs a logo under Identity and logo."
-                      onChange={(next) =>
-                        setSub("content", "watermark", { show: next })
-                      }
-                    />
-                    {content.watermark?.show && (
-                      <SliderNumber
-                        label="Watermark strength"
-                        value={
-                          content.watermark?.opacity ??
-                          LIMITS.watermarkOpacity.min
-                        }
-                        onChange={(next) =>
-                          setSub("content", "watermark", { opacity: next })
-                        }
-                        min={LIMITS.watermarkOpacity.min}
-                        max={LIMITS.watermarkOpacity.max}
-                        step={LIMITS.watermarkOpacity.step}
-                      />
-                    )}
-                  </div>
-                  <BrandImageField
-                    label="Upload default photo"
-                    kind="default"
-                    value={content.defaultImageUrl || ""}
-                    boxClass="h-40"
-                    onChange={(url) =>
-                      setSection("content", { defaultImageUrl: url })
-                    }
-                    hint="Used whenever a poster is created without a photo."
-                  />
-                </SectionCard>
-
-                <SectionCard
-                  title="Default poster size"
-                  desc="Canvas dimensions for newly created posters."
-                  onReset={() =>
-                    setTop({
-                      defaultPosterSize: clone(
-                        saved?.defaultPosterSize ?? { width: 1080, height: 1350 },
-                      ),
-                    })
-                  }
-                >
-                  <div className="grid grid-cols-2 gap-4">
-                    <Field label="Width (px)">
-                      <Input
-                        type="number"
-                        min={600}
-                        max={2400}
-                        value={kit.defaultPosterSize?.width ?? 1080}
-                        onChange={(event) =>
-                          setTop({
-                            defaultPosterSize: {
-                              ...kit.defaultPosterSize,
-                              width: Number(event.target.value) || 1080,
-                            },
-                          })
-                        }
-                        className="h-9 rounded-[6px] border-[#E5E7EB] bg-white text-sm text-[#111827]"
-                      />
-                    </Field>
-                    <Field label="Height (px)">
-                      <Input
-                        type="number"
-                        min={600}
-                        max={3200}
-                        value={kit.defaultPosterSize?.height ?? 1350}
-                        onChange={(event) =>
-                          setTop({
-                            defaultPosterSize: {
-                              ...kit.defaultPosterSize,
-                              height: Number(event.target.value) || 1350,
-                            },
-                          })
-                        }
-                        className="h-9 rounded-[6px] border-[#E5E7EB] bg-white text-sm text-[#111827]"
-                      />
-                    </Field>
-                  </div>
-                </SectionCard>
-              </TabsContent>
-
-              {/* Tab 4: Footer */}
-              <TabsContent value="footer" className="mt-0 outline-none space-y-8">
-                <SectionCard
                   title="Contact details"
-                  desc="Only what you fill in is printed on the poster footer. Empty lines are left out."
+                  desc="Only what you fill in is printed at the bottom of a poster. Empty lines are left out."
                   onReset={() => resetSection("footer")}
                 >
                   <TextInput
@@ -1051,107 +830,180 @@ export default function BrandKit() {
                       </Button>
                     )}
                   </div>
-                </SectionCard>
-
-                <SectionCard
-                  title="Footer layout and appearance"
-                  desc="Printed across the bottom of every poster."
-                  onReset={() => resetSection("footer")}
-                >
-                  <div className="grid grid-cols-2 gap-4">
-                    <SliderNumber
-                      label="Footer height"
-                      value={footer.height ?? LIMITS.footerHeight.min}
-                      onChange={(next) => setSection("footer", { height: next })}
-                      min={LIMITS.footerHeight.min}
-                      max={LIMITS.footerHeight.max}
-                      step={LIMITS.footerHeight.step}
-                      unit="px"
-                    />
-                    <Segmented
-                      label="Columns"
-                      value={Number(footer.layout) || 2}
-                      onChange={(next) =>
-                        setSection("footer", { layout: Number(next) })
-                      }
-                      options={[
-                        { value: 1, label: "1" },
-                        { value: 2, label: "2" },
-                        { value: 3, label: "3" },
-                      ]}
-                      hint="One column stacks the details. Two splits them left and right. Three groups them by kind."
-                    />
-                  </div>
-                  <BackgroundEditor
-                    label="Footer background"
-                    value={footer.background}
-                    types={["color", "gradient", "image"]}
-                    uploadKind="footer"
-                    uploadLabel="Upload footer image"
-                    onChange={(next) => setSection("footer", { background: next })}
-                  />
-                  <TextStyleEditor
-                    label="Contact text style"
-                    value={footer.style}
-                    onSurface={resolved.footer.surface}
-                    sample={footer.phone || footer.email || "hello@organization.com"}
-                    onChange={(next) => setSection("footer", { style: next })}
-                  />
-                  <div className="grid grid-cols-2 gap-4">
-                    <ColorInput
-                      label="Website and social color"
-                      value={footer.linkColor}
-                      onSurface={resolved.footer.surface}
-                      onChange={(next) => setSection("footer", { linkColor: next })}
-                    />
-                  </div>
                   <TextInput
                     id="legal"
                     label="Fine print"
                     value={footer.legalText ?? ""}
                     maxLength={160}
                     placeholder="e.g. © 2026 Northbridge Foundation. Registered charity."
-                    onChange={(next) => setSection("footer", { legalText: next })}
+                    onChange={(next) =>
+                      setSection("footer", { legalText: next })
+                    }
                   />
-                  <div className="space-y-3 rounded-[8px] border border-[#E5E7EB] bg-[#FAFAFA] p-3.5">
-                    <Toggle
-                      label="Show a line above the footer"
-                      checked={Boolean(footer.divider?.show)}
-                      onChange={(next) =>
-                        setSub("footer", "divider", { show: next })
-                      }
-                    />
-                    {footer.divider?.show && (
-                      <div className="grid grid-cols-2 gap-4 pt-2">
-                        <ColorInput
-                          label="Line color"
-                          value={footer.divider?.color}
-                          onChange={(next) =>
-                            setSub("footer", "divider", { color: next })
-                          }
-                        />
-                        <SliderNumber
-                          label="Line thickness"
-                          value={footer.divider?.thickness ?? 1}
-                          onChange={(next) =>
-                            setSub("footer", "divider", { thickness: next })
-                          }
-                          min={LIMITS.dividerThickness.min}
-                          max={LIMITS.dividerThickness.max}
-                          step={LIMITS.dividerThickness.step}
-                          unit="px"
-                        />
-                      </div>
-                    )}
+                </SectionCard>
+
+                <SectionCard
+                  title="Photo and poster size"
+                  desc="The photo a poster uses when nobody chooses one, and the size new posters start at."
+                  onReset={() =>
+                    setTop({
+                      defaultPosterSize: clone(
+                        saved?.defaultPosterSize ?? { width: 1080, height: 1350 },
+                      ),
+                    })
+                  }
+                >
+                  <BrandImageField
+                    label="Upload default photo"
+                    kind="default"
+                    value={content.defaultImageUrl || ""}
+                    boxClass="h-40"
+                    onChange={(url) =>
+                      setSection("content", { defaultImageUrl: url })
+                    }
+                    hint="Used whenever a poster is created without a photo."
+                  />
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field label="Width (px)">
+                      <Input
+                        type="number"
+                        min={600}
+                        max={2400}
+                        value={kit.defaultPosterSize?.width ?? 1080}
+                        onChange={(event) =>
+                          setTop({
+                            defaultPosterSize: {
+                              ...kit.defaultPosterSize,
+                              width: Number(event.target.value) || 1080,
+                            },
+                          })
+                        }
+                        className="h-9 rounded-[6px] border-[#E5E7EB] bg-white text-sm text-[#111827]"
+                      />
+                    </Field>
+                    <Field label="Height (px)">
+                      <Input
+                        type="number"
+                        min={600}
+                        max={3200}
+                        value={kit.defaultPosterSize?.height ?? 1350}
+                        onChange={(event) =>
+                          setTop({
+                            defaultPosterSize: {
+                              ...kit.defaultPosterSize,
+                              height: Number(event.target.value) || 1350,
+                            },
+                          })
+                        }
+                        className="h-9 rounded-[6px] border-[#E5E7EB] bg-white text-sm text-[#111827]"
+                      />
+                    </Field>
                   </div>
                 </SectionCard>
               </TabsContent>
 
-              {/* Tab 5: Colors and fonts */}
-              <TabsContent value="colors-fonts" className="mt-0 outline-none space-y-8">
+              {/* Tab 2: Colours and fonts */}
+              <TabsContent
+                value="colors-fonts"
+                className="mt-0 outline-none space-y-8"
+              >
                 <SectionCard
-                  title="Brand colors"
-                  desc="These five colors drive the poster palette. Unreadable combinations are lifted automatically."
+                  title="Start from a preset"
+                  desc="A ready-made colour and font combination you can then fine-tune. Your name, logo, photos and contact details are never replaced."
+                >
+                  {presetsOpen ? (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {BRAND_PRESET_LIST.map((preset) => (
+                          <div
+                            key={preset.id}
+                            className="rounded-[8px] border border-[#E5E7EB] bg-white p-3.5 space-y-2.5 transition-colors hover:border-[#D1D5DB]"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              {preset.swatch.map((color) => (
+                                <span
+                                  key={color}
+                                  className="w-4 h-4 rounded-[3px] border border-[#E5E7EB]"
+                                  style={{ background: color }}
+                                />
+                              ))}
+                              <p className="text-xs font-semibold text-[#111827] ml-1">
+                                {preset.label}
+                              </p>
+                            </div>
+                            <p className="text-xs text-[#6B7280] leading-snug min-h-[36px]">
+                              {preset.blurb}
+                            </p>
+                            {pendingPreset === preset.id ? (
+                              <div className="space-y-2 rounded-[6px] border border-[#2563EB]/30 bg-[#EFF6FF] p-2.5">
+                                <p className="text-xs text-[#111827] leading-snug">
+                                  Apply this preset to the form? Your current
+                                  styling is replaced, nothing is saved yet.
+                                </p>
+                                <div className="flex gap-2">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    className="h-7 px-2.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-medium shadow-none"
+                                    onClick={() => applyPreset(preset.id)}
+                                  >
+                                    Apply preset
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 px-2.5 border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB]"
+                                    onClick={() => setPendingPreset(null)}
+                                  >
+                                    Keep mine
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2.5 border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB] gap-1.5"
+                                onClick={() => setPendingPreset(preset.id)}
+                              >
+                                <Wand2 size={12} />
+                                <span>Use this preset</span>
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2.5 text-xs font-medium text-[#6B7280] hover:text-[#111827]"
+                        onClick={() => {
+                          setPresetsOpen(false);
+                          setPendingPreset(null);
+                        }}
+                      >
+                        Close
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setPresetsOpen(true)}
+                      className="h-9 gap-1.5 border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB]"
+                    >
+                      <Wand2 size={14} />
+                      <span>Start from a preset</span>
+                    </Button>
+                  )}
+                </SectionCard>
+
+                <SectionCard
+                  title="Brand colours"
+                  desc="These five colours drive the poster palette. Unreadable combinations are lifted automatically."
                   onReset={() => resetSection("colors")}
                 >
                   <div className="grid grid-cols-2 gap-4">
@@ -1206,8 +1058,8 @@ export default function BrandKit() {
                 </SectionCard>
 
                 <SectionCard
-                  title="Typography and overrides"
-                  desc="Custom font overrides and text styling across all poster areas."
+                  title="Words in the middle of the poster"
+                  desc="The fonts and colours for the headline and details the assistant writes."
                   onReset={resetFontsAndSizes}
                 >
                   <div className="grid grid-cols-2 gap-4">
@@ -1261,140 +1113,82 @@ export default function BrandKit() {
                     columns
                   />
                 </SectionCard>
-
-                <SectionCard
-                  title="Cards for date, time and place"
-                  desc="The detail boxes in the middle of event and notice posters."
-                  onReset={resetInfoCard}
-                >
-                  <div className="grid grid-cols-2 gap-4">
-                    <ColorInput
-                      label="Card background"
-                      value={content.infoCard?.background}
-                      onChange={(next) =>
-                        setSub("content", "infoCard", { background: next })
-                      }
-                    />
-                    <ColorInput
-                      label="Card border"
-                      value={content.infoCard?.border}
-                      onChange={(next) =>
-                        setSub("content", "infoCard", { border: next })
-                      }
-                    />
-                    <ColorInput
-                      label="Icon color"
-                      value={content.infoCard?.iconColor}
-                      onChange={(next) =>
-                        setSub("content", "infoCard", { iconColor: next })
-                      }
-                      onSurface={content.infoCard?.background}
-                    />
-                    <SliderNumber
-                      label="Corner roundness"
-                      value={content.infoCard?.radius ?? 0}
-                      onChange={(next) =>
-                        setSub("content", "infoCard", { radius: next })
-                      }
-                      min={LIMITS.cardRadius.min}
-                      max={LIMITS.cardRadius.max}
-                      step={LIMITS.cardRadius.step}
-                      unit="px"
-                    />
-                  </div>
-                </SectionCard>
               </TabsContent>
 
-              {/* Tab 6: Presets */}
-              <TabsContent value="presets" className="mt-0 outline-none space-y-8">
-                <SectionCard
-                  title="Style presets"
-                  desc="A starting point you can then fine-tune. Your name, logo, photos and contact details are never replaced."
-                >
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {BRAND_PRESET_LIST.map((preset) => (
-                      <div
-                        key={preset.id}
-                        className="rounded-[8px] border border-[#E5E7EB] bg-white p-3.5 space-y-2.5 transition-colors hover:border-[#D1D5DB]"
-                      >
-                        <div className="flex items-center gap-1.5">
-                          {preset.swatch.map((color) => (
-                            <span
-                              key={color}
-                              className="w-4 h-4 rounded-[3px] border border-[#E5E7EB]"
-                              style={{ background: color }}
-                            />
-                          ))}
-                          <p className="text-xs font-semibold text-[#111827] ml-1">
-                            {preset.label}
-                          </p>
-                        </div>
-                        <p className="text-xs text-[#6B7280] leading-snug min-h-[36px]">
-                          {preset.blurb}
-                        </p>
-                        {pendingPreset === preset.id ? (
-                          <div className="space-y-2 rounded-[6px] border border-[#2563EB]/30 bg-[#EFF6FF] p-2.5">
-                            <p className="text-xs text-[#111827] leading-snug">
-                              Apply this preset to the form? Your current styling is replaced, nothing is saved yet.
-                            </p>
-                            <div className="flex gap-2">
-                              <Button
-                                type="button"
-                                size="sm"
-                                className="h-7 px-2.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-medium shadow-none"
-                                onClick={() => applyPreset(preset.id)}
-                              >
-                                Apply preset
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-7 px-2.5 border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB]"
-                                onClick={() => setPendingPreset(null)}
-                              >
-                                Keep mine
-                              </Button>
-                            </div>
-                          </div>
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-7 px-2.5 border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB] gap-1.5"
-                            onClick={() => setPendingPreset(preset.id)}
-                          >
-                            <Wand2 size={12} />
-                            <span>Use this preset</span>
-                          </Button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </SectionCard>
-              </TabsContent>
-
-              {/* Tab 7: Poster design */}
-              <TabsContent value="design" className="mt-0 outline-none space-y-8">
-                <SectionCard
-                  title="Poster creation modes"
-                  desc="Settings for poster creation and generation modes."
-                >
-                  <Suspense
-                    fallback={
-                      <div className="py-6 text-sm text-[#6B7280]" role="status">
-                        Loading these settings…
-                      </div>
-                    }
+              {/* Tab 3: Header and footer */}
+              <TabsContent value="bands" className="mt-0 outline-none space-y-8">
+                {bandCards.map((card) => (
+                  <SectionCard
+                    key={card.kind}
+                    title={card.title}
+                    desc={card.desc}
                   >
-                    <DesignModesCard />
-                  </Suspense>
-                </SectionCard>
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-medium text-[#6B7280]">
+                          Status
+                        </span>
+                        <span
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                            kitBandIsLaidOut(kit, card.kind)
+                              ? "border-[#2563EB]/30 bg-[#EFF6FF] text-[#1D4ED8]"
+                              : "border-[#E5E7EB] bg-[#FAFAFA] text-[#4B5563]"
+                          }`}
+                        >
+                          {kitBandIsLaidOut(kit, card.kind)
+                            ? "Customized"
+                            : "Default"}
+                        </span>
+                      </div>
+
+                      <BandStrip
+                        band={bands[card.kind]}
+                        brandKit={kit}
+                        posterSize={posterSize}
+                        posterTemplate={template}
+                      />
+
+                      <p className="text-xs text-[#6B7280] leading-snug">
+                        {card.plain}
+                      </p>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          onClick={() =>
+                            navigate(`/brand-layer/edit?section=${card.kind}`)
+                          }
+                          disabled={dirty || saving}
+                          className="h-9 px-4 rounded-[6px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-medium shadow-none disabled:opacity-50"
+                        >
+                          {card.kind === "header"
+                            ? "Edit header"
+                            : "Edit footer"}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => resetBand(card.kind)}
+                          disabled={!kitBandIsLaidOut(kit, card.kind) || saving}
+                          className="h-9 px-3 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-50"
+                        >
+                          Reset to the default from my logo and contact details
+                        </Button>
+                      </div>
+
+                      {dirty && (
+                        <p className="text-[11px] text-[#F59E0B] leading-snug">
+                          Save your brand kit first, so the editor starts from
+                          what you have here.
+                        </p>
+                      )}
+                    </div>
+                  </SectionCard>
+                ))}
               </TabsContent>
             </div>
 
-            {/* Right column: live preview (lg:sticky lg:top-24 self-start) */}
+            {/* Right column: live preview */}
             <div className="w-full lg:sticky lg:top-24 self-start space-y-4">
               <div className="rounded-[8px] border border-[#E5E7EB] bg-[#FAFAFA] p-3.5 space-y-3">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -1453,18 +1247,17 @@ export default function BrandKit() {
                 />
 
                 <p className="text-[11px] text-[#6B7280] leading-snug">
-                  Sample words so you can judge the look. Posters your team creates
-                  carry their own headline and details in the middle.
+                  Sample words so you can judge the look. Posters your team
+                  creates carry their own headline and details in the middle.
                 </p>
                 {previewOverflow && (
                   <p className="text-[11px] text-[#F59E0B] leading-snug">
-                    The sample text is long for this size — real posters shrink to
-                    fit.
+                    The sample text is long for this size — real posters shrink
+                    to fit.
                   </p>
                 )}
               </div>
 
-              {/* Contrast checks as a simple 3-row list */}
               <ul className="rounded-[8px] border border-[#E5E7EB] bg-[#FAFAFA] p-3 space-y-2">
                 <li className="flex items-center justify-between gap-2">
                   <span className="text-xs text-[#6B7280]">
@@ -1476,9 +1269,7 @@ export default function BrandKit() {
                   />
                 </li>
                 <li className="flex items-center justify-between gap-2">
-                  <span className="text-xs text-[#6B7280]">
-                    Poster title
-                  </span>
+                  <span className="text-xs text-[#6B7280]">Poster title</span>
                   <Readout
                     foreground={resolved.content.headingColor}
                     background={resolved.content.surface}

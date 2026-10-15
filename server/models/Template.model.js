@@ -13,6 +13,7 @@ import {
   BACKGROUND_PATTERNS,
   BACKGROUND_POSITIONS,
   BRAND_FONT_TOKENS,
+  CARD_LIST_LIMITS,
   CONTENT_BACKGROUND_TYPES,
   CONTENT_DECORATIONS,
   ELEMENT_FIELDS,
@@ -23,6 +24,7 @@ import {
   ELEMENT_STYLE_DEFAULTS,
   ELEMENT_WEIGHTS,
   IMAGE_FITS,
+  IMAGE_MASKS,
   LEGACY_EDITOR_VERSION,
   SHAPE_TYPES,
   TEMPLATE_DOC_MAX_BYTES,
@@ -32,6 +34,7 @@ import {
   defaultPage,
   jsonBytes,
 } from '../../shared/templateElements.js';
+import { EVENT_TYPE_IDS } from '../../shared/eventTypes.js';
 
 const zoneSchema = new mongoose.Schema(
   {
@@ -217,9 +220,37 @@ const elementShapeSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const cardFieldSchema = new mongoose.Schema(
+  {
+    key: { type: String, required: true, trim: true, lowercase: true, match: VARIABLE_KEY_PATTERN },
+    type: { type: String, enum: ['text', 'image'], default: 'text' },
+    label: { type: String, trim: true, maxlength: CARD_LIST_LIMITS.fieldLabelChars },
+    maxLength: {
+      type: Number,
+      min: VARIABLE_LIMITS.maxLength.min,
+      max: VARIABLE_LIMITS.maxLength.max,
+    },
+  },
+  { _id: false }
+);
+
+const cardSchema = new mongoose.Schema(
+  {
+    w: { type: Number, required: true, min: 0 },
+    h: { type: Number, required: true, min: 0 },
+    fields: {
+      type: [cardFieldSchema],
+      default: [],
+    },
+    items: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  },
+  { _id: false }
+);
+
 /* A fill-in slot keeps its name, the words shown to the person making the poster and, for
-   text, how much room it has. Ranges mirror /shared/templateElements.js. */
-const elementSchema = new mongoose.Schema(
+   text, how much room it has. Ranges mirror /shared/templateElements.js.
+   Exported because a Brand Kit band stores items of this very same shape. */
+export const elementSchema = new mongoose.Schema(
   {
     id: {
       type: String,
@@ -244,6 +275,11 @@ const elementSchema = new mongoose.Schema(
     h: { type: Number, required: [true, 'Every item needs a size'], min: 0 },
     z: { type: Number, default: 0, min: ELEMENT_LIMITS.z.min, max: ELEMENT_LIMITS.z.max },
     locked: { type: Boolean, default: false },
+    rotation: { type: Number, min: -180, max: 180, default: 0 },
+    mask: { type: String, enum: IMAGE_MASKS, default: 'none' },
+    groupId: { type: String, trim: true, maxlength: 50 },
+    hidden: { type: Boolean, default: false },
+    src: { type: String, trim: true, maxlength: 600, default: '' },
     style: { type: elementStyleSchema, default: () => ({}) },
     text: { type: String, trim: true, maxlength: ELEMENT_LIMITS.textChars, default: '' },
     imageUrl: { type: String, trim: true, maxlength: 600, default: '' },
@@ -257,6 +293,20 @@ const elementSchema = new mongoose.Schema(
       min: VARIABLE_LIMITS.maxLength.min,
       max: VARIABLE_LIMITS.maxLength.max,
     },
+    /** The words a blank shows before anyone fills it in. */
+    sample: { type: String, trim: true, maxlength: VARIABLE_LIMITS.sampleChars },
+    aspectRatio: { type: String, trim: true, maxlength: 20 },
+    /** The picture a photo space shows before the poster's own picture arrives. */
+    sampleImage: { type: String, trim: true, maxlength: 600 },
+    defaultImage: { type: Boolean, default: false },
+    columns: { type: Number, min: CARD_LIST_LIMITS.columns.min, max: CARD_LIST_LIMITS.columns.max },
+    gapX: { type: Number, min: 0 },
+    gapY: { type: Number, min: 0 },
+    minCount: { type: Number, min: CARD_LIST_LIMITS.minCount.min, max: CARD_LIST_LIMITS.minCount.max },
+    maxCount: { type: Number, min: CARD_LIST_LIMITS.maxCount.min, max: CARD_LIST_LIMITS.maxCount.max },
+    align: { type: String, enum: ['left', 'center', 'right'], default: 'left' },
+    card: { type: cardSchema, default: undefined },
+    fieldKey: { type: String, trim: true, lowercase: true, maxlength: 24 },
   },
   { _id: false }
 );
@@ -318,6 +368,33 @@ const pageSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const sectionHeaderFooterSchema = new mongoose.Schema(
+  {
+    mode: { type: String, enum: ['brand', 'custom'], default: 'brand' },
+    height: { type: Number, min: 60, max: 260, default: 80 },
+    background: { type: mongoose.Schema.Types.Mixed, default: undefined },
+    elements: { type: [elementSchema], default: [] },
+  },
+  { _id: false }
+);
+
+const sectionContentSchema = new mongoose.Schema(
+  {
+    page: { type: pageSchema, default: undefined },
+    elements: { type: [elementSchema], default: [] },
+  },
+  { _id: false }
+);
+
+const sectionsSchema = new mongoose.Schema(
+  {
+    header: { type: sectionHeaderFooterSchema, default: undefined },
+    content: { type: sectionContentSchema, default: undefined },
+    footer: { type: sectionHeaderFooterSchema, default: undefined },
+  },
+  { _id: false }
+);
+
 const templateVersionSchema = new mongoose.Schema(
   {
     version: { type: Number, min: 1 },
@@ -326,6 +403,10 @@ const templateVersionSchema = new mongoose.Schema(
     layout: { type: layoutSchema, default: () => ({}) },
     page: { type: pageSchema, default: undefined },
     elements: { type: [elementSchema], default: [] },
+    sections: { type: sectionsSchema, default: undefined },
+    header: { type: sectionHeaderFooterSchema, default: undefined },
+    content: { type: sectionContentSchema, default: undefined },
+    footer: { type: sectionHeaderFooterSchema, default: undefined },
     editorVersion: { type: Number, min: 1, default: LEGACY_EDITOR_VERSION },
     size: {
       width: { type: Number },
@@ -389,6 +470,22 @@ const templateSchema = new mongoose.Schema(
       type: [elementSchema],
       default: [],
     },
+    sections: {
+      type: sectionsSchema,
+      default: undefined,
+    },
+    header: {
+      type: sectionHeaderFooterSchema,
+      default: undefined,
+    },
+    content: {
+      type: sectionContentSchema,
+      default: undefined,
+    },
+    footer: {
+      type: sectionHeaderFooterSchema,
+      default: undefined,
+    },
     editorVersion: {
       type: Number,
       default: LEGACY_EDITOR_VERSION,
@@ -411,9 +508,26 @@ const templateSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    /** Event types this template is designed for. Empty = applies to all types. */
+    eventTypes: {
+      type: [{ type: String, enum: EVENT_TYPE_IDS }],
+      default: [],
+    },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
+    },
+    draft: {
+      type: new mongoose.Schema(
+        {
+          data: { type: mongoose.Schema.Types.Mixed, required: true },
+          savedAt: { type: Date, default: () => new Date() },
+          basedOnVersion: { type: Number, required: true },
+          userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+        },
+        { _id: false }
+      ),
+      default: undefined,
     },
   },
   {

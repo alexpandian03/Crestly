@@ -13,7 +13,7 @@
  * its items, so the words always live in the strip between them.
  */
 import { blendOver, parseColor, pickReadableColor } from './contrast.js';
-import { resolveTemplateRender } from './templateRender.js';
+import { resolveTemplateRender, usesTemplateElements } from './templateRender.js';
 import { contentArea, effectivePage } from '../../../shared/templateElements.js';
 
 /** Mirrors BRAND_KIT_DEFAULTS in server/services/brand/style.js. */
@@ -239,6 +239,28 @@ function readable(preferred, surface, candidates, min = 3) {
   return pickReadableColor([preferred, ...candidates].filter(Boolean), surface, min) || preferred;
 }
 
+/**
+ * Cloudinary URL transformation for template slots and hero pictures.
+ * - Width: ~1.5x slot size, quality: auto, format: auto
+ * - For portrait slots: face-aware crop fill (c_fill,g_faces)
+ */
+export function transformCloudinaryUrl(url, { w = 0, h = 0 } = {}) {
+  if (!url || typeof url !== 'string') return url;
+  if (!url.includes('cloudinary.com') || !url.includes('/image/upload/')) return url;
+  const targetW = Math.round((Number(w) || 0) * 1.5);
+  const targetH = Math.round((Number(h) || 0) * 1.5);
+  if (targetW <= 0) return url;
+  const isPortrait = targetH > targetW && targetH > 0;
+  const transform = isPortrait
+    ? `c_fill,g_faces,w_${targetW},h_${targetH},q_auto,f_auto`
+    : `w_${targetW},q_auto,f_auto`;
+  if (url.includes(transform)) return url;
+  return url.replace(
+    /\/image\/upload\/(?:(?:c_[^/]+|w_[^/]+|q_[^/]+|f_[^/]+|g_[^/]+)[/])?/,
+    `/image/upload/${transform}/`
+  );
+}
+
 export function resolvePosterBrand(brandKit, template) {
   const kit = isObj(brandKit) ? brandKit : {};
   const D = BRAND_RENDER_DEFAULTS;
@@ -253,13 +275,19 @@ export function resolvePosterBrand(brandKit, template) {
 
   /* An assistant design carries items but no areas of its own. Its bands still come from
    * the brand kit, through the very rule that laid those items out, so the two locked
-   * bands always draw and the content area is exactly the strip between them. */
-  const brandStrip = headerZone || footerZone ? null : contentArea(kit, { size: rendered.size });
+   * bands always draw and the content area is exactly the strip between them.
+   *
+   * A design drawn from placed items is the same case even when it carries areas: an item
+   * can be put anywhere between the bands, so the old text box must not cut the strip short
+   * - the editor would keep offering room the poster then painted over in blank page colour. */
+  const drawsItems = usesTemplateElements(template);
+  const brandStrip =
+    drawsItems || (!headerZone && !footerZone) ? contentArea(kit, { size: rendered.size }) : null;
 
   const primary = colorOr(kit?.colors?.primary, '#059669');
   const accent = colorOr(kit?.colors?.accent, '#10b981');
-  const legacyText = colorOr(kit?.colors?.text, '#ffffff');
-  const canvasColor = colorOr(kit?.colors?.background, '#0b0f17');
+  const legacyText = colorOr(kit?.colors?.text, '#111827');
+  const canvasColor = colorOr(kit?.colors?.background, '#ffffff');
   const legacyHeadingFont = plain(kit?.fonts?.heading, 40) || 'Outfit';
   const legacyBodyFont = plain(kit?.fonts?.body, 40) || 'Inter';
 
@@ -281,11 +309,14 @@ export function resolvePosterBrand(brandKit, template) {
 
   const logoUrl = plain(kit?.logos?.find((l) => l?.isPrimary)?.url || kit?.logos?.[0]?.url, 600);
 
-  const page = effectivePage(kit, template);
-  const customBg = template?.page?.background?.mode === 'custom';
-  const customDec = template?.page?.decoration?.mode === 'custom';
-  const customWatermark = template?.page?.watermark?.mode === 'custom';
-  const customCard = template?.page?.infoCard?.mode === 'custom';
+  const normalizedTemplate = template?.sections?.content?.page
+    ? { ...template, page: template.sections.content.page }
+    : template;
+  const page = effectivePage(kit, normalizedTemplate);
+  const customBg = normalizedTemplate?.page?.background?.mode === 'custom';
+  const customDec = normalizedTemplate?.page?.decoration?.mode === 'custom';
+  const customWatermark = normalizedTemplate?.page?.watermark?.mode === 'custom';
+  const customCard = normalizedTemplate?.page?.infoCard?.mode === 'custom';
 
   // ---------- surfaces ----------
   const canvasBgUntouched = isAtDefault(kit?.background, D.background);
@@ -309,13 +340,13 @@ export function resolvePosterBrand(brandKit, template) {
   const footerSurface = surfaceOf(footerBg, canvasPlate);
 
   // ---------- content band ----------
-  const headingColor = readable(colorPick('content', 'headingColor', legacyText), contentSurface, ['#ffffff', '#0b0f17']);
+  const headingColor = readable(colorPick('content', 'headingColor', legacyText), contentSurface, ['#0b0f17', '#ffffff']);
   const bodyColor = readable(
     colorPick('content', 'bodyColor', headingColor),
     contentSurface,
-    [headingColor, legacyText, '#ffffff', '#0b0f17']
+    [headingColor, legacyText, '#0b0f17', '#ffffff']
   );
-  const accentColor = readable(colorPick('content', 'accentColor', accent), contentSurface, [accent, primary, '#ffffff', '#0b0f17'], 2);
+  const accentColor = readable(colorPick('content', 'accentColor', accent), contentSurface, [accent, primary, '#0b0f17', '#ffffff'], 2);
 
   const cardDefaults = D.content.infoCard;
   const cardStyled = customCard ? true : !isAtDefault(kit?.content?.infoCard, cardDefaults);
@@ -345,7 +376,7 @@ export function resolvePosterBrand(brandKit, template) {
     iconColor: cardIconColor,
     iconBg: alpha(cardIconColor, 0.16),
     textColor: cardStyled
-      ? readable(headingColor, blendOver(cardBackground, contentSurface), [bodyColor, '#ffffff', '#0b0f17'])
+      ? readable(headingColor, blendOver(cardBackground, contentSurface), [bodyColor, '#0b0f17', '#ffffff'])
       : bodyColor,
   };
 
@@ -368,7 +399,7 @@ export function resolvePosterBrand(brandKit, template) {
    * block means the brand chose its own decoration. */
   const contentUntouched = isAtDefault(kit.content, D.content);
   const declaredContent = rendered.zones.content;
-  const declaresContent = Boolean(contentZone);
+  const declaresContent = Boolean(contentZone) && !drawsItems;
   const patternSpansPoster = !contentBgUntouched && contentBg.type === 'pattern';
   const decoration = customDec
     ? page.decoration
@@ -466,7 +497,7 @@ export function resolvePosterBrand(brandKit, template) {
       : Math.max(16, Math.min(logoBaseSize, headerH - hairline - px(6)));
 
   const header = {
-    present: Boolean(headerZone) || Boolean(brandStrip),
+    present: Boolean(headerZone) || Boolean(brandStrip) || Boolean(template?.sections) || true,
     top: Math.max(0, headerZone?.y ?? 0),
     left: headerZone?.x ?? 0,
     width: headerZone?.w ?? width,
@@ -524,7 +555,7 @@ export function resolvePosterBrand(brandKit, template) {
 
   const footerLayout = Number(pick('footer', 'layout', 2));
   const footer = {
-    present: Boolean(footerZone) || Boolean(brandStrip),
+    present: Boolean(footerZone) || Boolean(brandStrip) || Boolean(template?.sections) || true,
     top: footerTop,
     bottom: footerBottom,
     left: footerZone?.x ?? 0,

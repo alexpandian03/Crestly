@@ -30,6 +30,7 @@ import {
   normalizeIconName,
   plainText,
 } from './templateElements.js';
+import { tamilAdvanceRatio, tamilStyleRules } from './textScripts.js';
 
 /** Bumped whenever a recipe's shape changes, so a poster can keep the look it was made with. */
 export const RECIPE_VERSION = 2;
@@ -463,9 +464,11 @@ function paletteOf(brand, name) {
  * Words: how much room a set of them needs
  * ------------------------------------------------------------------------- */
 
-/** How wide one character really is for this setting of the type. */
-export function charWidthOf(size, { weight = 400, uppercase = false, letterSpacing = 0 } = {}) {
-  const base = Math.max(1, numberOr(size, MIN_RECIPE_FONT)) * ESTIMATED_CHAR_WIDTH;
+/** How wide one character really is for this setting of the type. `advance` is how much wider
+ *  the script of these words sets than Latin, so a Tamil line is never measured too narrow. */
+export function charWidthOf(size, { weight = 400, uppercase = false, letterSpacing = 0, advance = 1 } = {}) {
+  const wide = Math.min(1.6, Math.max(1, numberOr(advance, 1)));
+  const base = Math.max(1, numberOr(size, MIN_RECIPE_FONT)) * ESTIMATED_CHAR_WIDTH * wide;
   const heavy = toIntOr(weight, 400) >= 700 ? 1.06 : 1;
   const caps = uppercase ? 1.1 : 1;
   return base * heavy * caps + Math.max(0, numberOr(letterSpacing, 0));
@@ -476,13 +479,19 @@ export function charsPerLine(width, size, face = {}) {
   return Math.max(1, Math.floor(Math.max(MIN_TEXT_WIDTH, numberOr(width, 1)) / charWidthOf(size, face)));
 }
 
+/** The measuring face of one set of words: the script they are written in joins the setting. */
+function faceOf(words, face = {}) {
+  const text = Array.isArray(words) ? words.join(' ') : String(words ?? '');
+  return { ...face, advance: tamilAdvanceRatio(text) };
+}
+
 /**
  * How many lines a set of words takes.
  *
  * Words move whole to the next line without breaking mid-word (wrap on spaces only).
  */
 export function linesOfWords(text, width, size, face = {}) {
-  const per = charsPerLine(width, size, face);
+  const per = charsPerLine(width, size, faceOf(text, face));
   const words = String(text ?? '')
     .trim()
     .split(/\s+/)
@@ -513,13 +522,14 @@ export function fitWordSize(text, width, initialSize, face = {}, minSize = 22) {
     .filter(Boolean);
   if (words.length === 0) return size;
   const maxWordLen = Math.max(...words.map((w) => w.length));
+  const tuned = faceOf(words.join(' '), face);
   let iter = 0;
   const startTime = Date.now();
   while (
     size > minSize &&
     iter < 200 &&
     Date.now() - startTime <= 1500 &&
-    Math.ceil(maxWordLen * charWidthOf(size, face)) > width
+    Math.ceil(maxWordLen * charWidthOf(size, tuned)) > width
   ) {
     iter += 1;
     size = Math.max(minSize, size - 1);
@@ -542,8 +552,14 @@ function iconRoomOf(style, size) {
 export function estimatedTextHeight(item, words = '') {
   const style = (item && item.style) || {};
   const size = Math.max(1, toIntOr(style.size, MIN_RECIPE_FONT));
-  const lineHeight = numberOr(style.lineHeight, 1.2);
-  const face = { weight: style.weight, uppercase: style.uppercase, letterSpacing: style.letterSpacing };
+  /* Tamil is measured with the leading, spacing and capitals it will actually be painted with. */
+  const script = tamilStyleRules(words, style);
+  const lineHeight = script.lineHeight || numberOr(style.lineHeight, 1.2);
+  const face = faceOf(words, {
+    weight: style.weight,
+    uppercase: script.uppercase ?? style.uppercase,
+    letterSpacing: script.letterSpacing ?? style.letterSpacing,
+  });
   const box = Math.max(MIN_TEXT_WIDTH, toIntOr(item?.w, ELEMENT_LIMITS.minWidth));
   if (Array.isArray(words)) {
     const lines = words.filter(Boolean);
@@ -578,12 +594,14 @@ export function fitTextSize({
 } = {}) {
   const floor = Math.max(MIN_RECIPE_FONT, toIntOr(min, MIN_RECIPE_FONT));
   const cap = Math.max(floor, toIntOr(size, floor));
+  /* A Tamil line needs its full leading, so the height it is planned for uses it too. */
+  const lead = tamilStyleRules(text, { lineHeight }).lineHeight || numberOr(lineHeight, 1.05);
   let chosen = cap;
   const startTime = Date.now();
   for (let step = 0; step < 200; step += 1) {
     if (Date.now() - startTime > 1500) break;
     const lines = linesOfWords(text, width, chosen, face);
-    const height = lines * chosen * numberOr(lineHeight, 1.05);
+    const height = lines * chosen * lead;
     if (lines <= maxLines && (!room || height <= room)) break;
     const next = chosen - Math.max(1, Math.round(chosen * 0.06));
     if (next <= floor) {
@@ -1296,12 +1314,22 @@ function buttonWords(c) {
   return raw;
 }
 
+/** The bar the button words stand on: never thinner than this, and taller when the words -
+ *  set large, or in a script that needs its full leading - ask for more room. */
+const BUTTON_BAR_HEIGHT = 54;
+
+function buttonBarHeight(c, width) {
+  const style = textStyle(c, 'button');
+  const need = estimatedTextHeight({ w: Math.max(MIN_TEXT_WIDTH, width), style, kind: 'text' }, buttonWords(c));
+  return Math.max(BUTTON_BAR_HEIGHT, need);
+}
+
 function ctaHeight(c, width) {
   const hasLine = Boolean(c.words.cta_line && String(c.words.cta_line).trim() && !isDropped(c, 'cta_line'));
   const lineH = hasLine
     ? Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: width, style: textStyle(c, 'strong') }, c.words.cta_line)) + 16
     : 0;
-  return lineH + 54;
+  return lineH + buttonBarHeight(c, width);
 }
 
 function ctaBlock(c, rect, { centre = false, fillOverride = null } = {}) {
@@ -1323,7 +1351,7 @@ function ctaBlock(c, rect, { centre = false, fillOverride = null } = {}) {
     cursor += lineH + 16;
   }
 
-  const barH = 54;
+  const barH = buttonBarHeight(c, rect.w);
   const barBox = { x: rect.x, y: cursor, w: rect.w, h: barH };
   const plateFill = fillOverride || c.tokens?.primary || c.palette.primary || c.palette.accent;
 
@@ -1780,13 +1808,13 @@ function slogansSpec(c, { align = 'left' } = {}) {
       const s2 = !ctx.dropped.has('slogan_2') && String(ctx.words.slogan_2 || '').trim();
       if (s1) {
         const style1 = { ...textStyle(ctx, 'strong'), align };
-        const h1 = Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: rect.w, style: style1 }, s1));
+        const h1 = Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: rect.w, style: style1 }, ctx.words.slogan_1));
         items.push(blankItem(ctx, 'slogan_1', { x: rect.x, y: cursor, w: rect.w, h: h1 }, { style: style1, z: 11 }));
         cursor += h1 + 8;
       }
       if (s2) {
         const style2 = { ...textStyle(ctx, 'regular'), align };
-        const h2 = Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: rect.w, style: style2 }, s2));
+        const h2 = Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: rect.w, style: style2 }, ctx.words.slogan_2));
         items.push(blankItem(ctx, 'slogan_2', { x: rect.x, y: cursor, w: rect.w, h: h2 }, { style: style2, z: 11 }));
       }
       return items;
@@ -2756,7 +2784,7 @@ export function agendaRecipe(area, brandKit, slots, options = {}, design = null)
 
   const factsSpec = {
     key: 'facts',
-    height: () => factHeight(c, c.box.w),
+    height: (ctx, width) => factHeight(ctx, width),
     make: (ctx, rect) => factBlock(ctx, rect, { fillOverride: cardFill, strokeOverride: cardStroke, align: 'left' }),
   };
 
@@ -2970,13 +2998,13 @@ export function noticeRecipe(area, brandKit, slots, options = {}, design = null)
       const s2 = ctx.words.slogan_2 && String(ctx.words.slogan_2).trim() && !ctx.dropped.has('slogan_2');
       if (s1) {
         const style1 = { ...textStyle(ctx, 'lead'), align: 'center' };
-        const h1 = Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: rect.w, style: style1 }, s1));
+        const h1 = Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: rect.w, style: style1 }, ctx.words.slogan_1));
         items.push(blankItem(ctx, 'slogan_1', { x: rect.x, y: cursor, w: rect.w, h: h1 }, { style: style1, z: 11 }));
         cursor += h1 + 8;
       }
       if (s2) {
         const style2 = { ...textStyle(ctx, 'regular'), align: 'center' };
-        const h2 = Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: rect.w, style: style2 }, s2));
+        const h2 = Math.max(ELEMENT_LIMITS.minHeight, estimatedTextHeight({ w: rect.w, style: style2 }, ctx.words.slogan_2));
         items.push(blankItem(ctx, 'slogan_2', { x: rect.x, y: cursor, w: rect.w, h: h2 }, { style: style2, z: 11 }));
       }
       return items;

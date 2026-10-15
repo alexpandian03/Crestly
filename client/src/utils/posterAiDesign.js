@@ -113,7 +113,6 @@ export function recipeOf(template) {
   const id = template?.archetype || template?.recipeId;
   if (!id) return null;
   const recipe = {
-    archetype: String(id),
     recipeId: String(id),
   };
   if (Number.isFinite(Number(template.variant))) recipe.variant = Number(template.variant);

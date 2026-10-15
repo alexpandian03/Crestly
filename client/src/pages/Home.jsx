@@ -90,7 +90,7 @@ export default function Home() {
   const [category, setCategory] = useState("All");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const fontsLoaded = useGoogleFonts("Playfair Display", "Inter", DEMO_GALLERY_FONTS);
+  const fontsLoaded = useGoogleFonts(DEMO_GALLERY_FONTS);
   const galleryLoading = loading || !fontsLoaded;
 
   const posters = useMemo(

@@ -1,9 +1,13 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, memo, useRef, useState } from 'react';
-import { Calendar, Clock, MapPin } from 'lucide-react';
+import { AlertTriangle, Calendar, Clock, Image as ImageIcon, MapPin } from 'lucide-react';
 import { ELEMENT_LIMITS, iconForWords, isSamplePlaceholder, resolveItemImage } from '../../../shared/templateElements.js';
+import { fontStackFor, tamilCssOverrides } from '../../../shared/textScripts.js';
 import { ownsPlate, platesUnder } from '../utils/templateRender.js';
 import { imageOfBlank, wordsOfBlank } from '../utils/posterVariables.js';
+import { transformCloudinaryUrl } from '../utils/brandRender.js';
 import { posterIconComponent } from './posterIcons.js';
+import { makeSampleEntries } from '../utils/cardListHelpers.js';
+import { computeItemNumbers } from '../utils/templateEditorItems.js';
 
 /* ------------------------------------------------------------------ *
  * The items a template editor places, drawn exactly where they were put.
@@ -55,7 +59,16 @@ function fitsBox(el) {
 export { isSamplePlaceholder, wordsFor };
 
 /** The words one item draws, or nothing at all when its part of the poster is empty. */
-function wordsFor(item, content, photoUrl, isEditor = false, isFirstUserSlot = false) {
+function wordsFor(
+  item,
+  content,
+  photoUrl,
+  isEditor = false,
+  isFirstUserSlot = false,
+  isExporting = false,
+  showPlaceholders = true,
+  isThumbnail = false
+) {
   /* A blank a person or the assistant fills in draws its answer.
      When not in the editor, never show sample text or example copy. */
   if (item.kind === 'text') {
@@ -63,9 +76,17 @@ function wordsFor(item, content, photoUrl, isEditor = false, isFirstUserSlot = f
     if (!isEditor && isSamplePlaceholder(text)) {
       text = '';
     }
+    let isPlaceholder = false;
     if (!text) {
       if (isEditor) {
-        text = (item.text || '').trim();
+        text = (item.sample || item.text || item.label || 'Sample text').trim();
+      } else if (item.variable) {
+        if (!isExporting && !isThumbnail && showPlaceholders) {
+          text = (item.sample || item.label || 'Text space').trim();
+          isPlaceholder = true;
+        } else {
+          text = '';
+        }
       } else if (!item.variable) {
         const raw = (item.text || '').trim();
         if (!isSamplePlaceholder(raw)) {
@@ -73,10 +94,10 @@ function wordsFor(item, content, photoUrl, isEditor = false, isFirstUserSlot = f
         }
       }
     }
-    return { text: text.trim() };
+    return { text: text.trim(), isPlaceholder };
   }
   if (item.kind === 'image' || item.field === 'photo') {
-    return { image: resolveItemImage(item, content, photoUrl, isFirstUserSlot) };
+    return { image: resolveItemImage(item, content, photoUrl, isFirstUserSlot, { isExporting }) };
   }
   if (item.kind === 'shape') return { shape: item.shape || {} };
 
@@ -113,8 +134,49 @@ function wordsFor(item, content, photoUrl, isEditor = false, isFirstUserSlot = f
   }
 }
 
+const MASK_CLIP_PATHS = {
+  circle: 'circle(50% at 50% 50%)',
+  triangle: 'polygon(50% 0%, 0% 100%, 100% 100%)',
+  diamond: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)',
+  star: 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)',
+  hexagon: 'polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)',
+  blob: 'polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%)',
+};
+
+export function getMaskStyle(mask, radius = 0) {
+  const m = typeof mask === 'string' ? mask.trim().toLowerCase() : 'none';
+  if (m === 'rounded') {
+    return { borderRadius: radius ? `${round(radius)}px` : '16px' };
+  }
+  if (m === 'circle') {
+    return {
+      borderRadius: '50%',
+      clipPath: MASK_CLIP_PATHS.circle,
+      WebkitClipPath: MASK_CLIP_PATHS.circle,
+    };
+  }
+  if (m === 'blob') {
+    return {
+      borderRadius: '42% 58% 70% 30% / 45% 45% 55% 55%',
+      clipPath: MASK_CLIP_PATHS.blob,
+      WebkitClipPath: MASK_CLIP_PATHS.blob,
+    };
+  }
+  if (MASK_CLIP_PATHS[m]) {
+    return {
+      clipPath: MASK_CLIP_PATHS[m],
+      WebkitClipPath: MASK_CLIP_PATHS[m],
+    };
+  }
+  if (radius) {
+    return { borderRadius: `${round(radius)}px` };
+  }
+  return {};
+}
+
 /** Box styles every item shares. */
 function boxStyle(item, extra = {}) {
+  const rot = Number(item.rotation) || 0;
   return {
     position: 'absolute',
     left: `${round(item.x)}px`,
@@ -125,54 +187,159 @@ function boxStyle(item, extra = {}) {
     margin: 0,
     pointerEvents: 'none',
     overflow: 'hidden',
-    opacity: item.style.opacity < 1 ? item.style.opacity : undefined,
-    zIndex: item.z + 1,
+    opacity: (typeof item.style?.opacity === 'number' && item.style.opacity < 1)
+      ? item.style.opacity
+      : (typeof item.shape?.opacity === 'number' && item.shape.opacity < 1 ? item.shape.opacity : undefined),
+    transform: rot ? `rotate(${rot}deg)` : undefined,
+    transformOrigin: '50% 50%',
+    zIndex: (item.z ?? 0) + 1,
     ...extra,
   };
 }
 
-function TypeStyle({ style }) {
+/** The leading these words need: Tamil tails must not ride into the line below. */
+const leadFor = (text, fallback) => tamilCssOverrides(text, { lineHeight: fallback }).lineHeight || fallback;
+
+function TypeStyle({ style, text = '' }) {
+  let textShadow = undefined;
+  let webkitTextStroke = undefined;
+  if (style.effect === 'shadow') {
+    textShadow = '0 3px 8px rgba(0,0,0,0.45)';
+  } else if (style.effect === 'lift') {
+    textShadow = '0 8px 24px rgba(0,0,0,0.6)';
+  } else if (style.effect === 'outline' || style.outline) {
+    const strokeColor = style.outlineColor || '#000000';
+    const strokeWidth = style.outlineWidth || 1;
+    webkitTextStroke = `${strokeWidth}px ${strokeColor}`;
+    textShadow = `-1px -1px 0 ${strokeColor}, 1px -1px 0 ${strokeColor}, -1px 1px 0 ${strokeColor}, 1px 1px 0 ${strokeColor}`;
+  } else if (style.textShadow) {
+    textShadow = style.textShadow;
+  }
+
   return {
-    fontFamily: `'${style.fontFamily}', sans-serif`,
+    fontFamily: fontStackFor(style.fontFamily, text),
     fontWeight: style.weight,
     color: style.color,
     letterSpacing: style.letterSpacing ? `${style.letterSpacing}px` : undefined,
-    textTransform: style.uppercase ? 'uppercase' : 'none',
+    textTransform: style.textTransform || (style.uppercase ? 'uppercase' : 'none'),
     fontStyle: style.italic ? 'italic' : 'normal',
+    textDecoration: style.textDecoration || (style.underline ? 'underline' : (style.strike ? 'line-through' : undefined)),
     textAlign: cssAlign(style.align),
+    textShadow,
+    WebkitTextStroke: webkitTextStroke,
+    /* Tamil is spread last: its clusters cannot be spaced out or capitalised. */
+    ...tamilCssOverrides(text, { lineHeight: style.lineHeight }),
   };
 }
 
-function Photo({ url, style, onImageFail }) {
+function Photo({ url, item, style, mask, isEditor = false, onImageFail }) {
   const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [url]);
+  const [isLowRes, setIsLowRes] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+    setIsLowRes(false);
+  }, [url]);
+
   if (!url || failed) return null;
+
+  const maskStyle = getMaskStyle(mask || style?.mask, style?.radius);
+
+  // Transforms: crop pan/zoom and horizontal/vertical flip
+  const flipX = style?.flipX ? -1 : 1;
+  const flipY = style?.flipY ? -1 : 1;
+  const crop = style?.crop || {};
+  const cropZoom = Math.min(3, Math.max(1, Number(crop.zoom) || 1));
+  const cropX = Math.min(50, Math.max(-50, Number(crop.x) || 0));
+  const cropY = Math.min(50, Math.max(-50, Number(crop.y) || 0));
+
+  const transformParts = [];
+  if (cropX || cropY) transformParts.push(`translate(${cropX}%, ${cropY}%)`);
+  if (cropZoom !== 1) transformParts.push(`scale(${cropZoom})`);
+  if (flipX !== 1 || flipY !== 1) transformParts.push(`scale(${flipX}, ${flipY})`);
+  const imgTransform = transformParts.length > 0 ? transformParts.join(' ') : undefined;
+
+  // Simple CSS filters (brightness, contrast, grayscale)
+  const filterParts = [];
+  const brightness = typeof style?.brightness === 'number' ? style.brightness : 100;
+  const contrast = typeof style?.contrast === 'number' ? style.contrast : 100;
+  if (brightness !== 100) filterParts.push(`brightness(${brightness}%)`);
+  if (contrast !== 100) filterParts.push(`contrast(${contrast}%)`);
+  if (style?.grayscale) filterParts.push('grayscale(100%)');
+  const imgFilter = filterParts.length > 0 ? filterParts.join(' ') : undefined;
+
+  const handleLoad = (e) => {
+    const img = e.currentTarget;
+    if (img && img.naturalWidth && img.naturalHeight && item?.w && item?.h) {
+      // Friendly low-resolution warning when image is significantly smaller than the slot
+      if (img.naturalWidth < item.w * 0.8 || img.naturalHeight < item.h * 0.8) {
+        setIsLowRes(true);
+      } else {
+        setIsLowRes(false);
+      }
+    }
+  };
+
   return (
-    <img
-      src={url}
-      alt=""
-      crossOrigin="anonymous"
-      onError={() => {
-        setFailed(true);
-        onImageFail?.();
-      }}
-      style={{
-        display: 'block',
-        width: '100%',
-        height: '100%',
-        objectFit: style?.fit === 'contain' ? 'contain' : 'cover',
-        objectPosition: 'center',
-        borderRadius: style?.radius ? `${round(style.radius)}px` : undefined,
-        maxWidth: '100%',
-        maxHeight: '100%',
-      }}
-    />
+    <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', ...maskStyle }}>
+      <img
+        src={url}
+        alt=""
+        crossOrigin="anonymous"
+        onLoad={handleLoad}
+        onError={() => {
+          setFailed(true);
+          onImageFail?.();
+        }}
+        style={{
+          display: 'block',
+          width: '100%',
+          height: '100%',
+          objectFit: style?.fit === 'contain' ? 'contain' : 'cover',
+          objectPosition: 'center',
+          maxWidth: '100%',
+          maxHeight: '100%',
+          transform: imgTransform,
+          transformOrigin: 'center center',
+          filter: imgFilter,
+          WebkitFilter: imgFilter,
+        }}
+      />
+      {isEditor && isLowRes && (
+        <div
+          data-export-ignore="true"
+          title="This photo is small and may appear blurry when printed."
+          style={{
+            position: 'absolute',
+            bottom: 6,
+            left: 6,
+            zIndex: 20,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '3px 8px',
+            backgroundColor: 'rgba(217, 119, 6, 0.92)',
+            color: '#ffffff',
+            fontSize: '11px',
+            fontWeight: 600,
+            borderRadius: '4px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+            pointerEvents: 'auto',
+            cursor: 'help',
+          }}
+        >
+          <AlertTriangle style={{ width: 12, height: 12 }} />
+          <span>Small photo — may look blurry</span>
+        </div>
+      )}
+    </div>
   );
 }
 
 function Shape({ item }) {
   const shape = item.shape || {};
-  if (shape.type === 'line') {
+  const type = shape.type || 'rect';
+  if (type === 'line') {
     const thickness = Math.max(1, round(shape.strokeWidth || item.h));
     return (
       <div
@@ -190,13 +357,74 @@ function Shape({ item }) {
       />
     );
   }
-  const radius = item.style.radius;
+  if (['triangle', 'star', 'hexagon', 'diamond'].includes(type)) {
+    const pointsMap = {
+      triangle: '50,0 0,100 100,100',
+      diamond: '50,0 100,50 50,100 0,50',
+      hexagon: '25,0 75,0 100,50 75,100 25,100 0,50',
+      star: '50,0 61,35 98,35 68,57 79,91 50,70 21,91 32,57 2,35 39,35',
+    };
+    const clipPath = MASK_CLIP_PATHS[type];
+    const sw = shape.stroke && shape.strokeWidth ? Math.max(1, round(shape.strokeWidth)) : 0;
+    return (
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+        }}
+      >
+        {shape.fill ? (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              background: shape.fill,
+              clipPath,
+              WebkitClipPath: clipPath,
+            }}
+          />
+        ) : null}
+        {sw > 0 ? (
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              overflow: 'visible',
+              display: 'block',
+            }}
+          >
+            <polygon
+              points={pointsMap[type]}
+              fill="none"
+              stroke={shape.stroke}
+              strokeWidth={sw}
+              vectorEffect="non-scaling-stroke"
+            />
+          </svg>
+        ) : null}
+      </div>
+    );
+  }
+  const radius = shape.radius ?? item.style?.radius;
+  const isCircle = type === 'circle';
+  const isRounded = type === 'rounded-rect' || type === 'rounded' || Boolean(radius);
+  const borderRadius = isCircle ? '50%' : isRounded ? `${round(radius || 16)}px` : undefined;
   const box = {
     position: 'absolute',
     inset: 0,
     background: shape.fill || undefined,
     border: shape.stroke && shape.strokeWidth ? `${Math.max(1, round(shape.strokeWidth))}px solid ${shape.stroke}` : undefined,
-    borderRadius: shape.type === 'circle' ? '50%' : radius ? `${round(radius)}px` : undefined,
+    borderRadius,
   };
   return <div aria-hidden="true" style={box} />;
 }
@@ -220,13 +448,110 @@ function PosterIcon({ item }) {
 }
 
 /**
+ * Lays out card list items in a grid by columns, gap, align and real entry count,
+ * centering the last row when incomplete. Each card is drawn from card.items
+ * populated with entry values.
+ */
+function CardListBox({
+  item,
+  content,
+  fontsReady,
+  fontTick,
+  onReport,
+  onActivity,
+  isEditor = false,
+  onImageFail = null,
+}) {
+  const rawEntries = content?.lists?.[item.key];
+  let entries = Array.isArray(rawEntries) && rawEntries.length > 0 ? rawEntries : [];
+  if (entries.length === 0) {
+    if (!isEditor) return null;
+    const sampleCount = Number(item.previewCount) || 3;
+    entries = makeSampleEntries(item.card, sampleCount);
+  }
+
+  const cols = Math.max(1, Math.min(5, Number(item.columns) || 1));
+  const gapX = Math.max(0, Number(item.gapX) || 16);
+  const gapY = Math.max(0, Number(item.gapY) || 16);
+  const align = item.align || 'left';
+  const cardW = Math.max(40, Number(item.card?.w) || 300);
+  const cardH = Math.max(24, Number(item.card?.h) || 150);
+  const totalEntries = entries.length;
+  const totalRows = Math.ceil(totalEntries / cols);
+
+  const renderedCards = entries.map((entry, idx) => {
+    const rowIdx = Math.floor(idx / cols);
+    const colIdx = idx % cols;
+    const isLastRow = rowIdx === totalRows - 1;
+    const itemsInThisRow = isLastRow ? (totalEntries % cols || cols) : cols;
+    const rowW = itemsInThisRow * cardW + (itemsInThisRow - 1) * gapX;
+
+    let rowStartX = 0;
+    if (isLastRow && itemsInThisRow < cols) {
+      rowStartX = Math.max(0, (item.w - rowW) / 2);
+    } else if (align === 'center') {
+      rowStartX = Math.max(0, (item.w - (cols * cardW + (cols - 1) * gapX)) / 2);
+    } else if (align === 'right') {
+      rowStartX = Math.max(0, item.w - (cols * cardW + (cols - 1) * gapX));
+    }
+
+    const cardX = round(item.x + rowStartX + colIdx * (cardW + gapX));
+    const cardY = round(item.y + rowIdx * (cardH + gapY));
+
+    const cardItems = (item.card?.items || []).map((cardItem, cIdx) => {
+      const resolved = { ...cardItem };
+      if (resolved.kind === 'text') {
+        let val = resolved.fieldKey && entry[resolved.fieldKey] !== undefined ? entry[resolved.fieldKey] : resolved.text || '';
+        if (typeof val === 'string' && val.includes('{{')) {
+          val = val.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, k) => entry[k] ?? '');
+        }
+        resolved.text = val;
+      }
+      if (resolved.kind === 'image') {
+        let imgUrl = resolved.fieldKey && entry[resolved.fieldKey] ? entry[resolved.fieldKey] : resolved.imageUrl || '';
+        if (typeof imgUrl === 'string' && imgUrl.includes('{{')) {
+          imgUrl = imgUrl.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, k) => entry[k] ?? '');
+        }
+        resolved.imageUrl = imgUrl;
+      }
+      resolved.x = cardX + cardItem.x;
+      resolved.y = cardY + cardItem.y;
+      resolved.id = `${item.id}-c${idx}-i${cIdx}`;
+      return resolved;
+    });
+
+    return { idx, cardX, cardY, cardItems };
+  });
+
+  return (
+    <React.Fragment>
+      {renderedCards.map((c) =>
+        c.cardItems.map((cItem) => (
+          <ElementBox
+            key={cItem.id}
+            item={cItem}
+            content={content}
+            fontsReady={fontsReady}
+            fontTick={fontTick}
+            onReport={onReport}
+            onActivity={onActivity}
+            isEditor={isEditor}
+            onImageFail={onImageFail}
+          />
+        ))
+      )}
+    </React.Fragment>
+  );
+}
+
+/**
  * One placed item. It draws nothing when it has no words, photo or shape to show.
  * Memoized: moving one item on the editor canvas never re-measures the other twenty-nine.
  *
  * `plate` is the shape these words stand on, when there is one: an info pill, a button,
  * a band. Words on a shape of their own sit in the middle of it.
  */
-const ElementBox = memo(function ElementBox({
+const ElementBoxInner = memo(function ElementBoxInner({
   item,
   content,
   photoUrl,
@@ -239,11 +564,17 @@ const ElementBox = memo(function ElementBox({
   isEditor = false,
   isFirstUserSlot = false,
   onImageFail = null,
+  isExporting = false,
+  showPlaceholders = true,
+  highlightSlotKey = null,
+  onSlotClick = null,
+  isThumbnail = false,
+  numInfo = null,
 }) {
   const boxRef = useRef(null);
   const words = useMemo(
-    () => wordsFor(item, content, photoUrl, isEditor, isFirstUserSlot),
-    [item, content, photoUrl, isEditor, isFirstUserSlot]
+    () => wordsFor(item, content, photoUrl, isEditor, isFirstUserSlot, isExporting, showPlaceholders, isThumbnail),
+    [item, content, photoUrl, isEditor, isFirstUserSlot, isExporting, showPlaceholders, isThumbnail]
   );
   const [size, setSize] = useState(item.style.size);
   /* Words that still need more room than the box has at the smallest size allowed are
@@ -254,6 +585,20 @@ const ElementBox = memo(function ElementBox({
     () => Math.max(22, ELEMENT_LIMITS.fontSize.min, Math.min(item.style.size, item.style.minSize || 22)),
     [item.style.size, item.style.minSize]
   );
+
+  const isHighlighted = Boolean(highlightSlotKey && item.key === highlightSlotKey);
+  const handleSlotClick = onSlotClick && item.variable && item.key ? (e) => {
+    e.stopPropagation();
+    onSlotClick(item.key);
+  } : undefined;
+
+  const highlightStyle = isHighlighted ? {
+    outline: '3px solid #2563EB',
+    outlineOffset: '2px',
+    boxShadow: '0 0 0 4px rgba(37,99,235,0.3)',
+    animation: 'pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+    zIndex: 50,
+  } : null;
 
   /* New words, a new box or new fonts: start again at the size that was chosen.
      The words are compared as text, so a redraw of the same poster never restarts the fit. */
@@ -329,7 +674,25 @@ const ElementBox = memo(function ElementBox({
   /* A box too small for its words shows them anyway - clipping a line is worse. */
   const spill = spills ? { overflow: 'visible' } : null;
 
-  const type = TypeStyle({ style: { ...item.style, size } });
+  /* The whole of what this item shows, read once: Tamil words change its leading,
+     its spacing, its capitals and the face that shapes its letters. */
+  const itemWords = Array.isArray(words.lines) ? words.lines.join(' ') : words.text || '';
+  const type = TypeStyle({ style: { ...item.style, size }, text: itemWords });
+
+  if (item.kind === 'cardlist') {
+    return (
+      <CardListBox
+        item={item}
+        content={content}
+        fontsReady={fontsReady}
+        fontTick={fontTick}
+        onReport={onReport}
+        onActivity={onActivity}
+        isEditor={isEditor}
+        onImageFail={onImageFail}
+      />
+    );
+  }
 
   if (item.kind === 'shape') {
     return (
@@ -348,8 +711,176 @@ const ElementBox = memo(function ElementBox({
   }
 
   if (item.kind === 'image' || item.field === 'photo') {
-    const radius = item.style?.radius ? `${round(item.style.radius)}px` : undefined;
+    const mask = item.mask || item.style?.mask;
+    const maskStyle = getMaskStyle(mask, item.style?.radius);
     if (!words.image) {
+      if (item.variable && !isEditor) {
+        if (isExporting || isThumbnail || !showPlaceholders) {
+          return null;
+        }
+        const sampleImg = item.sampleImage || item.imageUrl;
+        return (
+          <div
+            data-element={item.id}
+            data-export-ignore="true"
+            onClick={handleSlotClick}
+            style={boxStyle(item, {
+              ...maskStyle,
+              background: '#F3F4F6',
+              border: '2px dashed #9CA3AF',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '8px',
+              textAlign: 'center',
+              boxSizing: 'border-box',
+              userSelect: 'none',
+              cursor: onSlotClick ? 'pointer' : 'default',
+              pointerEvents: onSlotClick ? 'auto' : 'none',
+              ...highlightStyle,
+            })}
+          >
+            {sampleImg ? (
+              <img
+                src={sampleImg}
+                alt=""
+                crossOrigin="anonymous"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  opacity: 0.35,
+                  pointerEvents: 'none',
+                }}
+              />
+            ) : null}
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: '50%',
+                backgroundColor: '#E5E7EB',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#4B5563',
+                marginBottom: 4,
+                position: 'relative',
+                zIndex: 1,
+              }}
+            >
+              <ImageIcon style={{ width: 16, height: 16 }} />
+            </div>
+            <span style={{ fontSize: 11, fontWeight: 600, color: '#374151', lineHeight: 1.2, position: 'relative', zIndex: 1 }}>
+              {item.label || (numInfo ? numInfo.label : 'Photo space')}
+            </span>
+            <span
+              data-export-ignore="true"
+              style={{
+                position: 'absolute',
+                top: 2,
+                right: 2,
+                zIndex: 30,
+                fontSize: '11px',
+                fontWeight: 700,
+                lineHeight: 1,
+                padding: '2px 5px',
+                borderRadius: '4px',
+                backgroundColor: '#2563EB',
+                color: '#ffffff',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                pointerEvents: 'none',
+                userSelect: 'none',
+              }}
+            >
+              {numInfo ? numInfo.label : 'Photo'}
+            </span>
+          </div>
+        );
+      }
+
+      // In editor mode, a variable image slot shows a clean placeholder tile marked with data-export-ignore
+      if (item.variable && isEditor) {
+        return (
+          <div
+            data-element={item.id}
+            data-export-ignore="true"
+            style={boxStyle(item, {
+              ...maskStyle,
+              background: '#F0F7FF',
+              border: '2px dashed #93C5FD',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '12px',
+              textAlign: 'center',
+              boxSizing: 'border-box',
+              userSelect: 'none',
+            })}
+          >
+            {/* The designer's own picture shows here faintly, as an example of what fits this
+               space. It is never a poster's answer, and this whole tile never exports. */}
+            {item.imageUrl ? (
+              <img
+                src={item.imageUrl}
+                alt=""
+                crossOrigin="anonymous"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  opacity: 0.18,
+                  pointerEvents: 'none',
+                }}
+              />
+            ) : null}
+            <div
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: '50%',
+                backgroundColor: '#DBEAFE',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#2563EB',
+                marginBottom: 6,
+              }}
+            >
+              <ImageIcon style={{ width: 18, height: 18 }} />
+            </div>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#1E3A8A', lineHeight: 1.2 }}>
+              {item.label || 'Photo space'}
+            </span>
+            <span style={{ fontSize: 11, color: '#3B82F6', marginTop: 2 }}>
+              {item.hint || 'Users replace this photo'}
+            </span>
+            {item.aspectRatio && (
+              <span
+                style={{
+                  marginTop: 6,
+                  padding: '2px 6px',
+                  fontSize: 10,
+                  fontFamily: 'monospace',
+                  fontWeight: 600,
+                  backgroundColor: 'rgba(191, 219, 254, 0.7)',
+                  color: '#1E40AF',
+                  borderRadius: 4,
+                }}
+              >
+                {item.aspectRatio}
+              </span>
+            )}
+          </div>
+        );
+      }
+
       const FallbackIcon = posterIconComponent(item.icon || item.name || iconForWords(content?.title || item.field || 'image') || 'heart-pulse') || FIELD_ICONS.venue;
       const fillColor = item.style?.fill || item.style?.background || (item.style?.color ? `${item.style.color}15` : 'rgba(0,0,0,0.06)');
       const iconColor = item.style?.iconColor || item.style?.color || 'currentColor';
@@ -357,7 +888,7 @@ const ElementBox = memo(function ElementBox({
         <div
           data-element={item.id}
           style={boxStyle(item, {
-            borderRadius: radius,
+            ...maskStyle,
             background: fillColor,
             display: 'flex',
             alignItems: 'center',
@@ -378,9 +909,19 @@ const ElementBox = memo(function ElementBox({
         </div>
       );
     }
+    const transformedUrl = transformCloudinaryUrl(words.image, { w: item.w, h: item.h });
     return (
-      <div data-element={item.id} style={boxStyle(item, { borderRadius: radius })}>
-        <Photo url={words.image} style={item.style} onImageFail={onImageFail} />
+      <div
+        data-element={item.id}
+        onClick={handleSlotClick}
+        style={boxStyle(item, {
+          ...maskStyle,
+          ...highlightStyle,
+          cursor: onSlotClick && item.variable ? 'pointer' : undefined,
+          pointerEvents: onSlotClick && item.variable ? 'auto' : undefined,
+        })}
+      >
+        <Photo url={transformedUrl} item={item} style={item.style} mask={mask} isEditor={isEditor} onImageFail={onImageFail} />
       </div>
     );
   }
@@ -395,7 +936,7 @@ const ElementBox = memo(function ElementBox({
       ? FIELD_LABELS[words.field]
       : '';
   const showIcon = !isFactField && Boolean(Icon) && item.style.showIcon !== false;
-  const lineHeight = item.style.lineHeight;
+  const lineHeight = leadFor(itemWords, item.style.lineHeight);
 
   if (Array.isArray(words.lines)) {
     const mark = Math.max(3, Math.round(size * BULLET_MARK));
@@ -403,6 +944,7 @@ const ElementBox = memo(function ElementBox({
       <ul
         ref={boxRef}
         data-element={item.id}
+        onClick={handleSlotClick}
         style={boxStyle(item, {
           ...type,
           listStyle: 'none',
@@ -413,6 +955,9 @@ const ElementBox = memo(function ElementBox({
           justifyContent: valign,
           gap: `${Math.round(size * BULLET_GAP)}px`,
           ...spill,
+          ...highlightStyle,
+          cursor: onSlotClick && item.variable ? 'pointer' : undefined,
+          pointerEvents: onSlotClick && item.variable ? 'auto' : undefined,
         })}
       >
         {words.lines.map((line, index) => (
@@ -480,7 +1025,7 @@ const ElementBox = memo(function ElementBox({
           ...type,
           fontSize: `${valSize}px`,
           fontWeight: isFactField ? 700 : type.fontWeight,
-          lineHeight: isFactField ? 1.18 : lineHeight,
+          lineHeight: isFactField ? leadFor(itemWords, 1.18) : lineHeight,
           textAlign: isFactField ? 'center' : type.textAlign,
           overflowWrap: 'normal',
           wordBreak: 'normal',
@@ -492,18 +1037,48 @@ const ElementBox = memo(function ElementBox({
     </div>
   );
 
+  const placeholderBadge = words.isPlaceholder ? (
+    <span
+      data-export-ignore="true"
+      style={{
+        position: 'absolute',
+        top: 2,
+        right: 2,
+        zIndex: 30,
+        fontSize: '11px',
+        fontWeight: 700,
+        lineHeight: 1,
+        padding: '2px 5px',
+        borderRadius: '4px',
+        backgroundColor: '#2563EB',
+        color: '#ffffff',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+        pointerEvents: 'none',
+        userSelect: 'none',
+      }}
+    >
+      {numInfo ? numInfo.label : 'Text'}
+    </span>
+  ) : null;
+
   /* Date, place and time of one info row stand on one line: each of them is its own card box */
   if (onRow || isFactField) {
     return (
       <div
         ref={boxRef}
         data-element={item.id}
+        {...(words.isPlaceholder ? { 'data-export-ignore': 'true' } : {})}
+        onClick={handleSlotClick}
         style={boxStyle(item, {
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
           ...spill,
+          ...(words.isPlaceholder ? { opacity: 0.45, fontStyle: 'italic' } : {}),
+          ...highlightStyle,
+          cursor: onSlotClick && item.variable ? 'pointer' : undefined,
+          pointerEvents: onSlotClick && item.variable ? 'auto' : undefined,
         })}
       >
         <div
@@ -519,6 +1094,7 @@ const ElementBox = memo(function ElementBox({
           {iconNode}
           {wordsNode}
         </div>
+        {placeholderBadge}
       </div>
     );
   }
@@ -527,6 +1103,8 @@ const ElementBox = memo(function ElementBox({
     <div
       ref={boxRef}
       data-element={item.id}
+      {...(words.isPlaceholder ? { 'data-export-ignore': 'true' } : {})}
+      onClick={handleSlotClick}
       style={boxStyle(item, {
         display: 'flex',
         flexDirection: showIcon ? 'row' : 'column',
@@ -534,12 +1112,24 @@ const ElementBox = memo(function ElementBox({
         justifyContent: ownsShape ? 'center' : showIcon ? 'flex-start' : valign,
         gap,
         ...spill,
+        ...(words.isPlaceholder ? { opacity: 0.45, fontStyle: 'italic' } : {}),
+        ...highlightStyle,
+        cursor: onSlotClick && item.variable ? 'pointer' : undefined,
+        pointerEvents: onSlotClick && item.variable ? 'auto' : undefined,
       })}
     >
       {iconNode}
       {wordsNode}
+      {placeholderBadge}
     </div>
   );
+});
+
+const ElementBox = memo(function ElementBox(props) {
+  const { item, content } = props;
+  const isHidden = item?.variable && item?.key && Array.isArray(content?.hiddenSlots) && content.hiddenSlots.includes(item.key);
+  if (isHidden) return null;
+  return <ElementBoxInner {...props} />;
 });
 
 /** Which items share a row of the info pill, so their words can stand on one line. */
@@ -602,7 +1192,13 @@ export default function PosterElementLayer({
   onFitted = null,
   isEditor = false,
   onImageFail = null,
+  isExporting = false,
+  showPlaceholders = false,
+  highlightSlotKey = null,
+  onSlotClick = null,
+  isThumbnail = false,
 }) {
+  const itemNumbers = useMemo(() => computeItemNumbers(elements), [elements]);
   const overflowCbRef = useRef(onOverflow);
   overflowCbRef.current = onOverflow;
   const fittedCbRef = useRef(onFitted);
@@ -636,15 +1232,17 @@ export default function PosterElementLayer({
     [elements]
   );
 
-  /* The first user-filled picture space in the template receives the event/user photo. */
+  /* A picture space with a name of its own has a place in the poster's own values, so only what
+     this poster holds under that name may stand there. Spaces with no name of their own still
+     take the poster's picture, which is what an event photo has always done. */
   const firstUserImageId = useMemo(() => {
     const list = Array.isArray(elements) ? elements : [];
     const first = list.find(
       (el) =>
         el &&
-        ((el.kind === 'image' && Boolean(el.variable)) ||
-          el.field === 'photo' ||
-          (el.kind === 'image' && !String(el.imageUrl || '').trim()))
+        el.kind === 'image' &&
+        !(el.variable && String(el.key || '').trim()) &&
+        !String(el.imageUrl || '').trim()
     );
     return first?.id || null;
   }, [elements]);
@@ -712,6 +1310,12 @@ export default function PosterElementLayer({
           isEditor={isEditor}
           isFirstUserSlot={item.id === firstUserImageId}
           onImageFail={onImageFail}
+          isExporting={isExporting}
+          showPlaceholders={showPlaceholders}
+          highlightSlotKey={highlightSlotKey}
+          onSlotClick={onSlotClick}
+          isThumbnail={isThumbnail}
+          numInfo={itemNumbers.get(item.id)}
         />
       ))}
     </>

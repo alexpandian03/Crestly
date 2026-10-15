@@ -11,6 +11,9 @@ import User from '../models/User.model.js';
 import Client from '../models/Client.model.js';
 import BrandKit from '../models/BrandKit.model.js';
 import Template, { getDefaultTemplateData } from '../models/Template.model.js';
+import Poster from '../models/Poster.model.js';
+import Asset from '../models/Asset.model.js';
+import { generateContent } from '../services/ai/index.js';
 import { TEMPLATE_MAX_VERSIONS } from '../services/template/zones.js';
 import { DESIGN_MAX_BYTES, brandKitSnapshot, designBytes, templateSnapshot } from '../services/poster/design.js';
 import { buildRecipeDesign } from '../services/poster/recipe.js';
@@ -29,6 +32,17 @@ import {
   resolveStyleTokens,
 } from '../../shared/templateElements.js';
 import { generateToken } from '../services/auth.service.js';
+import {
+  commitItemText,
+  duplicateItem,
+  setItemMeta,
+} from '../../client/src/utils/templateEditorItems.js';
+import {
+  extractVenue,
+  extractBullets,
+  extractSubtitle,
+  extractKicker,
+} from '../services/ai/providers/mock.js';
 
 if (process.env.NODE_ENV === 'production') {
   throw new Error('Stage 9 tests cannot run in production.');
@@ -45,7 +59,7 @@ function assert(condition, message) {
   passed += 1;
 }
 
-const created = { clientIds: [], userIds: [], templateIds: [] };
+const created = { clientIds: [], userIds: [], templateIds: [], posterIds: [] };
 let server;
 let baseUrl;
 
@@ -109,7 +123,9 @@ function runMigration() {
 }
 
 async function cleanup() {
+  await Poster.deleteMany({ _id: { $in: created.posterIds } }).catch(() => {});
   await Template.deleteMany({ _id: { $in: created.templateIds } }).catch(() => {});
+  await Asset.deleteMany({ clientId: { $in: created.clientIds } }).catch(() => {});
   await BrandKit.deleteMany({ clientId: { $in: created.clientIds } }).catch(() => {});
   await User.deleteMany({ _id: { $in: created.userIds } }).catch(() => {});
   await Client.deleteMany({ _id: { $in: created.clientIds } }).catch(() => {});
@@ -777,7 +793,7 @@ async function run() {
       z: index,
       style: { size: 32, minSize: 14 },
     })),
-    ...Array.from({ length: 10 }, (_, index) => ({
+    ...Array.from({ length: 90 }, (_, index) => ({
       id: `t-${index}`,
       kind: 'text',
       x: 70,
@@ -786,7 +802,7 @@ async function run() {
       h: 60,
       text: 'Words',
     })),
-    ...Array.from({ length: 6 }, (_, index) => ({
+    ...Array.from({ length: 30 }, (_, index) => ({
       id: `i-${index}`,
       kind: 'image',
       x: 70,
@@ -795,7 +811,7 @@ async function run() {
       h: 120,
       imageUrl: ownPhoto,
     })),
-    ...Array.from({ length: 8 }, (_, index) => ({
+    ...Array.from({ length: 24 }, (_, index) => ({
       id: `s-${index}`,
       kind: 'shape',
       x: 70,
@@ -805,23 +821,28 @@ async function run() {
       shape: { type: 'line', fill: '#059669', strokeWidth: 4 },
     })),
   ];
-  assert(crowd.length === 31, 'the test builds thirty-one valid items');
+  assert(crowd.length === 151, 'the test builds one hundred fifty-one valid items');
 
   const tooMany = await request(`/api/templates/${editorTemplate._id}`, {
     method: 'PATCH',
     token: admin.token,
     body: { elements: crowd, expectedVersion: markupVersion },
   });
-  assert(tooMany.status === 400, 'thirty-one items are refused');
-  assert(/at most 30 items/.test(tooMany.body.error.message), 'the refusal says the template holds thirty items');
+  assert(tooMany.status === 400, 'one hundred fifty-one items are refused');
+  assert(/at most 150 items/.test(tooMany.body.error.message), 'the refusal says the template holds 150 items');
 
+  const saveStart = Date.now();
   const justEnough = await request(`/api/templates/${editorTemplate._id}`, {
     method: 'PATCH',
     token: admin.token,
-    body: { elements: crowd.slice(0, 30), expectedVersion: markupVersion },
+    body: { elements: crowd.slice(0, 150), expectedVersion: markupVersion },
   });
-  assert(justEnough.status === 200, 'thirty items are accepted');
-  assert(justEnough.body.data.template.elements.length === 30, 'every item of a full set is stored');
+  const saveDurationMs = Date.now() - saveStart;
+  console.log(`Save time of a 150-item template: ${saveDurationMs} ms`);
+
+  assert(justEnough.status === 200, 'one hundred fifty items are accepted');
+  assert(justEnough.body.data.template.elements.length === 150, 'every item of a full set is stored');
+  assert(tooMany.status === 400 && justEnough.status === 200, '150 items save and 151 are rejected');
   const crowdedVersion = justEnough.body.data.template.version;
 
   // A document that has already grown past what it should hold
@@ -844,7 +865,7 @@ async function run() {
     category: 'Event',
     size: { width: 1080, height: 1350 },
     zones: legacyZones,
-    elements: fatList(80),
+    elements: fatList(160),
     editorVersion: 2,
     version: 4,
     versions: Array.from({ length: 10 }, (_, index) => ({
@@ -852,7 +873,7 @@ async function run() {
       name: oversizedName,
       zones: legacyZones,
       size: { width: 1080, height: 1350 },
-      elements: fatList(80),
+      elements: fatList(160),
       note: '',
       createdAt: new Date(),
     })),
@@ -865,15 +886,22 @@ async function run() {
   const oversizedDoc = await Template.collection.findOne({ _id: oversizedId });
   assert(jsonBytes(oversizedDoc) > TEMPLATE_DOC_MAX_BYTES, 'the test built a template document larger than the limit');
 
+  /* The design itself is small here; the ten archived states beside it are what filled the
+     document. A save sheds its oldest states rather than refusing, because the items on the
+     canvas are not what made this template too big and the user cannot remove those. */
   const oversizedSave = await request(`/api/templates/${oversizedId}`, {
     method: 'PATCH',
     token: admin.token,
     body: { name: `Oversized renamed ${runId}`, expectedVersion: 4 },
   });
-  assert(oversizedSave.status === 400, 'saving over an oversized template document is refused');
-  assert(/too big to save/.test(oversizedSave.body.error.message), 'the refusal says the template is too big');
-  const stillOversized = await Template.collection.findOne({ _id: oversizedId });
-  assert(stillOversized.name === oversizedName, 'the refused save changed nothing in the database');
+  assert(oversizedSave.status === 200, 'a template whose history outgrew the document still saves');
+  const shedDoc = await Template.collection.findOne({ _id: oversizedId });
+  assert(shedDoc.name === `Oversized renamed ${runId}`, 'the rename is stored');
+  assert(shedDoc.versions.length < 10, 'the oldest saved states are shed to make room');
+  assert(
+    jsonBytes(shedDoc) < jsonBytes(oversizedDoc),
+    'the document is smaller again once its oldest states are gone'
+  );
 
   // Two admins saving at once
   const stale = await request(`/api/templates/${editorTemplate._id}`, {
@@ -993,7 +1021,7 @@ async function run() {
       id: `fill-${index}`,
       kind: 'text',
       x: 70,
-      y: 240 + index * 80,
+      y: 200 + (index % 10) * 80,
       w: 900,
       h: 60,
       text: 'Sample words',
@@ -1004,17 +1032,21 @@ async function run() {
       maxLength: 60,
     }));
   const fillPics = (count) =>
-    Array.from({ length: count }, (_, index) => ({
-      id: `fill-pic-${index}`,
-      kind: 'image',
-      x: 70,
-      y: 240 + index * 180,
-      w: 400,
-      h: 150,
-      variable: true,
-      key: `photo_${index}`,
-      label: `Photo ${index}`,
-    }));
+    Array.from({ length: count }, (_, index) => {
+      const col = Math.floor(index / 10);
+      const row = index % 10;
+      return {
+        id: `fill-pic-${index}`,
+        kind: 'image',
+        x: 70 + col * 320,
+        y: 200 + row * 90,
+        w: 300,
+        h: 80,
+        variable: true,
+        key: `photo_${index}`,
+        label: `Photo ${index}`,
+      };
+    });
 
   const fillCreate = await createTemplate(admin, `Fill-ins ${runId}`, {
     elements: editorElements([...fillTexts(10), ...fillPics(4)]),
@@ -1039,22 +1071,27 @@ async function run() {
     'a fill-in photo may be saved empty, to be replaced later'
   );
 
-  const tooManyFills = await createTemplate(admin, `Too Many Fill-ins ${runId}`, {
-    elements: editorElements(fillTexts(11)),
+  const maxFillPics = await createTemplate(admin, `Max Fill-in Photos ${runId}`, {
+    elements: editorElements(fillPics(24)),
   });
-  assert(tooManyFills.status === 400, 'eleven fill-in texts are refused');
+  assert(maxFillPics.status === 201, 'twenty-four fill-in photos are allowed');
+
+  const tooManyFills = await createTemplate(admin, `Too Many Fill-ins ${runId}`, {
+    elements: editorElements(fillTexts(41)),
+  });
+  assert(tooManyFills.status === 400, 'forty-one fill-in texts are refused');
   assert(
-    /at most 10 texts to be filled in/.test(tooManyFills.body.error.message),
-    'the refusal says ten fill-in texts is the most'
+    /at most 40 texts to be filled in/.test(tooManyFills.body.error.message),
+    'the refusal says forty fill-in texts is the most'
   );
 
   const tooManyFillPics = await createTemplate(admin, `Too Many Fill-in Photos ${runId}`, {
-    elements: editorElements(fillPics(5)),
+    elements: editorElements(fillPics(25)),
   });
-  assert(tooManyFillPics.status === 400, 'five fill-in photos are refused');
+  assert(tooManyFillPics.status === 400, 'twenty-five fill-in photos are refused');
   assert(
-    /at most 4 photos to be replaced/.test(tooManyFillPics.body.error.message),
-    'the refusal says four fill-in photos is the most'
+    /at most 24 photos to be replaced/.test(tooManyFillPics.body.error.message),
+    'the refusal says twenty-four fill-in photos is the most'
   );
 
   const sharedName = await createTemplate(admin, `Shared Fill-in Name ${runId}`, {
@@ -1390,6 +1427,866 @@ async function run() {
   assert(resolvedElAfter.style.color === resolvedElBefore.style.color, 'snapshot tokens resolve identical color after brand kit changes');
   assert(resolvedElAfter.style.fontFamily === resolvedElBefore.style.fontFamily, 'snapshot tokens resolve identical font after brand kit changes');
   assert(effPageAfter.background.color === effPageBefore.background.color, 'snapshot effectivePage resolves identical after brand kit changes');
+
+  // 19. Bug bundle fixes: slot key stability, uniqueness on duplicate, plain-word error messages, and mock AI extraction
+  // (a) Slot key stability on text edit
+  const testArea = { x: 50, y: 150, w: 980, h: 1050 };
+  const originalSlot = {
+    id: 'slot_item_1',
+    kind: 'text',
+    variable: true,
+    key: 'sponsor_name',
+    label: 'Sponsor name',
+    text: 'Sponsor Organization',
+    x: 60,
+    y: 200,
+    w: 300,
+    h: 50,
+  };
+  const listWithSlot = [originalSlot];
+  const editedItem = commitItemText(originalSlot, listWithSlot, 'Updated Sponsor Text', testArea);
+  assert(
+    editedItem.key === 'sponsor_name',
+    'slot key remains stable when text is edited in commitItemText'
+  );
+  const metaEditedItem = setItemMeta(originalSlot, listWithSlot, { label: 'Sponsor name', maxLength: 50 }, testArea);
+  assert(
+    metaEditedItem.key === 'sponsor_name',
+    'slot key remains stable when metadata is updated with existing key in setItemMeta'
+  );
+
+  // (b) Duplicated slot gets a brand-new unique key that does not collide
+  const duplicatedItem = duplicateItem(originalSlot, listWithSlot, testArea);
+  assert(
+    originalSlot.key !== duplicatedItem.key,
+    'duplicated slot gets a unique key that does not collide with the original item key'
+  );
+  assert(
+    duplicatedItem.key.startsWith('sponsor_name_'),
+    'duplicated slot key is derived uniquely from label'
+  );
+
+  // (c) Server errors list valid slot names in plain words
+  const unofferedSlotTemplate = await Template.create({
+    ...getDefaultTemplateData(clientA._id, `Slot Error Template ${runId}`),
+    editorVersion: 2,
+    elements: [
+      {
+        id: 'head_el_1',
+        kind: 'text',
+        field: 'headline',
+        x: 50,
+        y: 150,
+        w: 800,
+        h: 100,
+        text: 'Spring Conference',
+      },
+      {
+        id: 'text_var_el_1',
+        kind: 'text',
+        variable: true,
+        key: 'speaker_bio',
+        label: 'Speaker bio',
+        maxLength: 60,
+        x: 50,
+        y: 300,
+        w: 400,
+        h: 60,
+        text: 'Keynote biography',
+      },
+    ],
+  });
+  created.templateIds.push(unofferedSlotTemplate._id);
+
+  const invalidBlankPoster = await request('/api/posters', {
+    method: 'POST',
+    token: admin.token,
+    body: {
+      templateId: unofferedSlotTemplate._id.toString(),
+      prompt: `Invalid blank ${runId}`,
+      content: {
+        title: 'Spring Conference',
+        tagline: 'Join us for talks',
+        date: '10 May',
+        time: '10 AM',
+        venue: 'Town Hall',
+        details: ['Session 1'],
+        imageQuery: 'conference',
+        extras: { unoffered_blank: 'Something' },
+      },
+    },
+  });
+  assert(invalidBlankPoster.status === 400, 'unoffered blank is rejected');
+  assert(
+    /Valid blanks: Speaker bio/.test(invalidBlankPoster.body.error.message),
+    'rejection message lists valid blanks in plain words'
+  );
+
+  // (d) Mock AI extraction fixes: venue 'community hall', non-sample bullets, dynamic kicker/subtitle
+  const venueResult = extractVenue('Community health checkup camp, community hall, 15 Oct, 10 AM');
+  assert(
+    venueResult === 'Community Hall',
+    'extractVenue correctly parses "community hall" into "Community Hall"'
+  );
+
+  const extractedBullets = extractBullets(
+    'Youth Technology Fair. Robotics showcase, chemical demonstrations, solar project exhibits. Community hall, 10 AM.'
+  );
+  assert(extractedBullets.length === 3, 'extracts 3 descriptive clauses as bullets');
+  assert(
+    !extractedBullets.some((b) => /complimentary registration/i.test(b)),
+    'extractBullets never falls back to template sample copy'
+  );
+
+  const extractedSub = extractSubtitle(
+    'Coding Bootcamp 2026. Fast-track your engineering career with industry mentors. Community hall, 10 AM.',
+    'Coding Bootcamp 2026'
+  );
+  assert(
+    extractedSub === 'Fast-track your engineering career with industry mentors',
+    'extractSubtitle extracts user descriptive sentence rather than canned sample copy'
+  );
+
+  const extractedKickerVal = extractKicker(
+    'Youth Art Exhibition, inspiring young artists, community hall, 10 AM',
+    'Youth Art Exhibition'
+  );
+  assert(
+    extractedKickerVal === 'Arts & Culture',
+    'extractKicker derives contextual kicker instead of defaulting to FEATURED EVENT'
+  );
+
+  // 20. Sections model Part 1
+  // A. A custom header saves
+  const customHeaderRes = await createTemplate(admin, `Custom Header ${runId}`, {
+    sections: {
+      header: {
+        mode: 'custom',
+        height: 120,
+        background: { type: 'color', color: '#112233' },
+        elements: [
+          {
+            id: 'hdr-txt-1',
+            kind: 'text',
+            text: 'Annual Charity Gala',
+            x: 60,
+            y: 20,
+            w: 500,
+            h: 60,
+            style: { color: '#ffffff', size: 28 },
+          },
+        ],
+      },
+      content: {
+        elements: [
+          {
+            id: 'cnt-headline-sec',
+            kind: 'field',
+            field: 'headline',
+            x: 70,
+            y: 180,
+            w: 940,
+            h: 120,
+            text: 'Empowering Next Generation',
+          },
+        ],
+      },
+      footer: {
+        mode: 'brand',
+        height: 80,
+        elements: [],
+      },
+    },
+    editorVersion: 2,
+  });
+  assert(customHeaderRes.status === 201, 'a custom header saves');
+  const savedCustomHeader = customHeaderRes.body.data.template;
+  assert(savedCustomHeader.sections.header.mode === 'custom', 'custom header mode is stored');
+  assert(savedCustomHeader.sections.header.elements[0].locked === false, 'header item defaults unlocked');
+
+  // Header item editable by the admin
+  const editHdrRes = await request(`/api/templates/${savedCustomHeader._id}`, {
+    method: 'PATCH',
+    token: admin.token,
+    body: {
+      expectedVersion: savedCustomHeader.version,
+      sections: {
+        ...savedCustomHeader.sections,
+        header: {
+          ...savedCustomHeader.sections.header,
+          elements: [
+            {
+              ...savedCustomHeader.sections.header.elements[0],
+              text: 'Admin Updated Header',
+              locked: false,
+            },
+          ],
+        },
+      },
+    },
+  });
+  assert(editHdrRes.status === 200, 'header item editable by the admin');
+  assert(editHdrRes.body.data.template.sections.header.elements[0].text === 'Admin Updated Header', 'header element edit survives');
+
+  // User route cannot change header or footer
+  const userChangeHeader = await request(`/api/templates/${savedCustomHeader._id}`, {
+    method: 'PATCH',
+    token: maker.token,
+    body: {
+      expectedVersion: editHdrRes.body.data.template.version,
+      sections: {
+        ...savedCustomHeader.sections,
+        header: { mode: 'custom', height: 100, elements: [] },
+      },
+    },
+  });
+  assert(userChangeHeader.status === 403, 'AI and user routes cannot change header or footer');
+
+  // B. A variable in the header is rejected
+  const varInHeaderRes = await createTemplate(admin, `Var In Header ${runId}`, {
+    sections: {
+      header: {
+        mode: 'custom',
+        height: 120,
+        elements: [
+          {
+            id: 'hdr-var-1',
+            kind: 'text',
+            text: 'Fill in speaker',
+            variable: true,
+            key: 'speaker_name',
+            x: 60,
+            y: 20,
+            w: 300,
+            h: 50,
+          },
+        ],
+      },
+      content: {
+        elements: [
+          {
+            id: 'cnt-headline-var',
+            kind: 'field',
+            field: 'headline',
+            x: 70,
+            y: 180,
+            w: 940,
+            h: 120,
+            text: 'Headline',
+          },
+        ],
+      },
+    },
+    editorVersion: 2,
+  });
+  assert(varInHeaderRes.status === 400, 'a variable in the header is rejected');
+
+  // C. An unknown token is rejected
+  const unknownTokenRes = await createTemplate(admin, `Unknown Token Section ${runId}`, {
+    sections: {
+      content: {
+        elements: [
+          {
+            id: 'cnt-headline-badtok',
+            kind: 'field',
+            field: 'headline',
+            x: 70,
+            y: 180,
+            w: 940,
+            h: 120,
+            text: 'Headline with bad token',
+            style: { color: 'brand:invalid_token' },
+          },
+        ],
+      },
+    },
+    editorVersion: 2,
+  });
+  assert(unknownTokenRes.status === 400, 'an unknown token is rejected');
+
+  // D. A rotated item outside its section is rejected
+  const rotatedOutsideRes = await createTemplate(admin, `Rotated Outside Section ${runId}`, {
+    sections: {
+      header: {
+        mode: 'custom',
+        height: 120,
+        elements: [
+          {
+            id: 'hdr-rot-item',
+            kind: 'shape',
+            shape: { type: 'rect', fill: '#ff0000' },
+            x: 10,
+            y: 10,
+            w: 100,
+            h: 100,
+            rotation: 45,
+          },
+        ],
+      },
+      content: {
+        elements: [
+          {
+            id: 'cnt-headline-rot',
+            kind: 'field',
+            field: 'headline',
+            x: 70,
+            y: 180,
+            w: 940,
+            h: 120,
+            text: 'Valid Headline',
+          },
+        ],
+      },
+    },
+    editorVersion: 2,
+  });
+  assert(rotatedOutsideRes.status === 400, 'a rotated item outside its section is rejected');
+
+  // E. A legacy template converts
+  const legacySectionsDocId = new mongoose.Types.ObjectId();
+  await Template.collection.insertOne({
+    _id: legacySectionsDocId,
+    clientId: clientA._id,
+    name: `Legacy Auto Convert ${runId}`,
+    category: 'Event',
+    size: { width: 1080, height: 1350 },
+    zones: zones(),
+    editorVersion: 1,
+    isActive: true,
+    version: 1,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  created.templateIds.push(legacySectionsDocId);
+
+  const legacyConvRead = await request(`/api/templates/${legacySectionsDocId}`, { token: admin.token });
+  assert(legacyConvRead.status === 200, 'legacy template loaded');
+  const legacyConvTpl = legacyConvRead.body.data.template;
+  assert(
+    legacyConvTpl.sections &&
+      legacyConvTpl.sections.header.mode === 'brand' &&
+      legacyConvTpl.sections.footer.mode === 'brand' &&
+      Array.isArray(legacyConvTpl.sections.content.elements) &&
+      legacyConvTpl.sections.content.elements.length > 0,
+    'a legacy template converts'
+  );
+  const rawDocBeforeSave = await Template.collection.findOne({ _id: legacySectionsDocId });
+  assert(!rawDocBeforeSave.sections, 'legacy template has no sections in database before admin saves');
+
+  // 21. Sections Model Part 2 assertions
+  // A. A normal user gets 403
+  const normalUserWrite = await request('/api/templates', {
+    method: 'POST',
+    token: maker.token,
+    body: {
+      name: `User Forbidden Template ${runId}`,
+      elements: editorElements(),
+    },
+  });
+  assert(normalUserWrite.status === 403, 'a normal user gets 403');
+
+  // B. The snapshot keeps the custom header after the template changes
+  const customHeaderTplRes = await createTemplate(admin, `Custom Header Snap ${runId}`, {
+    sections: {
+      header: {
+        mode: 'custom',
+        height: 90,
+        elements: [
+          {
+            id: 'custom-h-title',
+            kind: 'text',
+            text: 'Special Custom Header',
+            x: 40,
+            y: 20,
+            w: 400,
+            h: 40,
+            locked: true,
+          },
+        ],
+      },
+      content: {
+        elements: [
+          {
+            id: 'snap-head',
+            kind: 'field',
+            field: 'headline',
+            x: 70,
+            y: 120,
+            w: 940,
+            h: 80,
+            style: { size: 40 },
+          },
+        ],
+      },
+      footer: {
+        mode: 'brand',
+        height: 70,
+        elements: [],
+      },
+    },
+  });
+  assert(customHeaderTplRes.status === 201, 'custom header template created');
+  const customHeaderTpl = customHeaderTplRes.body.data.template;
+
+  const posterCreateRes = await request('/api/posters', {
+    method: 'POST',
+    token: admin.token,
+    body: {
+      templateId: customHeaderTpl._id,
+      prompt: `Custom header event ${runId}`,
+      content: {
+        title: 'Event With Custom Header',
+        venue: 'Main Hall',
+      },
+    },
+  });
+  assert(posterCreateRes.status === 201, 'poster with custom header template created');
+  const posterWithCustomHeader = posterCreateRes.body.data.poster;
+  created.posterIds.push(posterWithCustomHeader._id);
+
+  assert(
+    posterWithCustomHeader.design?.template?.header?.height === 90 &&
+      posterWithCustomHeader.design?.template?.header?.mode === 'custom',
+    'initial poster design snapshot captures the custom header'
+  );
+
+  const updateTplRes = await request(`/api/templates/${customHeaderTpl._id}`, {
+    method: 'PATCH',
+    token: admin.token,
+    body: {
+      expectedVersion: customHeaderTpl.version,
+      sections: {
+        header: {
+          mode: 'custom',
+          height: 180,
+          elements: [
+            {
+              id: 'changed-h-title',
+              kind: 'text',
+              text: 'Changed Header Title',
+              x: 40,
+              y: 20,
+              w: 400,
+              h: 40,
+              locked: true,
+            },
+          ],
+        },
+        content: {
+          elements: [
+            {
+              id: 'snap-head',
+              kind: 'field',
+              field: 'headline',
+              x: 70,
+              y: 200,
+              w: 940,
+              h: 80,
+              style: { size: 40 },
+            },
+          ],
+        },
+        footer: {
+          mode: 'brand',
+          height: 70,
+          elements: [],
+        },
+      },
+    },
+  });
+  assert(updateTplRes.status === 200, 'template header updated to new height 180');
+
+  const reloadPosterRes = await request(`/api/posters/${posterWithCustomHeader._id}`, {
+    token: admin.token,
+  });
+  assert(reloadPosterRes.status === 200, 'reloaded poster');
+  const reloadedPoster = reloadPosterRes.body.data.poster;
+  assert(
+    reloadedPoster.design?.template?.header?.height === 90 &&
+      reloadedPoster.design?.template?.header?.elements?.[0]?.text === 'Special Custom Header',
+    'the snapshot keeps the custom header after the template changes'
+  );
+
+  // C. AI output never contains header or footer keys
+  const liveKit = await BrandKit.findOne({ clientId: clientA._id }).lean();
+  const aiGenerated = await generateContent({
+    prompt: `Tech Conference on November 10 at Convention Center ${runId}`,
+    brandKit: liveKit,
+    template: {
+      sections: {
+        header: {
+          mode: 'custom',
+          height: 90,
+          elements: [
+            { id: 'h-txt', kind: 'text', text: 'Header Text', x: 20, y: 20, w: 200, h: 40, locked: true },
+          ],
+        },
+        content: {
+          elements: [
+            { id: 'c-head', kind: 'field', field: 'headline', x: 70, y: 150, w: 900, h: 80 },
+            { id: 'c-fill', kind: 'text', text: 'Blank', variable: true, key: 'topic', label: 'Topic', x: 70, y: 250, w: 500, h: 50 },
+          ],
+        },
+        footer: {
+          mode: 'custom',
+          height: 70,
+          elements: [
+            { id: 'f-txt', kind: 'text', text: 'Footer Text', x: 20, y: 1300, w: 200, h: 40, locked: true },
+          ],
+        },
+      },
+    },
+  });
+  assert(
+    !('header' in aiGenerated) &&
+      !('footer' in aiGenerated) &&
+      !('sections' in aiGenerated) &&
+      (!aiGenerated.extras || (!('header' in aiGenerated.extras) && !('footer' in aiGenerated.extras))),
+    'AI output never contains header or footer keys'
+  );
+
+  // IMAGES MODEL, PART 1: Assets and image slots
+  // 1. POST /api/assets/sign
+  const signRes = await request('/api/assets/sign', {
+    method: 'POST',
+    token: admin.token,
+    body: {},
+  });
+  assert(signRes.status === 200, 'signing an asset upload returns 200');
+  assert(signRes.body.data.folder === `posters/${clientA._id}`, 'default folder is posters/<clientId>');
+  assert(!signRes.body.data.apiSecret && !signRes.body.data.api_secret, 'API secret is never exposed');
+
+  const signBrandRes = await request('/api/assets/sign', {
+    method: 'POST',
+    token: admin.token,
+    body: { folder: 'brand' },
+  });
+  assert(signBrandRes.status === 200 && signBrandRes.body.data.folder === `brand/${clientA._id}`, 'brand folder upload sign succeeds');
+
+  const signForeignFolder = await request('/api/assets/sign', {
+    method: 'POST',
+    token: admin.token,
+    body: { folder: `brand/${clientB._id}` },
+  });
+  assert(signForeignFolder.status === 400, 'signing an upload to another client folder is rejected');
+
+  // 2. POST /api/assets
+  const ownAssetUrl = `https://res.cloudinary.com/test-cloud/image/upload/v1/posters/${clientA._id}/speaker.jpg`;
+  const foreignAssetUrl = `https://res.cloudinary.com/test-cloud/image/upload/v1/posters/${clientB._id}/other.jpg`;
+
+  const foreignRegister = await request('/api/assets', {
+    method: 'POST',
+    token: admin.token,
+    body: { url: foreignAssetUrl, name: 'Hacked photo' },
+  });
+  assert(foreignRegister.status === 400, 'registering another client\'s folder is rejected');
+
+  const base64Register = await request('/api/assets', {
+    method: 'POST',
+    token: admin.token,
+    body: { url: 'data:image/png;base64,AAAA', name: 'Raw base64' },
+  });
+  assert(base64Register.status === 400, 'base64 is rejected');
+
+  const validAsset = await request('/api/assets', {
+    method: 'POST',
+    token: admin.token,
+    body: {
+      url: ownAssetUrl,
+      name: 'Keynote Speaker',
+      width: 800,
+      height: 600,
+      bytes: 120400,
+    },
+  });
+  assert(validAsset.status === 201, 'registering a valid asset succeeds');
+  const assetRecord = validAsset.body.data;
+  assert(assetRecord.name === 'Keynote Speaker' && assetRecord.width === 800, 'asset metadata is saved');
+  assert(!assetRecord.bytesData, 'never store image bytes');
+
+  // 3. GET /api/assets
+  const listAssets = await request('/api/assets?name=Speaker', {
+    method: 'GET',
+    token: admin.token,
+  });
+  assert(listAssets.status === 200, 'getting assets succeeds');
+  assert(listAssets.body.data.items.length === 1, 'assets filter by name');
+  assert(listAssets.body.data.total >= 1, 'assets return total count');
+
+  const listAssetsOther = await request('/api/assets', {
+    method: 'GET',
+    token: otherAdmin.token,
+  });
+  assert(listAssetsOther.status === 200 && listAssetsOther.body.data.items.length === 0, 'another client sees none of our assets');
+
+  // 4. DELETE /api/assets/:id
+  const deleteForbidden = await request(`/api/assets/${assetRecord._id}`, {
+    method: 'DELETE',
+    token: maker.token,
+  });
+  assert(deleteForbidden.status === 403, 'regular user cannot delete asset');
+
+  const deleteSuccess = await request(`/api/assets/${assetRecord._id}`, {
+    method: 'DELETE',
+    token: admin.token,
+  });
+  assert(deleteSuccess.status === 200, 'admin can soft delete asset');
+
+  const deletedDbRecord = await Asset.findById(assetRecord._id).lean();
+  assert(deletedDbRecord.isDeleted === true && deletedDbRecord.deletedAt, 'asset is soft deleted in database');
+
+  // 5. Image slots and poster creation
+  const slotTemplateRes = await createTemplate(admin, `Slot Poster Template ${runId}`, {
+    elements: editorElements([
+      {
+        id: 'slot-p1',
+        kind: 'image',
+        x: 70,
+        y: 200,
+        w: 300,
+        h: 80,
+        variable: true,
+        key: 'speaker_photo',
+        label: 'Speaker Photo',
+        aspectRatio: '1:1',
+        mask: 'circle',
+      },
+    ]),
+  });
+  assert(slotTemplateRes.status === 201, 'template with variable image slot saves');
+  const slotTemplate = slotTemplateRes.body.data.template;
+
+  // Unknown slot key rejected
+  const unknownKeyPoster = await request('/api/posters', {
+    method: 'POST',
+    token: admin.token,
+    body: {
+      templateId: slotTemplate._id,
+      prompt: `Conference Poster ${runId}`,
+      content: {
+        title: 'Tech Summit',
+        images: {
+          random_unknown_slot: 'https://images.pexels.com/photos/1/a.jpg',
+        },
+      },
+    },
+  });
+  assert(unknownKeyPoster.status === 400, 'an unknown slot key is rejected');
+  assert(/Speaker Photo/.test(unknownKeyPoster.body.error.message), 'rejection lists valid slot names in plain words');
+
+  // Base64 image in poster rejected
+  const base64Poster = await request('/api/posters', {
+    method: 'POST',
+    token: admin.token,
+    body: {
+      templateId: slotTemplate._id,
+      prompt: `Conference Poster ${runId}`,
+      content: {
+        title: 'Tech Summit',
+        images: {
+          speaker_photo: 'data:image/png;base64,AAAA',
+        },
+      },
+    },
+  });
+  assert(base64Poster.status === 400, 'base64 in poster content.images is rejected');
+
+  // Valid poster with image slot
+  const validSlotPoster = await request('/api/posters', {
+    method: 'POST',
+    token: admin.token,
+    body: {
+      templateId: slotTemplate._id,
+      prompt: `Conference Poster ${runId}`,
+      content: {
+        title: 'Tech Summit',
+        images: {
+          speaker_photo: 'https://images.pexels.com/photos/1/a.jpg',
+        },
+      },
+    },
+  });
+  assert(validSlotPoster.status === 201, 'poster with valid image slot saves');
+  created.posterIds.push(validSlotPoster.body.data.poster._id);
+
+  // 6. Card list limits and poster lists validation
+  const cardListElements = Array.from({ length: 12 }, (_, i) => ({
+    id: `cl-${i + 1}`,
+    kind: 'cardlist',
+    key: `list_${i + 1}`,
+    label: `List ${i + 1}`,
+    columns: 2,
+    minCount: 1,
+    maxCount: 6,
+    x: 70,
+    y: 650,
+    w: 940,
+    h: 200,
+    card: {
+      w: 300,
+      h: 150,
+      fields: [
+        { key: 'name', type: 'text', label: 'Item Name', maxLength: 50 },
+        { key: 'photo', type: 'image', label: 'Item Photo' },
+      ],
+      items: [
+        { id: `c-name-${i + 1}`, kind: 'text', text: '{{name}}', x: 0, y: 0, w: 200, h: 40 },
+        { id: `c-photo-${i + 1}`, kind: 'image', fieldKey: 'photo', x: 210, y: 0, w: 80, h: 80 },
+      ],
+    },
+  }));
+
+  const twelveListsRes = await createTemplate(admin, `Twelve Lists ${runId}`, {
+    elements: editorElements(cardListElements),
+  });
+  assert(twelveListsRes.status === 201, 'template with 12 card lists saves');
+  const twelveListsTemplate = twelveListsRes.body.data.template;
+
+  // 13th card list rejected
+  const thirteenListsRes = await createTemplate(admin, `Thirteen Lists ${runId}`, {
+    elements: editorElements([
+      ...cardListElements,
+      {
+        id: 'cl-13',
+        kind: 'cardlist',
+        key: 'list_13',
+        label: 'List 13',
+        x: 70,
+        y: 650,
+        w: 940,
+        h: 200,
+        card: { w: 300, h: 150, fields: [] },
+      },
+    ]),
+  });
+  assert(thirteenListsRes.status === 400, 'a 13th card list is rejected');
+
+  // Card with 7 fields is rejected
+  const sevenFieldsRes = await createTemplate(admin, `Seven Fields ${runId}`, {
+    elements: editorElements([
+      {
+        id: 'cl-overfield',
+        kind: 'cardlist',
+        key: 'too_many_fields',
+        x: 70,
+        y: 650,
+        w: 940,
+        h: 200,
+        card: {
+          w: 300,
+          h: 150,
+          fields: Array.from({ length: 7 }, (_, i) => ({ key: `f_${i + 1}`, type: 'text' })),
+        },
+      },
+    ]),
+  });
+  assert(sevenFieldsRes.status === 400, 'card with 7 fields is rejected (field limits enforced)');
+
+  // Poster with valid content.lists saves and snapshot stays under 200 KB
+  const validListPosterRes = await request('/api/posters', {
+    method: 'POST',
+    token: admin.token,
+    body: {
+      templateId: twelveListsTemplate._id,
+      prompt: `Festival with lists ${runId}`,
+      content: {
+        title: 'Community Festival',
+        lists: {
+          list_1: [
+            { name: 'Opening Ceremony', photo: 'https://images.pexels.com/photos/1/a.jpg' },
+            { name: 'Live Music', photo: 'https://images.pexels.com/photos/2/b.jpg' },
+          ],
+        },
+      },
+    },
+  });
+  assert(validListPosterRes.status === 201, 'poster with valid content.lists saves');
+  const validListPoster = validListPosterRes.body.data.poster;
+  created.posterIds.push(validListPoster._id);
+  const snapshotBytes = Buffer.byteLength(JSON.stringify(validListPoster.design || {}), 'utf8');
+  assert(snapshotBytes < 200 * 1024, 'the snapshot stays under 200 KB');
+
+  // Unknown list key is rejected
+  const unknownListPosterRes = await request('/api/posters', {
+    method: 'POST',
+    token: admin.token,
+    body: {
+      templateId: twelveListsTemplate._id,
+      prompt: `Unknown list poster ${runId}`,
+      content: {
+        title: 'Festival',
+        lists: {
+          mystery_list: [{ name: 'Secret Item' }],
+        },
+      },
+    },
+  });
+  assert(unknownListPosterRes.status === 400, 'an unknown list key is rejected');
+
+  // List count below minCount is rejected
+  const emptyListPosterRes = await request('/api/posters', {
+    method: 'POST',
+    token: admin.token,
+    body: {
+      templateId: twelveListsTemplate._id,
+      prompt: `Empty list poster ${runId}`,
+      content: {
+        title: 'Festival',
+        lists: {
+          list_1: [],
+        },
+      },
+    },
+  });
+  assert(emptyListPosterRes.status === 400, 'list count below minCount is rejected on poster');
+
+  // 7. Old templates are unchanged
+  const oldTemplateInDb = await Template.findById(created2.body.data.template._id).lean();
+  assert(oldTemplateInDb.zones && Array.isArray(oldTemplateInDb.zones), 'old template still has zones');
+  assert(!oldTemplateInDb.sections, 'old templates are unchanged in database before admin saves');
+
+  // 8. Tidy my list (POST /api/posters/parse-list)
+  const unauthParse = await request('/api/posters/parse-list', {
+    method: 'POST',
+    body: { text: 'Dr. Jane Smith - Keynote Speaker' },
+  });
+  assert(unauthParse.status === 401, 'POST /api/posters/parse-list without auth returns 401');
+
+  const listDef = {
+    key: 'speakers',
+    label: 'Speakers',
+    maxCount: 6,
+    card: {
+      fields: [
+        { key: 'name', type: 'text', label: 'Name', maxLength: 40 },
+        { key: 'role', type: 'text', label: 'Role', maxLength: 40 },
+        { key: 'photo', type: 'image', label: 'Photo' },
+      ],
+    },
+  };
+  const parseRes = await request('/api/posters/parse-list', {
+    method: 'POST',
+    token: admin.token,
+    body: {
+      text: 'Dr. Jane Smith - Keynote Speaker\nAlex Rivera - Design Director\nTaylor Chen',
+      listDefinition: listDef,
+    },
+  });
+  assert(parseRes.status === 200, 'POST /api/posters/parse-list returns 200');
+  assert(Array.isArray(parseRes.body.data.entries), 'returns entries array');
+  assert(parseRes.body.data.entries.length === 3, 'extracted all 3 lines as entries');
+  assert(parseRes.body.data.entries[0].name === 'Dr. Jane Smith', 'name matches paste');
+  assert(parseRes.body.data.entries[0].role === 'Keynote Speaker', 'role matches paste');
+  assert(parseRes.body.data.entries[0].photo === '', 'photo is empty string');
+  assert(parseRes.body.data.entries[2].role === '', 'missing field is empty string, never invented');
+
+  const hugeText = 'x'.repeat(1024 * 1024 + 100);
+  const hugeParse = await request('/api/posters/parse-list', {
+    method: 'POST',
+    token: admin.token,
+    body: { text: hugeText, listDefinition: listDef },
+  });
+  assert(hugeParse.status === 413, 'payload over 1 MB returns 413');
 
   console.log(`\nStage 9 tests passed: ${passed} assertions`);
 }

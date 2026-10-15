@@ -177,13 +177,31 @@ export async function uploadBrandImage({ file, kind = 'default', onProgress }) {
   return { url, bytes: prepared.blob.size, width: prepared.width, height: prepared.height, resized: prepared.resized };
 }
 
-/** Turn an API or network error into something a non-technical user can act on. */
+/* Words that only ever come from the machinery, never from a person: an error envelope carrying
+   one of these is no more useful to a user than no message at all. */
+const INTERNALS =
+  /^(internal server error|request failed|network error|timeout of|econn|e11000|validation error|cannot read|cannot access|is not a function|unexpected|\[object|mongo|error:)/i;
+
+/**
+ * Turn an API or network error into something a non-technical user can act on.
+ *
+ * Only a message this app wrote into its own error envelope is worth putting on screen. The dev
+ * proxy answers 500 with an empty body while the API process restarts, and a crashed serverless
+ * function answers with plain text, so axios' own words ("Request failed with status code 500")
+ * are internals - the caller's line for this screen says more.
+ */
 export function friendlyError(err, fallback = 'Something went wrong. Please try again.') {
-  const message = err?.response?.data?.error?.message || err?.message || '';
-  if (!message) return fallback;
-  if (/Validation failed/i.test(message)) {
+  if (!err?.response) {
+    return /Network Error|timeout|ECONN/i.test(String(err?.message || ''))
+      ? 'The connection dropped. Please try again.'
+      : fallback;
+  }
+
+  const raw = String(err.response?.data?.error?.message ?? err.response?.data?.message ?? '').trim();
+  if (!raw || INTERNALS.test(raw)) return fallback;
+  if (/^Validation failed/i.test(raw)) {
     return (
-      message
+      raw
         .replace(/^.*Validation failed:\s*/i, '')
         .split(';')
         .map((part) => part.replace(/^[^:]*:\s*/, '').trim())
@@ -191,6 +209,5 @@ export function friendlyError(err, fallback = 'Something went wrong. Please try 
         .join(' ') || fallback
     );
   }
-  if (/Network Error|timeout|ECONN/i.test(message)) return 'The connection dropped. Please try again.';
-  return message;
+  return raw;
 }

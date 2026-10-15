@@ -19,7 +19,7 @@ export const BLANK_MESSAGES = {
   foreignPhoto: 'That photo is not from your organization. Choose one of your own pictures.',
   uploadNeedsAdmin: 'An administrator can put a new picture here. To change it now, pick one that is ready.',
   noPicture: 'No other picture is ready for this poster yet.',
-  emptyHint: 'Leave it empty and the poster keeps the words the designer wrote in the box.',
+  emptyHint: 'Leave it empty and this space prints nothing. The words shown greyed out are only an example.',
 };
 
 /** The room one blank was given, always a whole number the field can enforce. */
@@ -43,19 +43,97 @@ function itemsOf(design) {
 export function blanksOfDesign(design) {
   const elements = itemsOf(design);
   const slots = variableSlotsOf(elements);
+  const itemOf = (id) =>
+    (Array.isArray(elements) ? elements : []).find((each) => String(each?.id) === String(id));
   /* What the designer left in the box, so an empty answer still shows a real hint. */
-  const left = (id, name) => {
-    const item = (Array.isArray(elements) ? elements : []).find((each) => String(each?.id) === String(id));
-    return String(item?.[name] || '').trim();
-  };
+  const left = (id, name) => String(itemOf(id)?.[name] || '').trim();
   return {
     texts: slots.texts.map((slot) => ({
       ...slot,
       maxLength: blankLimitOf(slot),
       placeholder: left(slot.id, 'text'),
     })),
-    images: slots.images.map((slot) => ({ ...slot, placeholder: left(slot.id, 'imageUrl') })),
+    /* A space's own sample picture is never an answer: it is shown faintly in the template
+       editor only, and reaches a poster just when an administrator ticks it as the default. */
+    images: slots.images.map((slot) => ({
+      ...slot,
+      sampleUrl: left(slot.id, 'imageUrl'),
+      defaultImage: itemOf(slot.id)?.defaultImage === true,
+    })),
   };
+}
+
+/** The pictures an administrator made the starting point of every poster, by space name. */
+export function defaultPicturesOf(design) {
+  const out = {};
+  blanksOfDesign(design).images.forEach((slot) => {
+    if (!slot.defaultImage || !slot.sampleUrl) return;
+    if (!checkContentImageUrl(slot.sampleUrl, {}).ok) return;
+    out[slot.key] = slot.sampleUrl;
+  });
+  return out;
+}
+
+/** One poster's content with every ticked default in place that has no answer of its own yet. */
+export function withSlotDefaults(content, design) {
+  const defaults = defaultPicturesOf(design);
+  if (!Object.keys(defaults).length) return content || {};
+  const images = { ...(plainish(content)?.images || {}) };
+  Object.entries(defaults).forEach(([key, url]) => {
+    if (!String(images[key] || '').trim()) images[key] = url;
+  });
+  return { ...(content || {}), images: withoutEmpty(images) };
+}
+
+/**
+ * A poster moves from one layout to another: keep only what the person wrote or chose for a
+ * space that both layouts have under the same name. Everything else starts empty.
+ */
+export function carriedBlanks(content, fromDesign, toDesign) {
+  const value = plainish(content);
+  if (!value) return content;
+  const keysOf = (design, which) =>
+    new Set(blanksOfDesign(design)[which].map((slot) => slot.key));
+  const keep = (record, from, to) => {
+    const out = {};
+    Object.entries(record || {}).forEach(([key, answer]) => {
+      if (from.has(key) && to.has(key)) out[key] = answer;
+    });
+    return out;
+  };
+  return {
+    ...value,
+    extras: keep(value.extras, keysOf(fromDesign, 'texts'), keysOf(toDesign, 'texts')),
+    images: keep(value.images, keysOf(fromDesign, 'images'), keysOf(toDesign, 'images')),
+  };
+}
+
+/**
+ * The poster's own picture goes in the first space that has nothing in it, once, when it is
+ * chosen. It is not re-applied every time the screen redraws, so taking a picture out sticks, and
+ * a space somebody filled with a picture of its own is never stepped on.
+ */
+export function withPosterPhotoSlot(content, design, photoUrl, previousPhotoUrl = '') {
+  const value = plainish(content);
+  if (!value) return content;
+  const slot = blanksOfDesign(design).images[0];
+  if (!slot) return value;
+  const images = { ...(value.images || {}) };
+  const current = String(images[slot.key] || '').trim();
+  const photo = String(photoUrl || '').trim();
+  const previous = String(previousPhotoUrl || '').trim();
+  if (photo) {
+    /* Only an empty space, or one that holds the poster's own previous picture, is filled. */
+    if (current && current !== previous) return value;
+    if (current === photo) return value;
+    images[slot.key] = photo;
+  } else {
+    /* Only the picture this rule put there is taken back out. A picture the person chose for
+       that space itself stays until they take it out. */
+    if (!current || (previous && current !== previous)) return value;
+    delete images[slot.key];
+  }
+  return { ...value, images: withoutEmpty(images) };
 }
 
 export function blankTextKeys(design) {
@@ -116,12 +194,31 @@ export function withBlankImage(content, key, url) {
 }
 
 /** The two answer sets as they should go to the API: absent when there is nothing to store. */
-export function blankPayloadOf(content) {
+export function blankPayloadOf(content, design = null) {
   const extras = withoutEmpty(plainish(content)?.extras);
   const images = withoutEmpty(plainish(content)?.images);
+  if (!design) {
+    return {
+      extras: Object.keys(extras).length ? extras : undefined,
+      images: Object.keys(images).length ? images : undefined,
+    };
+  }
+  const slots = blanksOfDesign(design);
+  const offeredTexts = new Set(slots.texts.map((s) => s.key));
+  const offeredImages = new Set(slots.images.map((s) => s.key));
+
+  const filteredExtras = {};
+  for (const [k, v] of Object.entries(extras)) {
+    if (offeredTexts.has(k)) filteredExtras[k] = v;
+  }
+  const filteredImages = {};
+  for (const [k, v] of Object.entries(images)) {
+    if (offeredImages.has(k)) filteredImages[k] = v;
+  }
+
   return {
-    extras: Object.keys(extras).length ? extras : undefined,
-    images: Object.keys(images).length ? images : undefined,
+    extras: Object.keys(filteredExtras).length ? filteredExtras : undefined,
+    images: Object.keys(filteredImages).length ? filteredImages : undefined,
   };
 }
 

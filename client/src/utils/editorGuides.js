@@ -49,20 +49,50 @@ export function guideTargets(area, items, excludeId, { width, height, hidden } =
   const vertical = [];
   const horizontal = [];
 
-  if (Number.isFinite(width)) vertical.push(whole(width / 2));
-  if (Number.isFinite(height)) horizontal.push(whole(height / 2));
+  if (Number.isFinite(width)) {
+    vertical.push(whole(width / 2));
+    vertical.push(64, whole(width - 64));
+  }
+  if (Number.isFinite(height)) {
+    horizontal.push(whole(height / 2));
+    horizontal.push(64, whole(height - 64));
+  }
 
   if (area) {
     vertical.push(...edges(area.x, area.w));
     horizontal.push(...edges(area.y, area.h));
   }
 
-  (Array.isArray(items) ? items : []).forEach((item) => {
-    if (!item || item.id === excludeId) return;
-    if (hidden?.has?.(item.id)) return;
+  const validItems = (Array.isArray(items) ? items : []).filter(
+    (item) => item && item.id !== excludeId && !hidden?.has?.(item.id)
+  );
+
+  validItems.forEach((item) => {
     vertical.push(...edges(item.x, item.w));
     horizontal.push(...edges(item.y, item.h));
   });
+
+  const xSorted = [...validItems].sort((a, b) => a.x - b.x);
+  for (let i = 0; i < xSorted.length - 1; i += 1) {
+    const a = xSorted[i];
+    const b = xSorted[i + 1];
+    const gap = b.x - (a.x + a.w);
+    if (gap > 0) {
+      vertical.push(b.x + b.w + gap);
+      vertical.push(a.x - gap);
+    }
+  }
+
+  const ySorted = [...validItems].sort((a, b) => a.y - b.y);
+  for (let i = 0; i < ySorted.length - 1; i += 1) {
+    const a = ySorted[i];
+    const b = ySorted[i + 1];
+    const gap = b.y - (a.y + a.h);
+    if (gap > 0) {
+      horizontal.push(b.y + b.h + gap);
+      horizontal.push(a.y - gap);
+    }
+  }
 
   return { vertical: only(vertical), horizontal: only(horizontal), bounds: area || null };
 }

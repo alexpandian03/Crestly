@@ -1,5 +1,4 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
+import { describe, it, expect } from 'vitest';
 import {
   aiDesignOf,
   designModesOf,
@@ -7,30 +6,32 @@ import {
   modeAllowed,
 } from './posterAiDesign.js';
 
-test('design mode defaults and organization settings stay usable', () => {
-  assert.deepEqual(designModesOf(null), { ai: true, templates: true });
-  assert.deepEqual(designModesOf({ designModes: { ai: false } }), {
-    ai: false,
-    templates: true,
+describe('posterAiDesign', () => {
+  it('design mode defaults and organization settings stay usable', () => {
+    expect(designModesOf(null)).toEqual({ ai: true, templates: true });
+    expect(designModesOf({ designModes: { ai: false } })).toEqual({
+      ai: false,
+      templates: true,
+    });
+    expect(modeAllowed({ ai: false, templates: true }, 'ai')).toBe(false);
+    expect(firstAllowedMode({ ai: false, templates: true })).toBe('template');
   });
-  assert.equal(modeAllowed({ ai: false, templates: true }, 'ai'), false);
-  assert.equal(firstAllowedMode({ ai: false, templates: true }), 'template');
-});
 
-test('assistant designs preserve the saved-template rendering shape', () => {
-  const answer = {
-    recipeId: 'hero',
-    variant: 2,
-    template: {
-      elements: [{ id: 'headline', kind: 'field', field: 'headline' }],
-    },
-  };
-  const design = aiDesignOf(answer, { width: 1080, height: 1350 });
+  it('assistant designs preserve the saved-template rendering shape', () => {
+    const answer = {
+      recipeId: 'hero',
+      variant: 2,
+      template: {
+        elements: [{ id: 'headline', kind: 'field', field: 'headline' }],
+      },
+    };
+    const design = aiDesignOf(answer, { width: 1080, height: 1350 });
 
-  assert.equal(design.template.editorVersion, 2);
-  assert.equal(design.template.recipeId, 'hero');
-  assert.equal(design.template.variant, 2);
-  assert.equal(design.template.size.width, 1080);
-  assert.equal(design.template.elements[0].field, 'headline');
-  assert.equal('brandKit' in design, false);
+    expect(design.template.editorVersion).toBe(2);
+    expect(design.template.recipeId).toBe('hero');
+    expect(design.template.variant).toBe(2);
+    expect(design.template.size.width).toBe(1080);
+    expect(design.template.elements[0].field).toBe('headline');
+    expect('brandKit' in design).toBe(false);
+  });
 });

@@ -66,6 +66,7 @@ export default function PosterExportButtons({ brandKit, template, content, orgNa
             template={effectiveTemplate}
             content={content}
             view={view}
+            isExporting={true}
             onLayoutSettled={settleResolve}
           />,
           container,

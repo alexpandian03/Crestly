@@ -23,3 +23,11 @@ yarn-error.log*
 Thumbs.db
 .vscode/
 .idea/
+# Testing
+test-results/
+playwright-report/
+*.sarif
+results.sarif
+
+.backups/
+

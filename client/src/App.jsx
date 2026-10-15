@@ -1,5 +1,5 @@
 import React from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -15,6 +15,7 @@ import Login from './pages/Login';
 import Users from './pages/Users';
 
 const History = React.lazy(() => import('./pages/History'));
+const Settings = React.lazy(() => import('./pages/Settings'));
 const BrandKit = React.lazy(() => import('./pages/BrandKit'));
 const Templates = React.lazy(() => import('./pages/Templates'));
 const TemplateBuilder = React.lazy(() => import('./pages/TemplateBuilder'));
@@ -23,6 +24,9 @@ const TemplateEdit = React.lazy(() => import('./pages/TemplateEdit'));
    flag, so the production build drops this branch and never ships the page at all. */
 const PosterStudioTest = import.meta.env.DEV
   ? React.lazy(() => import('./pages/PosterStudioTest'))
+  : null;
+const ExportTestPage = import.meta.env.DEV
+  ? React.lazy(() => import('./pages/ExportTestPage'))
   : null;
 
 function PageFallback() {
@@ -49,6 +53,11 @@ function PageFallback() {
 }
 
 export default function App() {
+  const location = useLocation();
+  /* Both editors take the whole screen: a template's layout, or the organization's own
+     header and footer placed with the same tools. */
+  const isFullScreenEditor = /^\/(templates\/[^/]+|brand-layer)\/edit$/.test(location.pathname);
+
   return (
     <AuthProvider>
       <Toaster
@@ -64,7 +73,7 @@ export default function App() {
           error: { iconTheme: { primary: 'var(--color-danger)', secondary: 'var(--color-canvas)' } },
         }}
       />
-      <AppShell>
+      {isFullScreenEditor ? (
         <ErrorBoundary
           fallback={
             <div className="p-8 text-center text-sm text-[#6B7280]">
@@ -73,58 +82,90 @@ export default function App() {
           }
         >
           <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/how-it-works" element={<HowItWorks />} />
-          <Route path="/pricing" element={<Navigate to="/#pricing" replace />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/access-denied" element={<ProtectedRoute><AccessDenied /></ProtectedRoute>} />
+            <Route
+              path="/templates/:id/edit"
+              element={
+                <ProtectedRoute allowedRoles={['superadmin', 'clientadmin']} requireActiveClient>
+                  <React.Suspense fallback={<PageFallback />}>
+                    <TemplateEdit />
+                  </React.Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/brand-layer/edit"
+              element={
+                <ProtectedRoute allowedRoles={['superadmin', 'clientadmin']} requireActiveClient>
+                  <React.Suspense fallback={<PageFallback />}>
+                    <TemplateEdit brandLayer />
+                  </React.Suspense>
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
+        </ErrorBoundary>
+      ) : (
+        <AppShell>
+          <ErrorBoundary
+            fallback={
+              <div className="p-8 text-center text-sm text-[#6B7280]">
+                Something went wrong loading this page. Please refresh to try again.
+              </div>
+            }
+          >
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/how-it-works" element={<HowItWorks />} />
+              <Route path="/pricing" element={<Navigate to="/#pricing" replace />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/access-denied" element={<ProtectedRoute><AccessDenied /></ProtectedRoute>} />
 
-          <Route path="/dashboard" element={<ProtectedRoute allowedRoles={['superadmin', 'clientadmin']}><Dashboard /></ProtectedRoute>} />
-          <Route path="/clients" element={<ProtectedRoute allowedRoles={['superadmin']}><Clients /></ProtectedRoute>} />
-          <Route path="/users" element={<ProtectedRoute allowedRoles={['superadmin']}><Users /></ProtectedRoute>} />
-          <Route path="/team" element={<ProtectedRoute allowedRoles={['clientadmin']}><Users /></ProtectedRoute>} />
+              <Route path="/dashboard" element={<ProtectedRoute allowedRoles={['superadmin', 'clientadmin']}><Dashboard /></ProtectedRoute>} />
+              <Route path="/clients" element={<ProtectedRoute allowedRoles={['superadmin']}><Clients /></ProtectedRoute>} />
+              <Route path="/users" element={<ProtectedRoute allowedRoles={['superadmin']}><Users /></ProtectedRoute>} />
+              <Route path="/team" element={<ProtectedRoute allowedRoles={['clientadmin']}><Users /></ProtectedRoute>} />
+              <Route
+                path="/settings"
+                element={
+                  <ProtectedRoute allowedRoles={['clientadmin']} requireActiveClient>
+                    <React.Suspense fallback={<PageFallback />}>
+                      <Settings />
+                    </React.Suspense>
+                  </ProtectedRoute>
+                }
+              />
 
-          <Route
-            path="/brand-kit"
-            element={
-              <ProtectedRoute allowedRoles={['superadmin', 'clientadmin']} requireActiveClient>
-                <React.Suspense fallback={<PageFallback />}>
-                  <BrandKit />
-                </React.Suspense>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/templates"
-            element={
-              <ProtectedRoute allowedRoles={['superadmin', 'clientadmin']} requireActiveClient>
-                <React.Suspense fallback={<PageFallback />}>
-                  <Templates />
-                </React.Suspense>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/templates/builder"
-            element={
-              <ProtectedRoute allowedRoles={['superadmin', 'clientadmin']} requireActiveClient>
-                <React.Suspense fallback={<PageFallback />}>
-                  <TemplateBuilder />
-                </React.Suspense>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/templates/:id/edit"
-            element={
-              <ProtectedRoute allowedRoles={['superadmin', 'clientadmin']} requireActiveClient>
-                <React.Suspense fallback={<PageFallback />}>
-                  <TemplateEdit />
-                </React.Suspense>
-              </ProtectedRoute>
-            }
-          />
-          <Route path="/create" element={<ProtectedRoute allowedRoles={['superadmin', 'clientadmin', 'user']} requireActiveClient><Generate /></ProtectedRoute>} />
+              <Route
+                path="/brand-kit"
+                element={
+                  <ProtectedRoute allowedRoles={['superadmin', 'clientadmin']} requireActiveClient>
+                    <React.Suspense fallback={<PageFallback />}>
+                      <BrandKit />
+                    </React.Suspense>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/templates"
+                element={
+                  <ProtectedRoute allowedRoles={['superadmin', 'clientadmin']} requireActiveClient>
+                    <React.Suspense fallback={<PageFallback />}>
+                      <Templates />
+                    </React.Suspense>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/templates/builder"
+                element={
+                  <ProtectedRoute allowedRoles={['superadmin', 'clientadmin']} requireActiveClient>
+                    <React.Suspense fallback={<PageFallback />}>
+                      <TemplateBuilder />
+                    </React.Suspense>
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/create" element={<ProtectedRoute allowedRoles={['superadmin', 'clientadmin', 'user']} requireActiveClient><Generate /></ProtectedRoute>} />
           <Route
             path="/posters"
             element={
@@ -137,14 +178,24 @@ export default function App() {
           />
 
           {import.meta.env.DEV ? (
-            <Route
-              path="/preview-test"
-              element={
-                <React.Suspense fallback={<PageFallback />}>
-                  <PosterStudioTest />
-                </React.Suspense>
-              }
-            />
+            <>
+              <Route
+                path="/studio-test"
+                element={
+                  <React.Suspense fallback={<PageFallback />}>
+                    <PosterStudioTest />
+                  </React.Suspense>
+                }
+              />
+              <Route
+                path="/export-test"
+                element={
+                  <React.Suspense fallback={<PageFallback />}>
+                    <ExportTestPage />
+                  </React.Suspense>
+                }
+              />
+            </>
           ) : null}
 
           <Route path="/history" element={<Navigate to="/posters" replace />} />
@@ -153,6 +204,7 @@ export default function App() {
         </Routes>
       </ErrorBoundary>
     </AppShell>
+      )}
     </AuthProvider>
   );
 }

@@ -2,7 +2,8 @@ import React, { useRef, useState, useEffect, useLayoutEffect, useCallback, useMe
 import { Calendar, Clock, MapPin } from 'lucide-react';
 import useGoogleFonts from '../hooks/useGoogleFonts';
 import SocialIcon from './SocialIcon';
-import { alpha, gradientCss, patternLayer, resolvePosterBrand } from '../utils/brandRender';
+import { alpha, gradientCss, patternLayer, resolvePosterBrand, transformCloudinaryUrl } from '../utils/brandRender';
+import { withKitBands } from '../utils/brandBands';
 import { pickReadableColor } from '../utils/contrast';
 import {
   readableItems,
@@ -10,7 +11,22 @@ import {
   templateElements,
   usesTemplateElements,
 } from '../utils/templateRender';
-import { resolveStyleTokens } from '../../../shared/templateElements.js';
+import {
+  isBrandColorToken,
+  legacyToSections,
+  resolveBrandText,
+  resolveColorToken,
+  resolveFontToken,
+  resolveStyleTokens,
+} from '../../../shared/templateElements.js';
+import {
+  TAMIL_FALLBACK_FONT,
+  fontStackFor,
+  hasTamil,
+  plainFontStack,
+  tamilCssOverrides,
+  tamilFontStack,
+} from '../../../shared/textScripts.js';
 import PosterElementLayer, { isSamplePlaceholder } from './PosterElementLayer';
 
 /* ------------------------------------------------------------------ *
@@ -297,8 +313,8 @@ function LegacyDecor({ accent, primary }) {
   );
 }
 
-const textStyleCss = (style, extra = {}) => ({
-  fontFamily: `'${style.fontFamily}', sans-serif`,
+const textStyleCss = (style, extra = {}, text = '') => ({
+  fontFamily: fontStackFor(style.fontFamily, text),
   fontSize: `${style.size}px`,
   fontWeight: style.weight,
   color: style.color,
@@ -307,11 +323,15 @@ const textStyleCss = (style, extra = {}) => ({
   textTransform: style.uppercase ? 'uppercase' : 'none',
   margin: 0,
   ...extra,
+  /* Tamil tails need the leading, and spacing or capitals would pull its clusters apart. */
+  ...tamilCssOverrides(text, { lineHeight: extra.lineHeight ?? 1.18 }),
 });
 
 function BrandText({ style, text, extra = {} }) {
   return (
-    <span style={textStyleCss(style, { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, ...extra })}>
+    <span
+      style={textStyleCss(style, { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, ...extra }, text)}
+    >
       {text}
     </span>
   );
@@ -340,8 +360,28 @@ function ContentZone({
   const measureSeqRef = useRef(0);
 
   const c = brand.content;
-  const headingFont = `'${c.fonts.heading}', sans-serif`;
-  const bodyFont = `'${c.fonts.body}', sans-serif`;
+  /* Every word this zone may paint, read once: Tamil text needs its own leading, no spacing,
+     no capitals and a face that knows the script. */
+  const contentWords = [
+    content?.title,
+    content?.tagline,
+    content?.kicker,
+    content?.date,
+    content?.time,
+    content?.venue,
+    content?.cta,
+    content?.details,
+    content?.extras && Object.values(content.extras),
+  ]
+    .flat(2)
+    .filter((word) => typeof word === 'string')
+    .join(' ');
+  const tamilWords = hasTamil(contentWords);
+  /* One block's type rules, rewritten only when that block's own words hold Tamil letters:
+     leading that fits the tails, no spacing, no capitals. */
+  const script = (own, text = '') => (hasTamil(text) ? { ...own, ...tamilCssOverrides(text, own) } : own);
+  const headingFont = tamilWords ? tamilFontStack(c.fonts.heading) : plainFontStack(c.fonts.heading);
+  const bodyFont = tamilWords ? tamilFontStack(c.fonts.body) : plainFontStack(c.fonts.body);
   const accent = c.accentColor;
   const headingColor = c.headingColor;
   const card = c.card;
@@ -608,12 +648,10 @@ function ContentZone({
     <div
       data-item="kicker"
       style={shifted('kicker', {
+        ...script({ letterSpacing: '0.14em', textTransform: 'uppercase', lineHeight: 1.1 }, kickerText),
         fontSize: px(22),
         fontWeight: 800,
-        letterSpacing: '0.14em',
-        textTransform: 'uppercase',
         color: accent,
-        lineHeight: 1.1,
         overflowWrap: 'anywhere',
         flexShrink: 0,
         marginBottom: px(16),
@@ -627,12 +665,11 @@ function ContentZone({
     <h1
       data-item="headline"
       style={shifted('headline', {
+        ...script({ lineHeight: 1.08, letterSpacing: '-0.02em' }, titleText),
         margin: 0,
         fontFamily: headingFont,
         fontSize: px(hasImage ? (titleText.length > 36 ? 68 : 80) : (titleText.length > 36 ? 80 : 96)),
         fontWeight: 800,
-        lineHeight: 1.08,
-        letterSpacing: '-0.02em',
         color: headingColor,
         textWrap: 'balance',
         overflowWrap: 'anywhere',
@@ -649,9 +686,9 @@ function ContentZone({
     <div
       data-item="subtitle"
       style={shifted('subtitle', {
+        ...script({ lineHeight: 1.25 }, subtitleText),
         fontSize: px(28),
         fontWeight: 600,
-        lineHeight: 1.25,
         color: c.bodyColor,
         opacity: 0.9,
         overflowWrap: 'anywhere',
@@ -760,12 +797,8 @@ function ContentZone({
           </div>
           <div
             style={{
-              fontSize: px(20),
-              fontWeight: 700,
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
+              ...script({ fontSize: px(20), fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', lineHeight: 1 }),
               opacity: 0.65,
-              lineHeight: 1,
               marginBottom: px(6),
             }}
           >
@@ -773,9 +806,7 @@ function ContentZone({
           </div>
           <div
             style={{
-              fontSize: px(32),
-              fontWeight: 700,
-              lineHeight: 1.18,
+              ...script({ fontSize: px(32), fontWeight: 700, lineHeight: 1.18 }, value),
               color: headingColor,
               overflowWrap: 'anywhere',
               wordBreak: 'break-word',
@@ -819,8 +850,7 @@ function ContentZone({
             display: 'flex',
             alignItems: 'flex-start',
             gap: px(12),
-            fontSize: px(24),
-            lineHeight: 1.35,
+            ...script({ fontSize: px(24), lineHeight: 1.35 }, item),
             color: c.bodyColor,
           }}
         >
@@ -862,7 +892,7 @@ function ContentZone({
           <div style={{ fontSize: px(72), fontWeight: 800, lineHeight: 1, color: brand.primary }}>
             {dayNumber}
           </div>
-          <div style={{ fontSize: px(20), fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: headingColor, marginTop: px(8) }}>
+          <div style={{ ...script({ fontSize: px(20), letterSpacing: '0.1em', textTransform: 'uppercase' }, monthStr), fontWeight: 700, color: headingColor, marginTop: px(8) }}>
             {monthStr || 'SPECIAL EVENT'}
           </div>
         </>
@@ -942,9 +972,7 @@ function ContentZone({
           background: brand.primary,
           color: '#ffffff',
           borderRadius: px(20),
-          fontWeight: 700,
-          fontSize: px(20),
-          letterSpacing: '0.04em',
+          ...script({ fontWeight: 700, fontSize: px(20), letterSpacing: '0.04em', lineHeight: 1.2 }, ctaBarText),
           textAlign: 'center',
           boxSizing: 'border-box',
           userSelect: 'none',
@@ -1170,7 +1198,11 @@ function FooterBand({ brand }) {
   const footerFontSize = Math.max(20, Math.round(f.style.size || 20));
   const footerSurface = f.bg?.type === 'color' ? f.bg.color : (brand.canvas.color || '#ffffff');
   const safeColor = pickReadableColor([f.style.color, '#ffffff', '#0b0f17'], footerSurface, 4.5) || f.style.color;
-  const typography = textStyleCss({ ...f.style, size: footerFontSize, color: safeColor });
+  /* One read of the whole band: a single Tamil contact line sets the rules for all of it. */
+  const footerWords = [f.address, f.phone, f.email, f.website, f.legalText, f.legacyContact, ...f.legacySocials]
+    .filter(Boolean)
+    .join(' ');
+  const typography = textStyleCss({ ...f.style, size: footerFontSize, color: safeColor }, {}, footerWords);
   const iconSize = Math.max(20, Math.round(footerFontSize * 1.15));
   const cellGap = Math.max(8, Math.round(footerFontSize * 0.45));
 
@@ -1216,7 +1248,7 @@ function FooterBand({ brand }) {
   const legal = f.legalText ? (
     <div
       style={{
-        ...textStyleCss({ ...f.style, size: Math.max(20, Math.round(footerFontSize * 0.9)), color: safeColor }),
+        ...textStyleCss({ ...f.style, size: Math.max(20, Math.round(footerFontSize * 0.9)), color: safeColor }, {}, f.legalText),
         display: 'block',
         opacity: 0.85,
         marginTop: Math.max(4, Math.round(footerFontSize * 0.3)),
@@ -1285,6 +1317,73 @@ function FooterBand({ brand }) {
   );
 }
 
+function resolveBandBackground(bg, brandKit) {
+  if (!bg || typeof bg !== 'object') return { type: 'color', color: '#0b0f17' };
+  const out = { ...bg };
+  if (isBrandColorToken(out.color)) out.color = resolveColorToken(out.color, brandKit);
+  if (isBrandColorToken(out.gradientFrom)) out.gradientFrom = resolveColorToken(out.gradientFrom, brandKit);
+  if (isBrandColorToken(out.gradientTo)) out.gradientTo = resolveColorToken(out.gradientTo, brandKit);
+  if (isBrandColorToken(out.overlayColor)) out.overlayColor = resolveColorToken(out.overlayColor, brandKit);
+  return out;
+}
+
+function CustomBand({
+  section,
+  band,
+  width,
+  height,
+  brand,
+  brandKit,
+  contentForCanvas,
+  photoUrl,
+  fontsReady,
+  isEditor,
+  onImageFail,
+}) {
+  const isHeader = section === 'header';
+  const bandH = band?.height ?? (isHeader ? 80 : 70);
+  const bandY = isHeader ? 0 : height - bandH;
+
+  const bg = resolveBandBackground(band?.background, brandKit);
+  const elements = (band?.elements || []).map((raw) => {
+    let item = resolveStyleTokens(raw, brandKit);
+    if (typeof item.text === 'string' && item.text.includes('{{')) {
+      item = { ...item, text: resolveBrandText(item.text, brandKit) };
+    }
+    if (!isHeader && item.y >= bandY) {
+      item = { ...item, y: item.y - bandY };
+    }
+    return item;
+  });
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: 0,
+        top: `${bandY}px`,
+        width: `${width}px`,
+        height: `${bandH}px`,
+        boxSizing: 'border-box',
+        overflow: 'hidden',
+        zIndex: 20,
+      }}
+    >
+      <BandBackground bg={bg} ink={brand.content.decorationColor} scale={brand.scale} />
+      <div style={{ position: 'relative', zIndex: 1, width: '100%', height: '100%', pointerEvents: 'none' }}>
+        <PosterElementLayer
+          elements={elements}
+          content={contentForCanvas}
+          photoUrl={photoUrl}
+          fontsReady={fontsReady}
+          isEditor={isEditor}
+          onImageFail={onImageFail}
+        />
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------ canvas ------------------------------ */
 
 export default function PosterCanvas({
@@ -1300,9 +1399,26 @@ export default function PosterCanvas({
    * in the downloaded file and in the card picture alike. */
   view = null,
   isEditor = false,
+  activeSection = null,
+  isExporting = false,
+  showPlaceholders = false,
+  highlightSlotKey = null,
+  onSlotClick = null,
+  isThumbnail = false,
 }) {
   const effectiveBrandKit = content?.design?.brandKit || brandKit;
   const effectiveTemplate = template || content?.design?.template;
+  /* A brand kit that has laid its own bands out as items wins over the settings drawing; a kit
+     nobody has touched still paints the header and footer from its settings, exactly as before. */
+  const sections = useMemo(
+    () =>
+      withKitBands(
+        legacyToSections(effectiveTemplate, effectiveBrandKit),
+        effectiveBrandKit,
+        effectiveTemplate,
+      ),
+    [effectiveTemplate, effectiveBrandKit],
+  );
   const brand = useMemo(() => resolvePosterBrand(effectiveBrandKit, effectiveTemplate), [effectiveBrandKit, effectiveTemplate]);
   const rendered = useMemo(() => resolveTemplateRender(effectiveTemplate), [effectiveTemplate]);
 
@@ -1355,37 +1471,94 @@ export default function PosterCanvas({
         brand.content.headingColor,
         brand.content.bodyColor,
         brand.content.accentColor,
-        '#ffffff',
         '#0b0f17',
+        '#111827',
+        '#ffffff',
       ],
+      brandKit: effectiveBrandKit,
     }).items;
   }, [effectiveTemplate, effectiveBrandKit, view, brand]);
 
-  /* Only the faces this poster really draws: active brand bands, plus placed items
-   * showing words (or content fonts when using the flow layout).
-   * Brand tokens are resolved, and unknown or token strings are never sent to Google Fonts. */
+  /* Only the faces this poster really draws, at only the weights it draws them at: active brand
+   * bands, plus placed items showing words (or content fonts when using the flow layout).
+   * Brand tokens are resolved, and unknown or token strings are never sent to Google Fonts.
+   * A poster that prints Tamil also asks for the fallback face, which nothing else will shape. */
+  const posterWords = useMemo(() => {
+    const found = [];
+    const walk = (value, depth = 0) => {
+      if (depth > 4 || value == null) return;
+      if (typeof value === 'string') {
+        found.push(value);
+        return;
+      }
+      if (Array.isArray(value)) {
+        for (const entry of value) walk(entry, depth + 1);
+        return;
+      }
+      if (typeof value === 'object') {
+        for (const entry of Object.values(value)) {
+          /* Colours, urls and numbers cannot hold letters, so only words are followed. */
+          if (typeof entry === 'string' || Array.isArray(entry)) walk(entry, depth + 1);
+        }
+      }
+    };
+    walk(content);
+    if (items) walk(items);
+    return found.join(' ');
+  }, [content, items]);
+  const posterTamil = hasTamil(posterWords);
+
   const usedFonts = useMemo(() => {
     const list = [];
-    if (brand.header.present) {
-      if (brand.header.orgName?.show) list.push(brand.header.orgName.style?.fontFamily);
-      if (brand.header.tagline?.show) list.push(brand.header.tagline.style?.fontFamily);
+    const push = (family, weight) => {
+      if (family) list.push({ family, weight: Number(weight) || 400 });
+    };
+    if (sections.header.mode === 'brand') {
+      if (brand.header.orgName?.show) push(brand.header.orgName.style?.fontFamily, brand.header.orgName.style?.weight);
+      if (brand.header.tagline?.show) push(brand.header.tagline.style?.fontFamily, brand.header.tagline.style?.weight);
+    } else {
+      for (const item of (sections.header.elements || [])) {
+        if (item.style?.fontFamily) push(item.style.fontFamily, item.style.weight);
+      }
     }
-    if (brand.footer.present) {
-      list.push(brand.footer.style?.fontFamily);
+    if (sections.footer.mode === 'brand') {
+      push(brand.footer.style?.fontFamily, brand.footer.style?.weight);
+    } else {
+      for (const item of (sections.footer.elements || [])) {
+        if (item.style?.fontFamily) push(item.style.fontFamily, item.style.weight);
+      }
     }
     if (items) {
       for (const item of items) {
         if (item.kind === 'field' || item.kind === 'text') {
-          list.push(item.style?.fontFamily);
+          push(item.style?.fontFamily, item.style?.weight);
+        }
+        if (item.kind === 'cardlist' && item.card?.items) {
+          for (const cardItem of item.card.items) {
+            if (cardItem.style?.fontFamily) push(cardItem.style.fontFamily, cardItem.style.weight);
+          }
         }
       }
     } else {
-      list.push(brand.content.fonts.heading);
-      list.push(brand.content.fonts.body);
+      push(brand.content.fonts.heading, 700);
+      push(brand.content.fonts.heading, 800);
+      push(brand.content.fonts.body, 400);
+      push(brand.content.fonts.body, 500);
+      push(brand.content.fonts.body, 600);
+      push(brand.content.fonts.body, 700);
     }
-    return [...new Set(list.filter((f) => typeof f === 'string' && f.trim() && !f.startsWith('brand:')))];
-  }, [brand, items]);
-  const fontsReady = useGoogleFonts(usedFonts[0] || '', usedFonts[1] || '', usedFonts.slice(2));
+    const merged = new Map();
+    for (const entry of list) {
+      const family = resolveFontToken(entry.family, effectiveBrandKit);
+      if (typeof family !== 'string' || !family.trim() || family.startsWith('brand:')) continue;
+      const seen = merged.get(family);
+      if (seen) seen.add(entry.weight);
+      else merged.set(family, new Set([entry.weight]));
+    }
+    if (posterTamil) merged.set(TAMIL_FALLBACK_FONT, new Set([400, 700]));
+    return [...merged].map(([family, weights]) => ({ family, weights: [...weights] }));
+  }, [brand, items, sections, effectiveBrandKit, posterTamil]);
+  const fontsReady = useGoogleFonts(usedFonts);
 
   /* The flow layout announces when it is done fitting. Placed items announce it through
    * this layer, once nothing is resizing any more. */
@@ -1467,7 +1640,9 @@ export default function PosterCanvas({
         position: 'relative',
         backgroundColor: brand.canvas.color,
         color: brand.content.bodyColor,
-        fontFamily: `'${brand.content.fonts.body}', sans-serif`,
+        fontFamily: posterTamil
+          ? tamilFontStack(brand.content.fonts.body)
+          : plainFontStack(brand.content.fonts.body),
         overflow: 'hidden',
         boxSizing: 'border-box',
         boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
@@ -1525,112 +1700,195 @@ export default function PosterCanvas({
         </div>
       )}
 
-      <HeaderBand brand={brand} />
-
       <div
+        data-section="header"
         style={{
-          position: 'absolute',
-          left: `${brand.content.x}px`,
-          top: `${brand.content.y}px`,
-          width: `${brand.content.w}px`,
-          height: `${brand.content.h}px`,
-          boxSizing: 'border-box',
-          overflow: 'hidden',
-          zIndex: 10,
+          opacity: isEditor && activeSection && activeSection !== 'header' ? 0.4 : 1,
+          transition: 'opacity 200ms ease-out',
         }}
       >
-        {!brand.content.bgUntouched && !brand.content.bgFullBleed && (
-          <BandBackground bg={brand.content.bg} ink={brand.content.decorationColor} scale={brand.scale} />
+        {sections.header.mode === 'custom' ? (
+          <CustomBand
+            section="header"
+            band={sections.header}
+            width={width}
+            height={height}
+            brand={brand}
+            brandKit={effectiveBrandKit}
+            contentForCanvas={contentForCanvas}
+            photoUrl={photoUrl}
+            fontsReady={fontsReady}
+            isEditor={isEditor}
+            onImageFail={onImageFail}
+          />
+        ) : (
+          <HeaderBand brand={brand} />
         )}
+      </div>
 
-        {brand.content.watermark.show && (
-          <img
-            src={brand.content.watermark.url}
-            alt=""
-            crossOrigin="anonymous"
-            aria-hidden="true"
+      <div
+        data-section="content"
+        style={{
+          opacity: isEditor && activeSection && activeSection !== 'content' ? 0.4 : 1,
+          transition: 'opacity 200ms ease-out',
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            left: `${brand.content.x}px`,
+            top: `${brand.content.y}px`,
+            width: `${brand.content.w}px`,
+            height: `${brand.content.h}px`,
+            boxSizing: 'border-box',
+            overflow: 'hidden',
+            zIndex: 10,
+          }}
+        >
+          {!brand.content.bgUntouched && !brand.content.bgFullBleed && (
+            <BandBackground bg={brand.content.bg} ink={brand.content.decorationColor} scale={brand.scale} />
+          )}
+
+          {brand.content.watermark.show && (
+            <img
+              src={brand.content.watermark.url}
+              alt=""
+              crossOrigin="anonymous"
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                left: '50%',
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: '56%',
+                height: 'auto',
+                objectFit: 'contain',
+                opacity: brand.content.watermark.opacity,
+                pointerEvents: 'none',
+                zIndex: 0,
+              }}
+            />
+          )}
+
+          {!items && (
+            <div style={{ position: 'relative', zIndex: 1 }}>
+              <ContentZone
+                zoneW={brand.content.w}
+                zoneH={brand.content.h}
+                content={contentForCanvas}
+                brand={brand}
+                fontsReady={fontsReady}
+                onOverflow={onOverflow}
+                onImageFail={onImageFail}
+                onLayoutSettled={onLayoutSettled}
+                layout={rendered.layout}
+                image={imageLocal}
+                imageOutside={Boolean(imageAbsolute) || rendered.layout.hidePhoto}
+                fontCap={fontCap}
+                fontFloor={fontFloor}
+                photoFit={photoFit}
+              />
+            </div>
+          )}
+        </div>
+
+        {items && (
+          <div
             style={{
               position: 'absolute',
-              left: '50%',
-              top: '50%',
-              transform: 'translate(-50%, -50%)',
-              width: '56%',
-              height: 'auto',
-              objectFit: 'contain',
-              opacity: brand.content.watermark.opacity,
-              pointerEvents: 'none',
-              zIndex: 0,
+              left: `${brand.content.x}px`,
+              top: `${brand.content.y}px`,
+              width: `${brand.content.w}px`,
+              height: `${brand.content.h}px`,
+              overflow: 'hidden',
+              zIndex: 11,
+              pointerEvents: onSlotClick ? 'auto' : 'none',
             }}
-          />
+          >
+            <div
+              style={{
+                position: 'absolute',
+                left: `${-brand.content.x}px`,
+                top: `${-brand.content.y}px`,
+                width: `${width}px`,
+                height: `${height}px`,
+                pointerEvents: onSlotClick ? 'auto' : 'none',
+              }}
+            >
+              <PosterElementLayer
+                elements={items}
+                content={contentForCanvas}
+                photoUrl={photoUrl}
+                fontsReady={fontsReady}
+                onOverflow={handleItemOverflow}
+                onFitted={handleItemFitted}
+                isEditor={isEditor}
+                onImageFail={onImageFail}
+                isExporting={isExporting}
+                showPlaceholders={showPlaceholders}
+                highlightSlotKey={highlightSlotKey}
+                onSlotClick={onSlotClick}
+                isThumbnail={isThumbnail}
+              />
+            </div>
+          </div>
         )}
 
-        {!items && (
-          <div style={{ position: 'relative', zIndex: 1 }}>
-            <ContentZone
-              zoneW={brand.content.w}
-              zoneH={brand.content.h}
-              content={contentForCanvas}
-              brand={brand}
-              fontsReady={fontsReady}
-              onOverflow={onOverflow}
-              onImageFail={onImageFail}
-              onLayoutSettled={onLayoutSettled}
-              layout={rendered.layout}
-              image={imageLocal}
-              imageOutside={Boolean(imageAbsolute) || rendered.layout.hidePhoto}
-              fontCap={fontCap}
-              fontFloor={fontFloor}
-              photoFit={photoFit}
+        {!items && imageAbsolute && photoUrl && !outsideImageFailed && (
+          <div
+            data-item="photo"
+            style={{
+              position: 'absolute',
+              left: `${imageAbsolute.x}px`,
+              top: `${imageAbsolute.y}px`,
+              width: `${imageAbsolute.w}px`,
+              height: `${imageAbsolute.h}px`,
+              borderRadius: Math.round(24 * brand.scale),
+              overflow: 'hidden',
+              zIndex: 12,
+            }}
+          >
+            <img
+              src={transformCloudinaryUrl(photoUrl, { w: imageAbsolute.w, h: imageAbsolute.h })}
+              alt=""
+              crossOrigin="anonymous"
+              onError={() => setOutsideImageFailed(true)}
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: photoFit === 'contain' ? 'contain' : 'cover',
+                display: 'block',
+              }}
             />
           </div>
         )}
       </div>
 
-      {items && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 11, pointerEvents: 'none' }}>
-          <PosterElementLayer
-            elements={items}
-            content={contentForCanvas}
+      <div
+        data-section="footer"
+        style={{
+          opacity: isEditor && activeSection && activeSection !== 'footer' ? 0.4 : 1,
+          transition: 'opacity 200ms ease-out',
+        }}
+      >
+        {sections.footer.mode === 'custom' ? (
+          <CustomBand
+            section="footer"
+            band={sections.footer}
+            width={width}
+            height={height}
+            brand={brand}
+            brandKit={effectiveBrandKit}
+            contentForCanvas={contentForCanvas}
             photoUrl={photoUrl}
             fontsReady={fontsReady}
-            onOverflow={handleItemOverflow}
-            onFitted={handleItemFitted}
             isEditor={isEditor}
             onImageFail={onImageFail}
           />
-        </div>
-      )}
-
-      {!items && imageAbsolute && photoUrl && !outsideImageFailed && (
-        <div
-          data-item="photo"
-          style={{
-            position: 'absolute',
-            left: `${imageAbsolute.x}px`,
-            top: `${imageAbsolute.y}px`,
-            width: `${imageAbsolute.w}px`,
-            height: `${imageAbsolute.h}px`,
-            borderRadius: Math.round(24 * brand.scale),
-            overflow: 'hidden',
-            zIndex: 12,
-          }}
-        >
-          <img
-            src={photoUrl}
-            alt=""
-            crossOrigin="anonymous"
-            onError={() => setOutsideImageFailed(true)}
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: photoFit === 'contain' ? 'contain' : 'cover',
-              display: 'block',
-            }}
-          />
-        </div>
-      )}
-
-      <FooterBand brand={brand} />
+        ) : (
+          <FooterBand brand={brand} />
+        )}
+      </div>
 
       {showZoneBorders && (
         <div data-export-ignore="true" style={{ position: 'absolute', inset: 0, zIndex: 40, pointerEvents: 'none' }}>
@@ -1698,27 +1956,6 @@ export default function PosterCanvas({
         </div>
       )}
     </div>
-
-      {items && itemsOverflow ? (
-        <div
-          data-export-ignore="true"
-          style={{
-            position: 'absolute',
-            top: 12,
-            right: 12,
-            zIndex: 60,
-            padding: `${Math.max(4, Math.round(4 * brand.scale))}px ${Math.max(8, Math.round(10 * brand.scale))}px`,
-            borderRadius: 999,
-            background: 'rgba(245,158,11,0.92)',
-            color: '#0b0f17',
-            fontWeight: 700,
-            fontSize: Math.max(11, Math.round(11 * brand.scale)),
-            pointerEvents: 'none',
-          }}
-        >
-          Words do not fit
-        </div>
-      ) : null}
     </>
   );
 }

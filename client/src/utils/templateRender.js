@@ -13,8 +13,10 @@
 import {
   EDITOR_VERSION,
   contentArea,
+  isBrandColorToken,
   legacyToElements,
   normalizeElements,
+  resolveColorToken,
   resolveStyleTokens,
 } from '../../../shared/templateElements.js';
 import { blendOver, contrastRatio, parseColor, pickReadableColor } from './contrast.js';
@@ -182,6 +184,10 @@ export function imageInsideContent(image, content) {
  * and every poster snapshot saved before the editor keeps exactly its old look.
  */
 export function usesTemplateElements(template) {
+  if (template?.sections?.content?.elements && Array.isArray(template.sections.content.elements)) {
+    return template.sections.content.elements.length > 0;
+  }
+  if (template?.sections) return true;
   return (
     Number(template?.editorVersion) === EDITOR_VERSION &&
     Array.isArray(template?.elements) &&
@@ -199,10 +205,22 @@ export function usesTemplateElements(template) {
  * away; the saved numbers are never changed, only what is drawn.
  */
 export function templateElements(template, brandKit) {
-  const stored = Array.isArray(template?.elements) ? template.elements : [];
+  const stored = Array.isArray(template?.sections?.content?.elements)
+    ? template.sections.content.elements
+    : Array.isArray(template?.elements)
+      ? template.elements
+      : [];
   const items = (stored.length > 0 ? normalizeElements(stored) : legacyToElements(template, brandKit))
     .map((item) => resolveStyleTokens(item, brandKit));
-  return items.map((item) => clampItemToArea(item, contentArea(brandKit, template)));
+  const area = template?.sections
+    ? {
+        x: 0,
+        y: template.sections.header?.height ?? 80,
+        w: template.size?.width || 1080,
+        h: Math.max(0, (template.size?.height || 1350) - (template.sections.header?.height ?? 80) - (template.sections.footer?.height ?? 70)),
+      }
+    : contentArea(brandKit, template);
+  return items.map((item) => clampItemToArea(item, area));
 }
 
 /** The same box, moved and shrunk so it sits inside `area`. */
@@ -283,14 +301,16 @@ export function ownsPlate(item, plate, tolerance = 4) {
 }
 
 /** The colour really behind an item's words, with a see-through plate painted in. */
-export function itemBackdrop(item, plate, surface) {
-  if (!plate) return surface;
-  const rgb = parseColor(plate.shape?.fill);
-  if (!rgb) return surface;
+export function itemBackdrop(item, plate, surface, brandKit = null) {
+  if (!plate) return surface || '#ffffff';
+  const rawFill = plate.shape?.fill;
+  const fillResolved = isBrandColorToken(rawFill) ? resolveColorToken(rawFill, brandKit) : rawFill;
+  const rgb = parseColor(fillResolved);
+  if (!rgb) return surface || '#ffffff';
   const opacity = Number(plate.style?.opacity);
   const strength = Number.isFinite(opacity) ? Math.min(1, Math.max(0, opacity)) : 1;
   const a = rgb.a * strength;
-  const fill = a >= 1 ? plate.shape.fill : `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${a})`;
+  const fill = a >= 1 ? fillResolved : `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${a})`;
   return blendOver(fill, surface || '#ffffff');
 }
 
@@ -304,18 +324,21 @@ function itemName(item) {
  * it and exchanged for the best of the brand's readable colours when it does not. Also
  * answers the switches it made, in plain numbers, so a check page can report them.
  */
-export function readableItems(items, { surface = '', candidates = [] } = {}) {
+export function readableItems(items, { surface = '', candidates = [], brandKit = null } = {}) {
   const plates = platesUnder(items);
   const list = Array.isArray(items) ? items : [];
   const switched = [];
+  const resolvedCandidates = candidates.map((c) => (isBrandColorToken(c) ? resolveColorToken(c, brandKit) : c));
   const next = list.map((item) => {
     if (!drawsWords(item)) return item;
     const plate = plates.get(item.id) || null;
-    const backdrop = itemBackdrop(item, plate, surface);
-    const ratio = contrastRatio(item.style?.color, backdrop);
-    if (ratio === null || ratio >= ITEM_CONTRAST_MIN) return item;
-    const color = pickReadableColor([item.style?.color, ...candidates], backdrop, ITEM_CONTRAST_MIN);
-    if (!color || color === item.style.color) return item;
+    const backdrop = itemBackdrop(item, plate, surface, brandKit);
+    const rawColor = item.style?.color;
+    const itemColor = isBrandColorToken(rawColor) ? resolveColorToken(rawColor, brandKit) : rawColor;
+    const ratio = contrastRatio(itemColor, backdrop);
+    if (ratio === null || ratio >= ITEM_CONTRAST_MIN) return { ...item, style: { ...item.style, color: itemColor } };
+    const color = pickReadableColor([itemColor, ...resolvedCandidates], backdrop, ITEM_CONTRAST_MIN);
+    if (!color || color === itemColor) return { ...item, style: { ...item.style, color: itemColor } };
     switched.push({
       id: item.id,
       name: itemName(item),

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ImageIcon, Loader2, Replace, Upload, X } from "lucide-react";
+import { ImageIcon, Loader2, Replace, Undo2, Upload, X } from "lucide-react";
 import {
   ACCEPTED_TYPES,
   MAX_INPUT_BYTES,
@@ -30,6 +30,8 @@ export default function PhotoBar({
   maxBytes = MAX_INPUT_BYTES,
   uploadNotice = "",
   label = "Poster photo",
+  undoUrl = "",
+  onUndo,
   onPick,
   onUpload,
   onRemove,
@@ -157,6 +159,19 @@ export default function PhotoBar({
         <X className="h-3.5 w-3.5" />
         Remove
       </button>
+
+      {currentUrl || !undoUrl ? null : (
+        <button
+          type="button"
+          className={button}
+          disabled={busy}
+          onClick={() => onUndo?.(undoUrl)}
+          title="Put the picture you just took out back in"
+        >
+          <Undo2 className="h-3.5 w-3.5" />
+          Undo
+        </button>
+      )}
 
       <button
         type="button"

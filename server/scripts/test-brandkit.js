@@ -17,6 +17,8 @@ import { SIGNATURE_LIMIT_PER_HOUR } from '../services/brand/style.js';
 import {
   BRAND_COLOR_TOKENS,
   BRAND_FONT_TOKENS,
+  brandBandForEditing,
+  effectiveBand,
   resolveStyleTokens,
   effectivePage,
   defaultPage,
@@ -491,6 +493,109 @@ async function run() {
   assert(effectiveCustom.decorationColor === '#00ff55', 'effectivePage picks custom decorationColor over brand');
   assert(effectiveCustom.watermark.show === false && effectiveCustom.watermark.opacity === 0.05, 'effectivePage picks custom watermark over brand');
   assert(effectiveCustom.infoCard.radius === 24 && effectiveCustom.infoCard.background === '#0000ff', 'effectivePage picks custom infoCard over brand');
+
+  console.log('\n11. Brand bands');
+
+  // A brand kit made for a new client is born with both bands laid out.
+  const bandClient = await Client.create({ name: `Bands ${runId}`, plan: 'pro', isActive: true });
+  created.clientIds.push(bandClient._id);
+  const seededKit = await BrandKit.create({
+    clientId: bandClient._id,
+    orgName: `Bands ${runId}`,
+    footer: { phone: '+1 (555) 777-0000', website: 'www.bands.example.test', social: [{ platform: 'whatsapp', url: 'https://wa.me/15557770000' }] },
+  });
+  created.brandKitIds.push(seededKit._id);
+  assert(seededKit.header.elements.length > 0, 'a new brand kit gets a default header band');
+  assert(seededKit.footer.elements.length > 0, 'a new brand kit gets a default footer band');
+  assert(seededKit.header.mode === 'legacy' && seededKit.footer.mode === 'legacy', 'the default bands still draw the brand settings');
+  assert(
+    seededKit.header.elements.every((element) => element.locked === false && !element.variable),
+    'the default band items are unlocked and none is a space to fill in'
+  );
+  assert(
+    seededKit.footer.elements.some((element) => element.kind === 'icon' && element.name === 'whatsapp'),
+    'the default footer band carries the social picture'
+  );
+
+  // A kit saved before bands existed is only shown its items, never rewritten.
+  const untouchedAdmin = await makeUser({ email: `brand-untouched-${runId}@example.test`, role: 'clientadmin', clientId: untouchedClient._id });
+  const untouchedGet = await getKit(untouchedAdmin.token);
+  assert(untouchedGet.status === 200, 'an old kit still loads');
+  assert(untouchedGet.body.data.brandKit.header.mode === 'legacy', 'an old kit is drawn from its own settings');
+  assert(untouchedGet.body.data.brandKit.header.elements.length > 0, 'the band editor is offered items to move on an old kit');
+  assert(
+    untouchedGet.body.data.brandKit.header.elements.every((element) => element.locked === false),
+    'the items an old kit is offered are unlocked by default'
+  );
+  const storedBeforeBandSave = await BrandKit.collection.findOne({ _id: untouchedDoc._id });
+  assert(storedBeforeBandSave.header.elements === undefined && storedBeforeBandSave.header.mode === undefined, 'opening the band editor stores nothing');
+
+  const bandWords = {
+    id: 'band-words',
+    kind: 'text',
+    x: 40,
+    y: 24,
+    w: 420,
+    h: 52,
+    text: '{{brand.orgName}} · Annual Meet',
+    style: { color: 'brand:text', fontFamily: 'brand:heading', size: 28, weight: 700 },
+  };
+  const bandRule = { id: 'band-rule', kind: 'shape', x: 40, y: 84, w: 420, h: 6, shape: { type: 'line' }, style: { fill: 'brand:primary' } };
+
+  console.log('\n12. Saving a band with items');
+  const bandSave = await putKit(untouchedAdmin.token, { header: { mode: 'elements', height: 100, elements: [bandWords, bandRule] } });
+  assert(bandSave.status === 200, 'a header band saved with items is accepted');
+  const savedBand = bandSave.body.data.brandKit.header;
+  assert(savedBand.mode === 'elements', 'the band is now drawn by items');
+  assert(savedBand.height === 100, 'the band keeps the height it was given');
+  assert(savedBand.elements.length === 2 && savedBand.elements[0].id === 'band-words', 'the band keeps its items');
+  assert(savedBand.elements.every((element) => element.locked === false), 'brand band items default to unlocked');
+  assert(bandSave.body.data.brandKit.header.orgName.show === false, 'the brand settings beside the items are kept');
+  assert(bandSave.body.data.brandKit.footer.legalText === '© Untouched.', "the other band is untouched by this save");
+
+  const bandReload = await getKit(untouchedAdmin.token);
+  assert(bandReload.body.data.brandKit.header.mode === 'elements', 'the items-drawn band survives a reload');
+  assert(bandReload.body.data.brandKit.header.elements[1].shape.type === 'line', 'a shape on the band survives a reload');
+  const storedBand = await BrandKit.collection.findOne({ _id: untouchedDoc._id });
+  assert(storedBand.header.elements.length === 2, 'the band items are stored');
+
+  // A template that takes the brand's band now draws what the kit placed on it.
+  const brandModeTemplate = { size: { width: 1080, height: 1350 }, sections: { header: { mode: 'brand' }, footer: { mode: 'brand' } } };
+  const followBand = effectiveBand(bandReload.body.data.brandKit, brandModeTemplate, 'header');
+  assert(followBand.source === 'brand' && followBand.mode === 'elements', 'a template in brand mode follows the Brand Kit band');
+  assert(followBand.elements.length === 2 && followBand.height === 100, 'the poster gets the brand band as it was laid out');
+  const ownBand = effectiveBand(bandReload.body.data.brandKit, { ...brandModeTemplate, sections: { ...brandModeTemplate.sections, header: { mode: 'custom', height: 90, elements: [bandWords] } } }, 'header');
+  assert(ownBand.source === 'template' && ownBand.elements.length === 1, "a template with its own band does not take the brand's items");
+
+  console.log('\n13. Band saves that are refused');
+  const variableSlot = { ...bandWords, id: 'band-blank', variable: true, key: 'band_slot', label: 'Fill this in' };
+  const variableSave = await putKit(untouchedAdmin.token, { header: { mode: 'elements', height: 100, elements: [variableSlot] } });
+  assert(variableSave.status === 400 && /variable in the header/i.test(variableSave.body.error.message), 'a space to fill in on a brand band is refused: ' + variableSave.body.error.message);
+
+  const outsideSave = await putKit(untouchedAdmin.token, { header: { mode: 'elements', height: 100, elements: [{ ...bandWords, y: 120 }] } });
+  assert(outsideSave.status === 400 && /inside the header/i.test(outsideSave.body.error.message), 'an item hanging out of the band is refused');
+
+  const templateMode = await putKit(untouchedAdmin.token, { header: { mode: 'custom' } });
+  assert(templateMode.status === 400 && /brand|items/i.test(templateMode.body.error.message), 'a band cannot be told to draw like a template band');
+
+  const noItems = await putKit(untouchedAdmin.token, { footer: { mode: 'elements', elements: [] } });
+  assert(noItems.status === 400 && /at least one item/i.test(noItems.body.error.message), 'an items-drawn band cannot be left empty');
+
+  const tooTall = await putKit(untouchedAdmin.token, { header: { height: 300 } });
+  assert(tooTall.status === 400 && /between 60 and 200/.test(tooTall.body.error.message), 'a band taller than it may be is refused');
+
+  const bandUserWrite = await putKit(plainUser.token, { header: { mode: 'elements', elements: [bandWords] } });
+  assert(bandUserWrite.status === 403, 'a plain user cannot save a brand band');
+
+  const afterRefusals = await getKit(untouchedAdmin.token);
+  assert(afterRefusals.body.data.brandKit.header.elements.length === 2, 'refused saves leave the band as it was');
+
+  // The first items-drawn save also stores the band it was showing.
+  const bandKitGet = await getKit((await makeUser({ email: `brand-bands-${runId}@example.test`, role: 'clientadmin', clientId: bandClient._id })).token);
+  assert(
+    bandKitGet.body.data.brandKit.footer.elements.length === seededKit.footer.elements.length,
+    'the stored default band is what the editor is shown'
+  );
 
   console.log(`\nBrand kit tests passed: ${passed} assertions`);
 }

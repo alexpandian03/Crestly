@@ -3,6 +3,7 @@ import Client from '../models/Client.model.js';
 import BrandKit from '../models/BrandKit.model.js';
 import { scopedFilter } from '../middleware/auth.middleware.js';
 import { sanitizeString } from '../services/ai/schema.js';
+import { consumeRateLimit } from '../services/rateLimit.js';
 import {
   TEMPLATE_MAX_VERSIONS,
   assertZoneLayout,
@@ -13,17 +14,19 @@ import {
 import {
   assertTemplateDocSize,
   cleanElements,
+  cleanSections,
   editorVersionFor,
   elementContext,
   elementsForRead,
   storedEditorVersion,
+  versionsThatFit,
 } from '../services/template/elements.js';
-import { defaultPage, normalizePage } from '../../shared/templateElements.js';
+import { defaultPage, legacyToSections, normalizePage, normalizeSections } from '../../shared/templateElements.js';
 
 /* The list also carries the placed items: every miniature a template is shown in draws the
    items it really stores, so a list can never disagree with the poster the editor saved. */
 const LIST_FIELDS =
-  'clientId name category isActive isDefault version editorVersion updatedAt size layout zones page elements';
+  'clientId name category eventTypes isActive isDefault version editorVersion updatedAt size layout zones page elements sections header content footer';
 const LIST_SORT = { isDefault: -1, createdAt: -1 };
 const CONFLICT_MESSAGE = 'This template was changed somewhere else. Reload to continue.';
 
@@ -115,6 +118,10 @@ function snapshotOf(template, note, byUser) {
     layout: normalizeLayout(plain(template.layout), zones),
     page: plain(template.page),
     elements: plain(template.elements || []),
+    /* header, content and footer are the very same objects as the three under sections, so
+       keeping both would store every item of this snapshot a third time. Ten snapshots of
+       that filled a document that only ever holds one design. */
+    sections: plain(template.sections),
     editorVersion: storedEditorVersion(template),
     size: normalizeTemplateSize(template.size),
     note: sanitizeString(note || 'Edited').trim().slice(0, 120),
@@ -129,6 +136,10 @@ function snapshotOf(template, note, byUser) {
  */
 function cleanItemsFor(req, elements, { brandKit, size }) {
   return cleanElements(elements, elementContext({ brandKit, clientId: req.clientId, size }));
+}
+
+function cleanSectionsFor(req, sections, { brandKit, size }) {
+  return cleanSections(sections, elementContext({ brandKit, clientId: req.clientId, size }));
 }
 
 export async function getTemplates(req, res, next) {
@@ -160,13 +171,36 @@ export async function getTemplateById(req, res, next) {
     /* A template that predates the editor opens as items converted from its areas; nothing
        is written back until an admin saves. */
     const brandKit = await brandKitFor(req);
+    const sections = template.sections
+      ? normalizeSections(template.sections, brandKit, template)
+      : legacyToSections(template, brandKit);
+
+    let userDraft = undefined;
+    if (template.draft && canSeeInactive(req) && String(template.draft.userId) === String(req.user._id)) {
+      userDraft = {
+        data: template.draft.data,
+        savedAt: template.draft.savedAt,
+        basedOnVersion: template.draft.basedOnVersion,
+      };
+    }
+    const templateData = { ...template };
+    if (userDraft) {
+      templateData.draft = userDraft;
+    } else {
+      delete templateData.draft;
+    }
+
     return res.status(200).set('Cache-Control', NO_STORE).json({
       success: true,
       data: {
         template: {
-          ...template,
+          ...templateData,
           editorVersion: storedEditorVersion(template),
           elements: elementsForRead(template, brandKit),
+          sections,
+          header: sections.header,
+          content: sections.content,
+          footer: sections.footer,
         },
       },
     });
@@ -190,6 +224,16 @@ export async function createTemplate(req, res, next) {
       ? cleanItemsFor(req, req.body.elements, { brandKit, size })
       : [];
 
+    let sections;
+    if (req.body.sections || req.body.header || req.body.footer || req.body.content) {
+      const rawSections = req.body.sections || {
+        header: req.body.header,
+        content: req.body.content,
+        footer: req.body.footer,
+      };
+      sections = cleanSectionsFor(req, rawSections, { brandKit, size });
+    }
+
     if (await nameTaken(req.clientId, name)) return duplicateName(res);
 
     const doc = {
@@ -207,7 +251,20 @@ export async function createTemplate(req, res, next) {
       isActive: true,
       isDefault: false,
       createdBy: req.user._id,
+      /** Event types this template is designed for (empty = all types). */
+      eventTypes: Array.isArray(req.body.eventTypes)
+        ? req.body.eventTypes.filter((id) => typeof id === 'string')
+        : [],
     };
+    if (sections) {
+      doc.sections = sections;
+      doc.header = sections.header;
+      doc.content = sections.content;
+      doc.footer = sections.footer;
+      doc.elements = sections.content.elements;
+      doc.page = sections.content.page;
+      doc.editorVersion = editorVersionFor(doc.elements);
+    }
     assertTemplateDocSize(doc);
 
     const template = await Template.create(doc);
@@ -249,24 +306,50 @@ export async function updateTemplate(req, res, next) {
     };
     if (req.body.category !== undefined) changes.category = req.body.category;
     if (req.body.page !== undefined) changes.page = normalizePage(req.body.page);
+    if (
+      req.body.sections !== undefined ||
+      req.body.header !== undefined ||
+      req.body.footer !== undefined ||
+      req.body.content !== undefined
+    ) {
+      const existingSections = template.sections ? plain(template.sections) : legacyToSections(template, brandKit);
+      const rawSections = req.body.sections || {
+        header: req.body.header ?? existingSections.header,
+        content: req.body.content ?? existingSections.content,
+        footer: req.body.footer ?? existingSections.footer,
+      };
+      const updatedSections = cleanSectionsFor(req, rawSections, { brandKit, size });
+      changes.sections = updatedSections;
+      changes.header = updatedSections.header;
+      changes.content = updatedSections.content;
+      changes.footer = updatedSections.footer;
+      changes.elements = updatedSections.content.elements;
+      changes.page = updatedSections.content.page;
+      changes.editorVersion = editorVersionFor(changes.elements, storedEditorVersion(template));
+    }
     if (req.body.name !== undefined) {
       const name = cleanName(req.body.name);
       if (!name) return sendBadRequest('Give the template a name.', res);
       if (await nameTaken(req.clientId, name, template._id)) return duplicateName(res);
       changes.name = name;
     }
+    if (req.body.eventTypes !== undefined) {
+      changes.eventTypes = Array.isArray(req.body.eventTypes)
+        ? req.body.eventTypes.filter((id) => typeof id === 'string')
+        : [];
+    }
 
     const archived = snapshotOf(template, req.body.note, req.user._id);
-    const versions = [...plain(template.versions || []), archived].slice(-TEMPLATE_MAX_VERSIONS);
-    assertTemplateDocSize({ ...plain(template), ...changes, versions });
+    const versions = versionsThatFit(
+      { ...plain(template), ...changes },
+      [...plain(template.versions || []), archived].slice(-TEMPLATE_MAX_VERSIONS)
+    );
 
     const updated = await Template.findOneAndUpdate(
       scopedFilter(req, { _id: template._id, version: template.version }),
       {
-        $push: {
-          versions: { $each: [archived], $slice: -TEMPLATE_MAX_VERSIONS },
-        },
-        $set: { ...changes, version: template.version + 1 },
+        $set: { ...changes, versions, version: template.version + 1 },
+        $unset: { draft: 1 },
       },
       { new: true, runValidators: true }
     );
@@ -409,19 +492,20 @@ export async function restoreTemplateVersion(req, res, next) {
       elements,
       editorVersion: editorVersionFor(elements),
     };
-    const versions = [...plain(template.versions || []), archived].slice(-TEMPLATE_MAX_VERSIONS);
-    assertTemplateDocSize({ ...plain(template), ...changes, versions });
+    const versions = versionsThatFit(
+      { ...plain(template), ...changes },
+      [...plain(template.versions || []), archived].slice(-TEMPLATE_MAX_VERSIONS)
+    );
 
     const updated = await Template.findOneAndUpdate(
       scopedFilter(req, { _id: template._id, version: template.version }),
       {
-        $push: {
-          versions: { $each: [archived], $slice: -TEMPLATE_MAX_VERSIONS },
-        },
         $set: {
           ...changes,
+          versions,
           version: template.version + 1,
         },
+        $unset: { draft: 1 },
       },
       { new: true, runValidators: true }
     );
@@ -441,3 +525,155 @@ export async function restoreTemplateVersion(req, res, next) {
     return next(err);
   }
 }
+
+export async function autosaveTemplateDraft(req, res, next) {
+  try {
+    const rate = await consumeRateLimit({
+      key: `autosave:user:${req.user._id}`,
+      limit: 30,
+      windowMs: 60 * 1000,
+    });
+    if (!rate.allowed) {
+      return res.status(429).json({
+        success: false,
+        error: {
+          message: 'Too many autosaves. Please wait a moment before saving again.',
+          status: 429,
+        },
+      });
+    }
+
+    const template = await Template.findOne(scopedFilter(req, { _id: req.params.id }));
+    if (!template) return notFound(res);
+
+    const basedOnVersion = Number(req.body.basedOnVersion);
+    if (basedOnVersion !== template.version) {
+      return conflict(res);
+    }
+
+    const brandKit = await brandKitFor(req);
+    const draftPayload = req.body.data !== undefined ? req.body.data : { ...req.body };
+    delete draftPayload.basedOnVersion;
+
+    const size = normalizeTemplateSize(draftPayload.size ?? template.size);
+    const zones = normalizeZones(draftPayload.zones ?? template.zones);
+    const layout = normalizeLayout({ ...plain(template.layout), ...plain(draftPayload.layout) }, zones);
+    assertZoneLayout({ size, zones });
+
+    let sections;
+    if (
+      draftPayload.sections !== undefined ||
+      draftPayload.header !== undefined ||
+      draftPayload.footer !== undefined ||
+      draftPayload.content !== undefined
+    ) {
+      const existingSections = template.sections ? plain(template.sections) : legacyToSections(template, brandKit);
+      const rawSections = draftPayload.sections || {
+        header: draftPayload.header ?? existingSections.header,
+        content: draftPayload.content ?? existingSections.content,
+        footer: draftPayload.footer ?? existingSections.footer,
+      };
+      sections = cleanSectionsFor(req, rawSections, { brandKit, size });
+    }
+
+    const elements =
+      draftPayload.elements !== undefined
+        ? cleanItemsFor(req, draftPayload.elements, { brandKit, size })
+        : sections?.content?.elements ?? plain(template.elements || []);
+
+    const cleanData = {
+      ...draftPayload,
+      size,
+      zones,
+      layout,
+      elements,
+      ...(sections
+        ? {
+            sections,
+            header: sections.header,
+            content: sections.content,
+            footer: sections.footer,
+          }
+        : {}),
+    };
+    if (draftPayload.page !== undefined) cleanData.page = normalizePage(draftPayload.page);
+    if (draftPayload.name !== undefined) cleanData.name = cleanName(draftPayload.name);
+
+    assertTemplateDocSize({ ...plain(template), ...cleanData });
+
+    const savedAt = new Date();
+    const draftObj = {
+      data: cleanData,
+      savedAt,
+      basedOnVersion,
+      userId: req.user._id,
+    };
+
+    await Template.updateOne(
+      scopedFilter(req, { _id: template._id }),
+      { $set: { draft: draftObj } }
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        draft: {
+          data: cleanData,
+          savedAt,
+          basedOnVersion,
+        },
+      },
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+export async function getTemplateDraft(req, res, next) {
+  try {
+    const template = await Template.findOne(scopedFilter(req, { _id: req.params.id })).select('draft clientId');
+    if (!template) return notFound(res);
+    if (!template.draft) {
+      return res.status(404).json({
+        success: false,
+        error: { message: 'No draft found for this template', status: 404 },
+      });
+    }
+    if (String(template.draft.userId) !== String(req.user._id)) {
+      return res.status(403).json({
+        success: false,
+        error: { message: "You cannot view another user's draft.", status: 403 },
+      });
+    }
+    return res.status(200).set('Cache-Control', NO_STORE).json({
+      success: true,
+      data: {
+        draft: {
+          data: template.draft.data,
+          savedAt: template.draft.savedAt,
+          basedOnVersion: template.draft.basedOnVersion,
+        },
+      },
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+export async function discardTemplateDraft(req, res, next) {
+  try {
+    const template = await Template.findOne(scopedFilter(req, { _id: req.params.id })).select('draft clientId');
+    if (!template) return notFound(res);
+    if (template.draft && String(template.draft.userId) !== String(req.user._id)) {
+      return res.status(403).json({
+        success: false,
+        error: { message: "You cannot discard another user's draft.", status: 403 },
+      });
+    }
+    await Template.updateOne(scopedFilter(req, { _id: template._id }), { $unset: { draft: 1 } });
+    return res.status(200).json({ success: true, data: { discarded: true } });
+  } catch (err) {
+    return next(err);
+  }
+}
+

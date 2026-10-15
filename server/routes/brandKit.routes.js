@@ -6,6 +6,21 @@ import { updateBrandKitSchema } from '../validation/brandKit.schema.js';
 
 const router = express.Router();
 
+/* The app accepts 4.5 MB overall; a brand kit is far smaller than that, so its own writes are
+   capped well below it and a too-big save is refused instead of reaching the database. */
+const MAX_BODY_BYTES = 1024 * 1024;
+
+function smallBody(req, res, next) {
+  const bytes = req.body ? Buffer.byteLength(JSON.stringify(req.body), 'utf8') : 0;
+  if (bytes > MAX_BODY_BYTES) {
+    return res.status(413).json({
+      success: false,
+      error: { message: 'That is too much to save at once. Remove a few items and try again.', status: 413 },
+    });
+  }
+  return next();
+}
+
 // Read brand kit: any authenticated user in the tenant
 router.get('/', requireAuth, tenantGuard, getBrandKit);
 
@@ -15,7 +30,10 @@ router.put(
   requireAuth,
   requireRole('superadmin', 'clientadmin'),
   tenantGuard,
-  validateBody((req) => updateBrandKitSchema({ clientId: req.clientId })),
+  smallBody,
+  validateBody((req) =>
+    updateBrandKitSchema({ clientId: req.clientId, size: req.body?.defaultPosterSize })
+  ),
   updateBrandKit
 );
 

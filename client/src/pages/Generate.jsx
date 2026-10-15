@@ -3,10 +3,13 @@ import React, {
   useEffect,
   useRef,
   useMemo,
+  useCallback,
   lazy,
   Suspense,
 } from "react";
-import { useSearchParams } from "react-router-dom";
+import { allEventTypes } from "../../../shared/eventTypes.js";
+import { useSearchParams, useNavigate } from "react-router-dom";
+import toast from "react-hot-toast";
 import {
   Sparkles,
   Loader2,
@@ -41,7 +44,10 @@ import {
   blankAnswersProblem,
   blankPayloadOf,
   canUploadBlankImage,
+  carriedBlanks,
   mergeGeneratedBlanks,
+  withPosterPhotoSlot,
+  withSlotDefaults,
 } from "../utils/posterVariables";
 import { variableSlotsOf } from "../../../shared/templateElements.js";
 import {
@@ -70,9 +76,11 @@ import {
   recipeKeyOf,
   recipeOf,
 } from "../utils/posterAiDesign";
-import { readDraft } from "../config/draft";
+import { clearDraft, readDraft } from "../config/draft";
 import { SAMPLE_PROMPTS } from "../data/demoPosters";
 import { useAuth } from "../context/AuthContext";
+import { useAutosave } from "../hooks/useAutosave";
+import DraftRestoreDialog from "../components/DraftRestoreDialog";
 
 const templateId = (template) => template?.id || template?._id;
 
@@ -91,6 +99,12 @@ const SaveAsTemplateDialog = lazy(
 const AiPictureDialog = lazy(
   () => import("../components/create/AiPictureDialog"),
 );
+const CardListEntriesEditor = lazy(
+  () => import("../components/posteredit/CardListEntriesEditor"),
+);
+const VariableFields = lazy(
+  () => import("../components/posteredit/VariableFields"),
+);
 
 /** One width for the poster and every notice under it, so nothing jumps sideways. */
 const STAGE_WIDTH = "w-full max-w-[560px] xl:max-w-[660px]";
@@ -106,9 +120,9 @@ const PICTURE_IDLE = {
   subject: "",
 };
 
-function buildContentPayload(content) {
+function buildContentPayload(content, design = null) {
   if (!content) return null;
-  const blanks = blankPayloadOf(content);
+  const blanks = blankPayloadOf(content, design);
   return {
     title: String(content.title || "").trim(),
     tagline: String(content.tagline || "").trim(),
@@ -126,6 +140,7 @@ function buildContentPayload(content) {
      * with every save, every thumbnail and every dirty check. */
     ...(blanks.extras ? { extras: blanks.extras } : {}),
     ...(blanks.images ? { images: blanks.images } : {}),
+    ...(content.lists && Object.keys(content.lists).length ? { lists: content.lists } : {}),
   };
 }
 
@@ -183,6 +198,10 @@ export default function Generate() {
   /* The two switches the organization's settings hold, and the way of working chosen here. */
   const [clientModes, setClientModes] = useState(null);
   const [designMode, setDesignMode] = useState(MODE_AI);
+  /** Which event type the user chose; controls template filtering and which form fields appear. */
+  const [eventType, setEventType] = useState("general");
+  /** True when the user manually selected an event type — prevents AI suggestion from overriding. */
+  const userChangedTypeRef = useRef(false);
   const [templateDialog, setTemplateDialog] = useState({
     open: false,
     busy: false,
@@ -211,11 +230,20 @@ export default function Generate() {
   /* Text size and photo shape chosen on this screen. They are never sent to the server:
    * the poster keeps the size its layout was made with. */
   const [posterView, setPosterView] = useState(emptyView);
+  const [showPlaceholders, setShowPlaceholders] = useState(true);
+  const [highlightSlotKey, setHighlightSlotKey] = useState(null);
+  const [activeSlotKey, setActiveSlotKey] = useState(null);
   const aiImageRef = useRef("");
 
   // Stage 8C: poster persistence state
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+
   const [posterId, setPosterId] = useState("");
+  /* Which poster this screen is working on: the one the address asks for, or a brand-new one.
+     Saving a poster that began as new does not change this, so nothing a person is typing is
+     thrown away when the first save lands. */
+  const [workPoster, setWorkPoster] = useState("new");
   const [currentVersion, setCurrentVersion] = useState(1);
   const [saveStatus, setSaveStatus] = useState("idle"); // idle | saving | saved
   const [saveError, setSaveError] = useState(null); // { message, conflict }
@@ -223,6 +251,7 @@ export default function Generate() {
   const [isSavingEdits, setIsSavingEdits] = useState(false);
   const [drawerSaveError, setDrawerSaveError] = useState("");
   const [drawerConflict, setDrawerConflict] = useState(false);
+  const [initialDraft, setInitialDraft] = useState(null);
   const posterIdRef = useRef("");
   const versionRef = useRef(1);
   const savedSnapshotRef = useRef("");
@@ -242,8 +271,8 @@ export default function Generate() {
 
   useEffect(() => () => clearTimeout(savedChipTimerRef.current), []);
 
-  const markSaved = (content) => {
-    savedSnapshotRef.current = JSON.stringify(buildContentPayload(content));
+  const markSaved = (content, targetDesign = null) => {
+    savedSnapshotRef.current = JSON.stringify(buildContentPayload(content, targetDesign || blanksSource));
   };
 
   useEffect(() => {
@@ -379,6 +408,8 @@ export default function Generate() {
         ...(designMode === MODE_AI && avoid && seenRecipesRef.current.length > 0
           ? { avoidRecipeIds: seenRecipesRef.current }
           : {}),
+        /** Let the server know the event type so it constrains the AI output. */
+        ...(eventType ? { eventType } : {}),
       };
 
       const res = await api.post("/posters/generate", payload);
@@ -397,6 +428,13 @@ export default function Generate() {
           generatedContent,
           Array.from(editedBlanksRef.current),
         );
+
+        /* If the server returned a suggested event type and the user has not manually
+           chosen one yet, apply it now so the picker and the form update automatically. */
+        const suggested = res.data.data.suggestedEventType;
+        if (suggested && !userChangedTypeRef.current) {
+          setEventType(suggested);
+        }
 
         /* A design the assistant laid out is drawn from the pieces the server placed, until
            the save lands and the poster carries its own snapshot. */
@@ -429,8 +467,17 @@ export default function Generate() {
         if (nextDesign) setPosterDesign(nextDesign);
         else if (designChanges) setPosterDesign(null);
 
-        setRawGeneratedContent(merged);
-        setGeneratedContent(merged);
+        const targetDesign = nextDesign || posterDesign || selectedTemplate;
+        /* Only a poster that has not been saved once yet takes the pictures an administrator made
+           the starting point of every poster. This poster's own picture then goes in the first
+           space that is still empty, and it is written down as an answer the person can take out. */
+        const answered = posterIdRef.current
+          ? merged
+          : withSlotDefaults(merged, targetDesign);
+        const contentToSave = bindPosterPhoto(answered, targetDesign, chosenImage);
+
+        setRawGeneratedContent(contentToSave);
+        setGeneratedContent(contentToSave);
         setHistoryStack([]);
         setActiveInstruction(inst || "");
         setFeedback({
@@ -440,8 +487,8 @@ export default function Generate() {
             : "Poster ready! Download your file or refine the wording below.",
         });
 
-        const savedPayload = buildContentPayload(merged);
-        if (!savedPayload.title) return;
+        const savedPayload = buildContentPayload(contentToSave, targetDesign);
+        if (!savedPayload?.title) return;
 
         if (newDesignNeeded || !posterIdRef.current) {
           if (!resolvedTemplateId) {
@@ -555,29 +602,54 @@ export default function Generate() {
 
   const posterContent = useMemo(() => {
     if (!generatedContent && !userImageUrl) return null;
-    const base = generatedContent
-      ? { ...generatedContent, imageUrl: chosenImageUrl, image: chosenImageUrl }
-      : {
-          title: "",
-          tagline: "",
-          date: "",
-          time: "",
-          venue: "",
-          details: [],
-          imageUrl: userImageUrl,
-          image: userImageUrl,
-        };
-    if (firstImageSlot) {
+    if (!generatedContent) {
       return {
-        ...base,
-        images: {
-          ...(base.images || {}),
-          [firstImageSlot.key]: chosenImageUrl || "",
-        },
+        title: "",
+        tagline: "",
+        date: "",
+        time: "",
+        venue: "",
+        details: [],
+        imageUrl: userImageUrl,
+        image: userImageUrl,
       };
     }
-    return base;
-  }, [generatedContent, userImageUrl, chosenImageUrl, firstImageSlot]);
+    return { ...generatedContent, imageUrl: chosenImageUrl, image: chosenImageUrl };
+  }, [generatedContent, userImageUrl, chosenImageUrl]);
+
+  /* This poster's own picture takes the first empty picture space of the design in front of the
+   * person, and it is written down once as an answer they can take out. It is never re-poured on
+   * every redraw, which is how a picture used to come back after Remove and follow a poster into
+   * another layout. Only the two places a person chooses a picture call this. */
+  const boundPhotoRef = useRef("");
+  const bindPosterPhoto = (content, design, url) => {
+    const previous = boundPhotoRef.current;
+    boundPhotoRef.current = url || "";
+    return withPosterPhotoSlot(content, design, url || "", previous);
+  };
+
+  /* One screen per poster and per layout chosen here: moving to another one throws away whatever
+   * the last one remembered about pictures, sizes and which space was open. */
+  const editorKey = `${workPoster}:${templateId(drawTemplate) || ""}`;
+
+  /* Moving to another layout keeps only the words and pictures this person put in a space that
+     both layouts carry under the same name; everything else starts empty. */
+  const handleChooseTemplate = (nextId) => {
+    const key = String(nextId || "");
+    if (key === String(selectedTemplateId || "")) return;
+    const nextTemplate =
+      usableTemplates.find((each) => templateId(each) === key) || null;
+    /* A poster already saved is drawn with the look it was made with, so its answers stay as
+       they are and only the layout chosen here moves. */
+    if (!posterDesign) {
+      setGeneratedContent((prev) => {
+        if (!prev) return prev;
+        const moved = carriedBlanks(prev, drawTemplate, nextTemplate);
+        return withSlotDefaults(moved, nextTemplate);
+      });
+    }
+    setSelectedTemplateId(key);
+  };
 
   const photoStatusLabel = useMemo(() => {
     const activePhoto =
@@ -633,13 +705,67 @@ export default function Generate() {
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [drawBrandKit, chosenImageUrl, generatedContent]);
 
+
   const contentSnapshot = useMemo(
     () =>
-      posterContent ? JSON.stringify(buildContentPayload(posterContent)) : "",
-    [generatedContent, userImageUrl],
+      posterContent
+        ? JSON.stringify(buildContentPayload(posterContent, blanksSource))
+        : "",
+    [posterContent, blanksSource],
   );
   const hasUnsavedChanges =
     Boolean(posterContent) && contentSnapshot !== savedSnapshotRef.current;
+
+  const getPosterDraftData = useCallback(() => {
+    if (!posterContent) return null;
+    return {
+      basedOnVersion: currentVersion,
+      data: {
+        content: posterContent,
+      },
+    };
+  }, [currentVersion, posterContent]);
+
+  const applyPosterDraft = useCallback((draftData) => {
+    if (!draftData?.content) return;
+    const content = {
+      ...draftData.content,
+      image: draftData.content.imageUrl || "",
+    };
+    setGeneratedContent(content);
+    setRawGeneratedContent(content);
+    toast.success("Draft restored");
+  }, []);
+
+  const posterAutosave = useAutosave({
+    id: posterId,
+    type: "poster",
+    baseVersion: currentVersion,
+    isDirty: hasUnsavedChanges && Boolean(posterId),
+    getData: getPosterDraftData,
+    initialDraft,
+    onRestore: applyPosterDraft,
+    onDiscard: () => setInitialDraft(null),
+    enabled: Boolean(posterId),
+  });
+
+  useEffect(() => {
+    if (!posterId) return;
+    window.__reloadDraft = async () => {
+      try {
+        const res = await api.get(`/posters/${posterId}/draft`);
+        const draft = res?.data?.data?.draft;
+        if (draft?.data) {
+          applyPosterDraft(draft.data);
+        }
+      } catch (err) {
+        console.warn("Could not reload poster draft", err);
+      }
+    };
+    return () => {
+      delete window.__reloadDraft;
+    };
+  }, [posterId, applyPosterDraft]);
 
   const getRealTemplateId = () => {
     const chosen = templateId(selectedTemplate);
@@ -657,10 +783,51 @@ export default function Generate() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [hasUnsavedChanges]);
 
+  /* Opening another poster, or starting a new one, clears everything the last one left behind -
+     the pictures and words, the design it was drawn with, and the words kept on this device. A
+     brand-new poster therefore never carries another poster's answers. */
+  const loadedPosterRef = useRef("");
+  const resetForNewPoster = useCallback(() => {
+    posterIdRef.current = "";
+    versionRef.current = 1;
+    savedSnapshotRef.current = "";
+    retryOpRef.current = null;
+    editedBlanksRef.current = new Set();
+    seenRecipesRef.current = [];
+    aiImageRef.current = "";
+    boundPhotoRef.current = "";
+    setPosterId("");
+    setCurrentVersion(1);
+    setGeneratedContent(null);
+    setRawGeneratedContent(null);
+    setHistoryStack([]);
+    setUserImageUrl("");
+    setPosterDesign(null);
+    setPosterView(emptyView());
+    setActiveInstruction("");
+    setDescription("");
+    setPictureDialog(PICTURE_IDLE);
+    setInitialDraft(null);
+    setSaveStatus("idle");
+    setSaveError(null);
+    setDrawerSaveError("");
+    setDrawerConflict(false);
+    setShowSavedChip(false);
+    setIsEditOpen(false);
+    setOverflowWarning(null);
+    setFeedback({ type: null, message: "" });
+  }, []);
+
   // Load an existing poster with /create?poster=<id>
   useEffect(() => {
     const paramId = searchParams.get("poster");
-    if (!isRealId(paramId)) return undefined;
+    const wanted = isRealId(paramId) ? String(paramId) : "";
+    if (wanted === loadedPosterRef.current) return undefined;
+    loadedPosterRef.current = wanted;
+    setWorkPoster(wanted || "new");
+    clearDraft();
+    resetForNewPoster();
+    if (!wanted) return undefined;
     let cancelled = false;
     (async () => {
       try {
@@ -668,6 +835,9 @@ export default function Generate() {
         const loaded = res.data?.data?.poster;
         if (cancelled || !loaded || String(loaded._id) !== String(paramId))
           return;
+        if (loaded.draft) {
+          setInitialDraft(loaded.draft);
+        }
         const content = {
           ...loaded.content,
           image: loaded.content?.imageUrl || "",
@@ -679,6 +849,7 @@ export default function Generate() {
         setGeneratedContent(content);
         setRawGeneratedContent(content);
         setUserImageUrl(loaded.content?.imageUrl || "");
+        boundPhotoRef.current = loaded.content?.imageUrl || "";
         setPosterDesign(loaded.design || null);
         setPosterView(emptyView());
         editedBlanksRef.current = new Set();
@@ -715,7 +886,7 @@ export default function Generate() {
     return () => {
       cancelled = true;
     };
-  }, [searchParams]);
+  }, [searchParams, resetForNewPoster]);
 
   // Background thumbnail: best-effort, only after a real change was saved, drawn from the
   // poster's own snapshot so the card matches what the poster really looks like.
@@ -805,7 +976,8 @@ export default function Generate() {
       const savedDesign = poster.design || posterDesign;
       setPosterDesign(savedDesign || null);
 
-      markSaved(op.content);
+      markSaved(op.content, savedDesign || blanksSource);
+      posterAutosave.setStatus("idle");
       retryOpRef.current = null;
       setSaveStatus("saved");
       setShowSavedChip(true);
@@ -852,6 +1024,7 @@ export default function Generate() {
       setGeneratedContent(content);
       setRawGeneratedContent(content);
       setUserImageUrl(loaded.content?.imageUrl || "");
+      boundPhotoRef.current = loaded.content?.imageUrl || "";
       setPosterDesign(loaded.design || null);
       setPosterView(emptyView());
       editedBlanksRef.current = new Set();
@@ -881,7 +1054,7 @@ export default function Generate() {
       if (!isEditOpen) setFeedback({ type: "error", message: tooMuch });
       return;
     }
-    const payload = buildContentPayload(posterContent);
+    const payload = buildContentPayload(posterContent, blanksSource);
     if (!payload || !payload.title) {
       setDrawerSaveError("Please add a headline before saving.");
       setDrawerConflict(false);
@@ -920,6 +1093,8 @@ export default function Generate() {
           templateId: getRealTemplateId(),
           prompt: (description.trim() || payload.title).slice(0, 1000),
           ...(unsavedRecipe ? { recipe: unsavedRecipe } : {}),
+          /** Store the chosen event type on the poster so the form can re-open correctly. */
+          eventType: eventType || "general",
         });
 
     if (result.ok) {
@@ -953,6 +1128,7 @@ export default function Generate() {
       setGeneratedContent(content);
       setRawGeneratedContent(content);
       setUserImageUrl(poster.content?.imageUrl || "");
+      boundPhotoRef.current = poster.content?.imageUrl || "";
       setPosterDesign(poster.design || null);
       markSaved(content);
       setSaveError(null);
@@ -994,6 +1170,12 @@ export default function Generate() {
             ? prev
             : [...prev, made],
         );
+        const newId = templateId(made);
+        setTemplateDialog({ open: false, busy: false, error: "" });
+        if (newId) {
+          navigate(`/templates/${newId}/edit`);
+          return;
+        }
       }
       setTemplateDialog({ open: false, busy: false, error: "" });
       setFeedback({
@@ -1057,7 +1239,15 @@ export default function Generate() {
   const handleUsePicture = (url) => {
     const next = String(url || "").trim();
     if (!next || !posterContent) return;
-    handleStageContent({ ...posterContent, imageUrl: next, image: next });
+    /* The drawn picture becomes this poster's own picture, and it steps into the first picture
+       space that is still empty so the layout shows it. */
+    handleStageContent(
+      bindPosterPhoto(
+        { ...posterContent, imageUrl: next, image: next },
+        blanksSource,
+        next,
+      ),
+    );
     setPictureDialog(PICTURE_IDLE);
     setFeedback({
       type: "success",
@@ -1138,6 +1328,35 @@ export default function Generate() {
           {/* Left Column: Form Controls (about 420px) */}
           <div className="w-full lg:w-[420px] shrink-0">
             <form onSubmit={handleGenerate} className="space-y-6">
+              {/* 0. Event type picker */}
+              <div className="space-y-1.5">
+                <label className="block text-sm font-semibold text-[#111827]">
+                  What kind of event?
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {allEventTypes().map((et) => {
+                    const isActive = eventType === et.id;
+                    return (
+                      <button
+                        key={et.id}
+                        type="button"
+                        onClick={() => {
+                          setEventType(et.id);
+                          userChangedTypeRef.current = true;
+                        }}
+                        className={`px-2.5 py-1 rounded-[6px] border text-xs font-medium transition-colors ${
+                          isActive
+                            ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB]"
+                            : "border-[#E5E7EB] bg-white text-[#6B7280] hover:border-[#9CA3AF] hover:text-[#111827]"
+                        }`}
+                      >
+                        {et.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* 1. Prompt Textarea */}
               <div className="space-y-1.5">
                 <label
@@ -1177,22 +1396,26 @@ export default function Generate() {
                 value={userImageUrl}
                 onChange={(url) => {
                   const next = url || "";
+                  if (!generatedContent && !next) return;
                   setUserImageUrl(next);
                   setImageLoadError(false);
-                  setGeneratedContent((prev) => {
-                    if (!prev && !next) return null;
-                    return {
-                      title: prev?.title || "",
-                      tagline: prev?.tagline || "",
-                      date: prev?.date || "",
-                      time: prev?.time || "",
-                      venue: prev?.venue || "",
-                      details: prev?.details || [],
-                      ...prev,
-                      imageUrl: next,
-                      image: next,
-                    };
-                  });
+                  setGeneratedContent(
+                    bindPosterPhoto(
+                      {
+                        title: "",
+                        tagline: "",
+                        date: "",
+                        time: "",
+                        venue: "",
+                        details: [],
+                        ...(generatedContent || {}),
+                        imageUrl: next,
+                        image: next,
+                      },
+                      blanksSource,
+                      next,
+                    ),
+                  );
                 }}
               />
 
@@ -1208,8 +1431,9 @@ export default function Generate() {
                   onModeChange={handleModeChange}
                   templates={usableTemplates}
                   selectedTemplateId={selectedTemplateId}
-                  onSelectTemplate={setSelectedTemplateId}
+                  onSelectTemplate={handleChooseTemplate}
                   brandKit={brandKit}
+                  eventType={eventType}
                 />
               </Suspense>
 
@@ -1247,6 +1471,20 @@ export default function Generate() {
                   <Lock className="w-3.5 h-3.5 text-[#6B7280]" />
                   <span>Brand locked</span>
                 </div>
+                {ready && (
+                  <button
+                    type="button"
+                    onClick={() => setShowPlaceholders((prev) => !prev)}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] border text-xs font-medium transition-colors ${
+                      showPlaceholders
+                        ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB]"
+                        : "border-[#E5E7EB] bg-white text-[#6B7280] hover:text-[#111827]"
+                    }`}
+                    title="Show or hide example words and photo spaces on the poster"
+                  >
+                    <span>Show placeholders</span>
+                  </button>
+                )}
                 {feedback.type === "success" && (
                   <div
                     className="flex items-center gap-1.5 text-xs text-[#16A34A] font-medium"
@@ -1261,18 +1499,32 @@ export default function Generate() {
               <div className="flex items-center gap-2">
                 {hasUnsavedChanges &&
                   saveStatus !== "saving" &&
+                  posterAutosave.status !== "saving" &&
+                  posterAutosave.status !== "saved" &&
                   !showSavedChip && (
                     <span className="text-xs text-[#D97706] font-medium">
                       Unsaved changes
                     </span>
                   )}
-                {saveStatus === "saving" ? (
+                {saveStatus === "saving" || posterAutosave.status === "saving" ? (
                   <span
                     className="inline-flex items-center gap-1.5 text-xs text-[#6B7280]"
                     role="status"
                   >
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     <span>Saving…</span>
+                  </span>
+                ) : posterAutosave.status === "error" ? (
+                  <span className="text-xs text-red-600 font-medium">
+                    {posterAutosave.errorMessage || "Draft save failed"}
+                  </span>
+                ) : posterAutosave.status === "saved" ? (
+                  <span
+                    className="inline-flex items-center gap-1.5 text-xs text-[#16A34A] font-medium"
+                    role="status"
+                  >
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    <span>Draft saved</span>
                   </span>
                 ) : (
                   showSavedChip && (
@@ -1287,7 +1539,7 @@ export default function Generate() {
                   )
                 )}
 
-                {ready && aiPoster && canManageTemplates && (
+                {ready && canManageTemplates && (
                   <Button
                     type="button"
                     variant="outline"
@@ -1301,6 +1553,8 @@ export default function Generate() {
                     <span>Save as template</span>
                   </Button>
                 )}
+
+
 
                 {ready && (
                   <Button
@@ -1335,7 +1589,6 @@ export default function Generate() {
               </div>
             </div>
 
-            {/* Poster Canvas Preview Panel: Light gray panel (#FAFAFA, 1px border, 8px radius) */}
             <div className="rounded-[8px] bg-[#FAFAFA] border border-[#E5E7EB] p-4 sm:p-6 min-h-[460px] flex flex-col items-center justify-center">
               {loadingInitial || isGenerating ? (
                 <SkeletonPoster />
@@ -1345,6 +1598,7 @@ export default function Generate() {
                 >
                   <Suspense fallback={<SkeletonPoster />}>
                     <EditablePoster
+                      key={editorKey}
                       brandKit={drawBrandKit}
                       template={drawTemplate}
                       content={posterContent}
@@ -1363,6 +1617,13 @@ export default function Generate() {
                         );
                       }}
                       onImageFail={() => setImageLoadError(true)}
+                      showPlaceholders={showPlaceholders}
+                      highlightSlotKey={highlightSlotKey}
+                      onSlotClick={(key) => {
+                        setIsEditOpen(true);
+                        setActiveSlotKey(key);
+                        setHighlightSlotKey(key);
+                      }}
                     />
                   </Suspense>
                 </div>
@@ -1574,6 +1835,7 @@ export default function Generate() {
 
         {/* Edit Text Drawer Panel */}
         <EditTextPanel
+          key={editorKey}
           isOpen={isEditOpen}
           onClose={requestCloseEditor}
           content={posterContent}
@@ -1606,6 +1868,21 @@ export default function Generate() {
           onBlankContent={handleStageContent}
           onBlankView={setPosterView}
           onBlankEdited={markBlankEdited}
+          eventType={eventType}
+          highlightSlotKey={highlightSlotKey}
+          onHighlightSlot={setHighlightSlotKey}
+          activeSlotKey={activeSlotKey}
+          onSlotSelect={(key) => {
+            setActiveSlotKey(key);
+            setHighlightSlotKey(key);
+          }}
+        />
+
+        <DraftRestoreDialog
+          isOpen={Boolean(posterAutosave.draftPrompt)}
+          savedAt={posterAutosave.draftPrompt?.savedAt}
+          onContinue={posterAutosave.continueDraft}
+          onDiscard={posterAutosave.discardDraft}
         />
       </div>
     </div>

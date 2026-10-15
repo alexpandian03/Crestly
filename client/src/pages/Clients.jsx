@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import api from "../services/api";
+import { friendlyError } from "../utils/brandImage";
 import { Plus, CheckCircle2, AlertCircle, Building2 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import {
@@ -48,10 +49,7 @@ export default function Clients() {
     } catch (err) {
       setFeedback({
         type: "error",
-        message:
-          err.response?.data?.error?.message ||
-          err.message ||
-          "Failed to load organisations",
+        message: friendlyError(err, "We could not load the organization list."),
       });
     } finally {
       setLoading(false);
@@ -83,10 +81,7 @@ export default function Clients() {
     } catch (err) {
       setFeedback({
         type: "error",
-        message:
-          err.response?.data?.error?.message ||
-          err.message ||
-          "Failed to create organisation",
+        message: friendlyError(err, "That organization could not be created. Try again."),
       });
     } finally {
       setCreating(false);

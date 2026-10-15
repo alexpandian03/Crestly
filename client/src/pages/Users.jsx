@@ -11,6 +11,7 @@ import {
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext";
 import api from "../services/api";
+import { friendlyError } from "../utils/brandImage";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Skeleton } from "../components/ui/skeleton";
@@ -196,10 +197,7 @@ export default function Users() {
     } catch (err) {
       setFeedback({
         type: "error",
-        message:
-          err.response?.data?.error?.message ||
-          err.message ||
-          "We could not reset the password.",
+        message: friendlyError(err, "We could not reset the password."),
       });
     } finally {
       setActionId("");

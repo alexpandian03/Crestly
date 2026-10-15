@@ -14,16 +14,36 @@ import {
   checkElementImageUrl,
   clampRectToArea,
   contentArea,
+  isBrandColorToken,
+  isGenericLabel,
   normalizeElement,
   normalizeElements,
   plainText,
+  resolveColorToken,
   validateElements,
 } from '../../../shared/templateElements.js';
+import { contrastRatio, pickReadableColor, toHex } from './contrast.js';
 
-/** Only the last 50 moves of the item list are kept. */
-export const HISTORY_LIMIT = 50;
+/** At least 100 steps of the item list are kept for undo/redo. */
+export const HISTORY_LIMIT = 100;
 export const NAME_LIMIT = 120;
 export const NOTE_LIMIT = 120;
+
+/* Style notes the shared item rules rebuild from scratch and so would drop. The poster draws
+   them, so a tool click has to survive the round trip through the item list. */
+const CARRIED_STYLE_KEYS = [
+  'effect',
+  'flipX',
+  'flipY',
+  'crop',
+  'brightness',
+  'contrast',
+  'grayscale',
+  'textDecoration',
+  'underline',
+  'strike',
+  'textTransform',
+];
 
 export const FIELD_LABELS = {
   headline: 'Headline',
@@ -41,17 +61,17 @@ export const FIELD_ORDER = ELEMENT_FIELDS;
 export const TEXT_VARIANTS = {
   heading: {
     label: 'Heading',
-    style: { fontFamily: 'Outfit', size: 44, minSize: 18, weight: 700, lineHeight: 1.15 },
+    style: { fontFamily: 'Outfit', size: 44, minSize: 18, weight: 700, lineHeight: 1.15, color: '#111827' },
     box: { w: 0.8, h: 80 },
   },
   subheading: {
     label: 'Subheading',
-    style: { fontFamily: 'Outfit', size: 28, minSize: 14, weight: 500, lineHeight: 1.25 },
+    style: { fontFamily: 'Outfit', size: 28, minSize: 14, weight: 500, lineHeight: 1.25, color: '#111827' },
     box: { w: 0.7, h: 56 },
   },
   body: {
     label: 'Body text',
-    style: { fontFamily: 'Inter', size: 20, minSize: 12, weight: 400, lineHeight: 1.45 },
+    style: { fontFamily: 'Inter', size: 20, minSize: 12, weight: 400, lineHeight: 1.45, color: '#111827' },
     box: { w: 0.8, h: 96 },
   },
 };
@@ -69,19 +89,24 @@ export const ITEM_MODES = {
 };
 
 export const SHAPE_VARIANTS = {
-  rect: { label: 'Box', box: { w: 260, h: 140 }, shape: { type: 'rect', fill: '#059669' } },
+  rect: { label: 'Rectangle', box: { w: 260, h: 140 }, shape: { type: 'rect', fill: '#059669' } },
+  'rounded-rect': { label: 'Rounded rectangle', box: { w: 260, h: 140 }, shape: { type: 'rounded-rect', fill: '#059669' }, style: { radius: 16 } },
   circle: { label: 'Circle', box: { w: 160, h: 160 }, shape: { type: 'circle', fill: '#f59e0b' } },
+  triangle: { label: 'Triangle', box: { w: 180, h: 180 }, shape: { type: 'triangle', fill: '#3b82f6' } },
+  star: { label: 'Star', box: { w: 180, h: 180 }, shape: { type: 'star', fill: '#eab308' } },
+  hexagon: { label: 'Hexagon', box: { w: 180, h: 180 }, shape: { type: 'hexagon', fill: '#8b5cf6' } },
+  diamond: { label: 'Diamond', box: { w: 180, h: 180 }, shape: { type: 'diamond', fill: '#ec4899' } },
   line: { label: 'Line', box: { w: 520, h: 24 }, shape: { type: 'line', fill: '', stroke: '#334155', strokeWidth: 4 } },
 };
 
 /** Field items start at a size that suits the poster they are being placed on. */
 const FIELD_BOX = {
-  headline: { w: 0.9, h: 160, style: { fontFamily: 'Outfit', size: 64, minSize: 24, weight: 700, lineHeight: 1.1 } },
-  tagline: { w: 0.7, h: 56, style: { fontFamily: 'Outfit', size: 26, minSize: 14, weight: 500 } },
-  date: { w: 0.35, h: 56, style: { fontFamily: 'Inter', size: 22, minSize: 13, weight: 600 } },
-  time: { w: 0.35, h: 56, style: { fontFamily: 'Inter', size: 22, minSize: 13, weight: 600 } },
-  venue: { w: 0.9, h: 56, style: { fontFamily: 'Inter', size: 22, minSize: 13, weight: 600 } },
-  details: { w: 0.9, h: 180, style: { fontFamily: 'Inter', size: 18, minSize: 12, weight: 400, lineHeight: 1.4 } },
+  headline: { w: 0.9, h: 160, style: { fontFamily: 'Outfit', size: 64, minSize: 24, weight: 700, lineHeight: 1.1, color: '#111827' } },
+  tagline: { w: 0.7, h: 56, style: { fontFamily: 'Outfit', size: 26, minSize: 14, weight: 500, color: '#111827' } },
+  date: { w: 0.35, h: 56, style: { fontFamily: 'Inter', size: 22, minSize: 13, weight: 600, color: '#111827' } },
+  time: { w: 0.35, h: 56, style: { fontFamily: 'Inter', size: 22, minSize: 13, weight: 600, color: '#111827' } },
+  venue: { w: 0.9, h: 56, style: { fontFamily: 'Inter', size: 22, minSize: 13, weight: 600, color: '#111827' } },
+  details: { w: 0.9, h: 180, style: { fontFamily: 'Inter', size: 18, minSize: 12, weight: 400, lineHeight: 1.4, color: '#111827' } },
   photo: { w: 0.7, h: 300, style: { fit: 'cover', radius: 0 } },
 };
 
@@ -135,9 +160,60 @@ export function labelFromWords(words) {
   return plainText(words, VARIABLE_LIMITS.labelChars).trim();
 }
 
+export function nextFreeNumber(usedNumbers) {
+  let n = 1;
+  while (usedNumbers.has(n)) n += 1;
+  return n;
+}
+
+export function nextFreeTextLabel(items) {
+  const used = new Set();
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    if (item?.variable && (item.kind === 'text' || !item.kind)) {
+      const m = String(item.label || '').trim().match(/^Text\s+(\d+)$/i);
+      if (m) used.add(parseInt(m[1], 10));
+    }
+  });
+  return `Text ${nextFreeNumber(used)}`;
+}
+
+export function nextFreePhotoLabel(items) {
+  const used = new Set();
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    if (item?.variable && item.kind === 'image') {
+      const m = String(item.label || '').trim().match(/^Photo\s+(\d+)$/i);
+      if (m) used.add(parseInt(m[1], 10));
+    }
+  });
+  return `Photo ${nextFreeNumber(used)}`;
+}
+
+export function labelSuggestions(label = '') {
+  const l = String(label || '').toLowerCase();
+  if (l.includes('chief') || l.includes('guest')) {
+    return ['Name and title of chief guest', 'Guest of honour and organization', 'What should go here?'];
+  }
+  if (l.includes('speaker')) {
+    return ['Keynote speaker name and topic', 'Guest speaker credentials', 'What should go here?'];
+  }
+  if (l.includes('sponsor')) {
+    return ['Sponsored by organization name', 'Title sponsor name', 'What should go here?'];
+  }
+  if (l.includes('ticket') || l.includes('price') || l.includes('fee')) {
+    return ['Entry free for all', 'Registration fee per person', 'What should go here?'];
+  }
+  if (l.includes('quote')) {
+    return ['Short inspiring quote', 'Words from the founder', 'What should go here?'];
+  }
+  if (l.includes('cta') || l.includes('action')) {
+    return ['Register now at website', 'Call to book seats', 'What should go here?'];
+  }
+  return ['What should go here?', 'Short line describing this', 'Additional details for attendees'];
+}
+
 /** What the assistant is told to write when the admin did not say anything else. */
 export function defaultHint(label) {
-  return plainText(`Write this from the user's description: ${label}`, VARIABLE_LIMITS.hintChars);
+  return 'What should go here?';
 }
 
 /** The name a new fill-in carries until the admin writes its own words. */
@@ -149,7 +225,7 @@ export const AI_TEXT_START = {
 
 /** A photo blank is numbered, so a template with three of them never reads the same twice. */
 export function photoSlotLabel(items) {
-  return plainText(`Photo space ${userImageCount(items) + 1}`, VARIABLE_LIMITS.labelChars);
+  return nextFreePhotoLabel(items);
 }
 
 function keySeed(label) {
@@ -179,7 +255,34 @@ export function uniqueKey(label, items, exceptId = '') {
   return candidate;
 }
 
-/** A copy is named after the original, so "<label> copy" with room left for the word copy. */
+/**
+ * Duplicating creates the next number, never a "copy" suffix.
+ * e.g., "Text 1" -> "Text 2", "Sponsor name" -> "Sponsor name 2".
+ */
+export function nextNumberedLabel(rawLabel, items) {
+  const existingLabels = new Set(
+    (Array.isArray(items) ? items : []).map((it) => (it?.label || '').trim().toLowerCase())
+  );
+  const trimmed = (rawLabel || '').trim();
+  const match = trimmed.match(/^(.*?)\s*(\d+)$/);
+  let base = trimmed;
+  let startNum = 2;
+  if (match) {
+    base = match[1].trim();
+    startNum = parseInt(match[2], 10) + 1;
+  }
+  let n = startNum;
+  while (n < 1000) {
+    const candidate = `${base} ${n}`.trim();
+    if (!existingLabels.has(candidate.toLowerCase())) {
+      return candidate.slice(0, VARIABLE_LIMITS.labelChars);
+    }
+    n += 1;
+  }
+  return `${base} ${n}`.slice(0, VARIABLE_LIMITS.labelChars);
+}
+
+/** Legacy helper: replaced by nextNumberedLabel for variable slots. */
 export function copyLabel(label) {
   const base = plainText(label, VARIABLE_LIMITS.labelChars - 5).trim();
   return `${base ? `${base} ` : ''}copy`.slice(0, VARIABLE_LIMITS.labelChars);
@@ -243,7 +346,9 @@ export function setItemMode(item, items, mode, area) {
     merged.variable = true;
     merged.label = label;
     merged.key = uniqueKey(label, items, item.id);
-    merged.hint = kind === 'text' ? plainText(merged.hint || defaultHint(label), VARIABLE_LIMITS.hintChars) : '';
+    merged.hint = kind === 'text'
+      ? plainText(merged.hint || defaultHint(label), VARIABLE_LIMITS.hintChars)
+      : plainText(merged.hint || '', VARIABLE_LIMITS.hintChars);
     if (kind === 'text') {
       merged.maxLength = Math.min(
         VARIABLE_LIMITS.maxLength.max,
@@ -253,6 +358,11 @@ export function setItemMode(item, items, mode, area) {
     }
   }
   const fixed = normalizeElement(merged, 0);
+  if (merged.style) {
+    CARRIED_STYLE_KEYS.forEach((k) => {
+      if (merged.style[k] !== undefined) fixed.style[k] = merged.style[k];
+    });
+  }
   return { ...fixed, ...clampRectToArea({ x: fixed.x, y: fixed.y, w: fixed.w, h: fixed.h }, area) };
 }
 
@@ -286,11 +396,17 @@ export function keepWithinLimits(incoming, list, area) {
 export function setItemMeta(item, items, patch, area) {
   const merged = { ...item, ...patch };
   if (patch.label !== undefined) {
-    merged.label = labelFromWords(patch.label) || item.label || (item.kind === 'image' ? 'Photo' : 'Text');
-    merged.key = uniqueKey(merged.label, items, item.id);
-    /* A hint nobody wrote still follows the name; a written one keeps its own words. */
-    const untouched = !merged.hint || merged.hint === defaultHint(item.label || '');
-    merged.hint = item.kind === 'text' ? (untouched ? defaultHint(merged.label) : plainText(merged.hint, VARIABLE_LIMITS.hintChars)) : '';
+    merged.label = plainText(patch.label, VARIABLE_LIMITS.labelChars).trim();
+    merged.key = item.key || uniqueKey(merged.label, items, item.id);
+  }
+  if (patch.hint !== undefined) {
+    merged.hint = plainText(patch.hint, VARIABLE_LIMITS.hintChars);
+  }
+  if (patch.sample !== undefined && item.kind === 'text') {
+    merged.sample = plainText(patch.sample, VARIABLE_LIMITS.sampleChars || 80);
+  }
+  if (patch.sampleImage !== undefined && item.kind === 'image') {
+    merged.sampleImage = typeof patch.sampleImage === 'string' ? patch.sampleImage.trim().slice(0, 600) : '';
   }
   const fixed = normalizeElement(merged, 0);
   return { ...fixed, ...clampRectToArea({ x: fixed.x, y: fixed.y, w: fixed.w, h: fixed.h }, area) };
@@ -351,26 +467,127 @@ export function newFieldItem(field, items, area) {
 }
 
 /**
+ * Resolves the background colour behind a given bounding box by checking:
+ * 1. An intersecting/covering shape in `items` with a lower z-index
+ * 2. The section background (header, footer, or content)
+ * 3. The page background or fallback white (#ffffff)
+ */
+export function resolveBackdropAtRect(rect, items = [], section = 'content', { brandKit = null, sections = null, page = null } = {}) {
+  const r = rect || { x: 0, y: 0, w: 100, h: 40 };
+  const zMax = Number.isFinite(rect?.z) ? rect.z : Infinity;
+
+  // 1. Look for lower-z shape that covers/intersects rect
+  const list = Array.isArray(items) ? items : [];
+  const plates = list.filter((it) => it?.kind === 'shape' && (it.z ?? 0) < zMax && (it.shape?.fill || it.shape?.stroke));
+  let bestPlate = null;
+  for (const plate of plates) {
+    const overlaps =
+      plate.x <= r.x + r.w &&
+      plate.x + plate.w >= r.x &&
+      plate.y <= r.y + r.h &&
+      plate.y + plate.h >= r.y;
+    if (overlaps && (!bestPlate || (plate.z ?? 0) > (bestPlate.z ?? 0))) {
+      bestPlate = plate;
+    }
+  }
+
+  if (bestPlate) {
+    const rawFill = bestPlate.shape?.fill || bestPlate.shape?.stroke;
+    if (rawFill) {
+      const resolved = isBrandColorToken(rawFill) ? resolveColorToken(rawFill, brandKit) : rawFill;
+      const hex = toHex(resolved);
+      if (hex) return hex;
+    }
+  }
+
+  // 2. Section background
+  const sec = sections?.[section];
+  const secBg = sec?.background?.color;
+  if (secBg) {
+    const resolved = isBrandColorToken(secBg) ? resolveColorToken(secBg, brandKit) : secBg;
+    const hex = toHex(resolved);
+    if (hex) return hex;
+  }
+  if (section === 'header' && brandKit?.header?.background?.color) {
+    const resolved = isBrandColorToken(brandKit.header.background.color)
+      ? resolveColorToken(brandKit.header.background.color, brandKit)
+      : brandKit.header.background.color;
+    const hex = toHex(resolved);
+    if (hex) return hex;
+  }
+  if (section === 'footer' && brandKit?.footer?.background?.color) {
+    const resolved = isBrandColorToken(brandKit.footer.background.color)
+      ? resolveColorToken(brandKit.footer.background.color, brandKit)
+      : brandKit.footer.background.color;
+    const hex = toHex(resolved);
+    if (hex) return hex;
+  }
+
+  // 3. Page background / brand background
+  const pageBg = sections?.content?.page?.background?.color || page?.background?.color || brandKit?.colors?.background;
+  if (pageBg) {
+    const resolved = isBrandColorToken(pageBg) ? resolveColorToken(pageBg, brandKit) : pageBg;
+    const hex = toHex(resolved);
+    if (hex) return hex;
+  }
+
+  return '#ffffff';
+}
+
+/**
+ * Chooses an accessible default text colour based on contrast against the backdrop.
+ * - Uses brand text colour if contrast is at least 4.5:1
+ * - Else uses dark #111827 on light backgrounds or white #ffffff on dark backgrounds.
+ * - Never defaults to white on white.
+ */
+export function pickDefaultTextColor(backdrop, brandKit = null) {
+  const bg = toHex(backdrop, '#ffffff');
+  const brandTextRaw = brandKit?.colors?.text || 'brand:text';
+  const brandText = toHex(
+    isBrandColorToken(brandTextRaw) ? resolveColorToken(brandTextRaw, brandKit) : brandTextRaw,
+    '#111827'
+  );
+
+  const brandRatio = contrastRatio(brandText, bg);
+  if (brandRatio !== null && brandRatio >= 4.5) {
+    return 'brand:text';
+  }
+
+  const darkRatio = contrastRatio('#111827', bg) || 1;
+  const lightRatio = contrastRatio('#ffffff', bg) || 1;
+
+  return darkRatio >= lightRatio ? '#111827' : '#ffffff';
+}
+
+/**
  * A piece of words from the Text panel. It starts as one the assistant fills in, so the
  * admin only has to write its name; when the template already holds the most fill-ins it
  * can, the caller asks for a locked one instead and says why.
  */
-export function newTextItem(variantKey, items, area, { variable = true } = {}) {
+export function newTextItem(variantKey, items, area, { variable = true, brandKit = null, section = 'content', sections = null, page = null } = {}) {
   const variant = TEXT_VARIANTS[variantKey] || TEXT_VARIANTS.body;
   const spot = openSpot(area, items.length);
+  const rect = place(area, spot, boxIn(area, variant.box.w, variant.box.h));
+  // Default color of all text is black and users can change it; all text first shows black not white
+  const defaultColor = '#111827';
+
+  const label = variable ? nextFreeTextLabel(items) : (AI_TEXT_START[variantKey] || '');
   const fresh = normalizeElement(
     {
       id: nextId('text', items),
       kind: 'text',
-      ...place(area, spot, boxIn(area, variant.box.w, variant.box.h)),
+      ...rect,
       z: nextZ(items),
-      style: { ...variant.style },
-      text: variable ? AI_TEXT_START[variantKey] || '' : variantKey === 'body' ? '' : TEXT_SAMPLE[variantKey] || '',
+      style: { ...variant.style, color: defaultColor },
+      text: variable ? '' : (variantKey === 'body' ? '' : (TEXT_SAMPLE[variantKey] || '')),
+      label: variable ? label : undefined,
+      hint: variable ? 'What should go here?' : undefined,
+      sample: '',
     },
     items.length
   );
   if (!variable) return fresh;
-  return setItemMode({ ...fresh, label: AI_TEXT_START[variantKey] || '' }, items, 'ai', area);
+  return setItemMode({ ...fresh, label, hint: 'What should go here?', sample: '' }, items, 'ai', area);
 }
 
 /**
@@ -379,6 +596,7 @@ export function newTextItem(variantKey, items, area, { variable = true } = {}) {
  */
 export function newImageItem(items, area, imageUrl = '', { variable = true } = {}) {
   const spot = openSpot(area, items.length);
+  const label = variable ? nextFreePhotoLabel(items) : undefined;
   const fresh = normalizeElement(
     {
       id: nextId('photo', items),
@@ -387,11 +605,13 @@ export function newImageItem(items, area, imageUrl = '', { variable = true } = {
       z: nextZ(items),
       style: { fit: 'cover', radius: 0 },
       imageUrl,
+      label,
+      hint: variable ? 'What should go here?' : undefined,
     },
     items.length
   );
   if (!variable) return fresh;
-  return setItemMode({ ...fresh, label: photoSlotLabel(items) }, items, 'user', area);
+  return setItemMode({ ...fresh, label, hint: 'What should go here?' }, items, 'user', area);
 }
 
 /**
@@ -402,7 +622,7 @@ export function commitItemText(item, items, words, area) {
   const text = plainText(words, ELEMENT_LIMITS.textChars);
   if (!item?.variable || item.kind !== 'text') return patchItem(item, { text }, area);
   const merged = { ...item, text, label: labelFromWords(text) || item.label };
-  merged.key = uniqueKey(merged.label, items, item.id);
+  merged.key = item.key || uniqueKey(merged.label, items, item.id);
   /* Erasing the box leaves the name standing in it, which is what a blank is for. */
   if (!merged.text.trim()) merged.text = merged.label;
   /* Only a hint nobody touched follows the new name; a written one stays. */
@@ -412,17 +632,40 @@ export function commitItemText(item, items, words, area) {
   return { ...fixed, ...clampRectToArea({ x: fixed.x, y: fixed.y, w: fixed.w, h: fixed.h }, area) };
 }
 
-export function newShapeItem(variantKey, items, area) {
+export function newShapeItem(variantKey, items, area, { brandKit = null } = {}) {
   const variant = SHAPE_VARIANTS[variantKey] || SHAPE_VARIANTS.rect;
   const spot = openSpot(area, items.length);
+  const isLine = variantKey === 'line';
   return normalizeElement(
     {
       id: nextId('shape', items),
       kind: 'shape',
       ...place(area, spot, boxIn(area, variant.box.w / area.w, variant.box.h)),
       z: nextZ(items),
-      style: { radius: 0 },
-      shape: { ...variant.shape },
+      style: { radius: variant.style?.radius || 0 },
+      shape: isLine
+        ? { ...variant.shape }
+        : {
+            ...variant.shape,
+            fill: 'brand:primary',
+            stroke: 'brand:secondary',
+            strokeWidth: 1,
+          },
+    },
+    items.length
+  );
+}
+
+export function newIconItem(iconName, items, area) {
+  const spot = openSpot(area, items.length);
+  return normalizeElement(
+    {
+      id: nextId('icon', items),
+      kind: 'icon',
+      name: iconName || 'star',
+      ...place(area, spot, boxIn(area, 80 / area.w, 80)),
+      z: nextZ(items),
+      style: { color: 'brand:primary', strokeWidth: 2 },
     },
     items.length
   );
@@ -439,12 +682,27 @@ export function duplicateItem(item, items, area) {
     locked: false,
   };
   if (copy.variable) {
-    copy.label = copyLabel(copy.label || copy.text);
+    const rawLabel = (copy.label || '').trim();
+    if (!rawLabel || isGenericLabel(rawLabel)) {
+      copy.label = copy.kind === 'image' ? nextFreePhotoLabel(items) : nextFreeTextLabel(items);
+    } else {
+      copy.label = nextNumberedLabel(rawLabel, items);
+    }
     copy.key = uniqueKey(copy.label, items);
-    /* A copied blank asks for the same thing the first one did, in its own words. */
-    if (copy.kind === 'text') copy.text = copy.label;
+    if (copy.kind === 'text') copy.text = copy.sample || '';
+  }
+  if (copy.kind === 'cardlist') {
+    const rawLabel = copy.label || 'List';
+    copy.label = nextNumberedLabel(rawLabel, items);
+    let newKey = uniqueKey(copy.label, items);
+    copy.key = newKey;
   }
   const fixed = normalizeElement(copy, items.length);
+  if (copy.style) {
+    CARRIED_STYLE_KEYS.forEach((k) => {
+      if (copy.style[k] !== undefined) fixed.style[k] = copy.style[k];
+    });
+  }
   return { ...fixed, ...clampRectToArea({ x: fixed.x, y: fixed.y, w: fixed.w, h: fixed.h }, area) };
 }
 
@@ -461,8 +719,9 @@ export const CLIPBOARD_EMPTY = 'There is nothing to put back yet. Pick an item a
  * stray key or an id from another template can never travel with it.
  * @returns {number} how many items are now on the clipboard
  */
-export function writeClipboard(item) {
-  const list = normalizeElements(item ? [item] : []).slice(0, CLIPBOARD_MAX);
+export function writeClipboard(itemOrItems) {
+  const items = Array.isArray(itemOrItems) ? itemOrItems : (itemOrItems ? [itemOrItems] : []);
+  const list = normalizeElements(items).slice(0, CLIPBOARD_MAX);
   try {
     if (!list.length) window.sessionStorage.removeItem(CLIPBOARD_KEY);
     else window.sessionStorage.setItem(CLIPBOARD_KEY, JSON.stringify(list));
@@ -514,11 +773,13 @@ export function readClipboard(items, area, { clientId = '' } = {}) {
     const soFar = [...(Array.isArray(items) ? items : []), ...pasted.slice(0, index)];
     const fresh = { ...item, id: nextId(item.kind === 'field' ? `field-${item.field}` : item.kind, soFar), locked: false };
     if (fresh.variable) {
-      /* Put back on the same poster it came from, it asks for the same thing under a new name. */
-      const sameName = soFar.some((each) => each.variable && (each.label || '') === (fresh.label || ''));
-      if (sameName) {
-        fresh.label = copyLabel(fresh.label || fresh.key);
-        if (fresh.kind === 'text') fresh.text = fresh.label;
+      /* Put back on the same poster it came from, it asks for the same thing under a new number. */
+      const sameName = soFar.some(
+        (each) => each.variable && (each.label || '').trim().toLowerCase() === (fresh.label || '').trim().toLowerCase()
+      );
+      if (sameName || isGenericLabel(fresh.label)) {
+        fresh.label = nextNumberedLabel(fresh.label || (fresh.kind === 'image' ? 'Photo' : 'Text'), soFar);
+        if (fresh.kind === 'text') fresh.text = fresh.sample || '';
       }
       fresh.key = uniqueKey(fresh.label || fresh.key, soFar);
     }
@@ -553,17 +814,112 @@ export function isHeadlineItem(item) {
   return item?.kind === 'field' && item?.field === 'headline';
 }
 
+/**
+ * Automatically numbers every variable text item and image slot in reading order
+ * (top to bottom, left to right). Numbers are display-only and recalculate on changes.
+ */
+export function computeItemNumbers(items) {
+  const list = Array.isArray(items) ? items : [];
+  const numbers = new Map();
+
+  const readingSort = (a, b) => {
+    const ay = Number(a.y) || 0;
+    const by = Number(b.y) || 0;
+    if (Math.abs(ay - by) > 15) return ay - by;
+    const ax = Number(a.x) || 0;
+    const bx = Number(b.x) || 0;
+    return ax - bx;
+  };
+
+  const variableTexts = list.filter((it) => it?.kind === 'text' && Boolean(it.variable)).sort(readingSort);
+  variableTexts.forEach((item, index) => {
+    const num = index + 1;
+    numbers.set(item.id, {
+      type: 'text',
+      number: num,
+      label: `Text ${num}`,
+      shortLabel: String(num),
+    });
+  });
+
+  const variableImages = list.filter((it) => it?.kind === 'image' && Boolean(it.variable)).sort(readingSort);
+  variableImages.forEach((item, index) => {
+    const num = index + 1;
+    numbers.set(item.id, {
+      type: 'photo',
+      number: num,
+      label: `Photo ${num}`,
+      shortLabel: String(num),
+    });
+  });
+
+  return numbers;
+}
+
 /** What screen readers and the Layers list call this item. */
-export function itemLabel(item) {
+export function itemLabel(item, allItems = null) {
   if (!item) return 'Item';
+  if (allItems && item.variable) {
+    const numbers = computeItemNumbers(allItems);
+    const info = numbers.get(item.id);
+    if (info) {
+      if (item.label && item.label !== info.label) {
+        return `${info.label}: ${item.label}`;
+      }
+      return info.label;
+    }
+  }
+  if (item.variable) {
+    if (item.kind === 'text') return item.label || 'Text space';
+    if (item.kind === 'image') return item.label || 'Photo space';
+  }
   if (item.kind === 'field') return FIELD_LABELS[item.field] || item.field;
   if (item.kind === 'text') {
     const words = plainText(item.text, 32);
     return words ? `Text: ${words}` : 'Empty text box';
   }
   if (item.kind === 'image') return item.imageUrl ? 'Photo' : 'Photo, empty';
-  const shapeName = { rect: 'Box', circle: 'Circle', line: 'Line' }[item.shape?.type] || 'Shape';
+  const shapeName = { rect: 'Box', 'rounded-rect': 'Rounded box', circle: 'Circle', line: 'Line' }[item.shape?.type] || 'Shape';
   return shapeName;
+}
+
+/** What the poster calls each word the brand kit is supposed to supply. */
+const BRAND_FIELD_LABELS = {
+  'brand.orgName': 'Organization',
+  'brand.website': 'Website',
+  'brand.phone': 'Phone',
+  'brand.email': 'Email',
+  'brand.address': 'Address',
+  'brand.legalText': 'Legal text',
+};
+
+const BRAND_FIELD_VALUES = {
+  'brand.orgName': (kit) => kit.orgName,
+  'brand.website': (kit) => kit.footer?.website || kit.website,
+  'brand.phone': (kit) => kit.footer?.phone || kit.phone,
+  'brand.email': (kit) => kit.footer?.email || kit.email,
+  'brand.address': (kit) => kit.footer?.address || kit.address,
+  'brand.legalText': (kit) => kit.footer?.legalText || kit.legalText,
+};
+
+/**
+ * The brand fields a piece of writing still needs.
+ *
+ * resolveBrandText turns {{brand.phone}} into nothing at all when the organization has not
+ * said what the number is, so the box paints as empty space. The editor names the missing
+ * field instead of leaving a blank rectangle; the poster and the export keep painting nothing.
+ */
+export function missingBrandFields(text, brandKit) {
+  if (typeof text !== 'string' || !text.includes('{{')) return [];
+  const kit = brandKit || {};
+  const missing = [];
+  for (const key of Object.keys(BRAND_FIELD_LABELS)) {
+    const pattern = new RegExp(`\\{\\{\\s*${key.replace('.', '\\.')}\\s*\\}\\}`);
+    if (!pattern.test(text)) continue;
+    if (String(BRAND_FIELD_VALUES[key](kit) ?? '').trim()) continue;
+    missing.push(BRAND_FIELD_LABELS[key]);
+  }
+  return missing;
 }
 
 /**
@@ -573,7 +929,19 @@ export function itemLabel(item) {
  */
 export function cleanItems(items, area) {
   const list = normalizeElements(items);
-  return list.map((item) => ({ ...item, ...clampRectToArea({ x: item.x, y: item.y, w: item.w, h: item.h }, area) }));
+  return list.map((item, idx) => {
+    const original = items?.[idx];
+    const clamped = { ...item, ...clampRectToArea({ x: item.x, y: item.y, w: item.w, h: item.h }, area) };
+    if (original?.style) {
+      CARRIED_STYLE_KEYS.forEach((k) => {
+        if (original.style[k] !== undefined) clamped.style[k] = original.style[k];
+      });
+    }
+    if (original?.previewCount !== undefined) {
+      clamped.previewCount = original.previewCount;
+    }
+    return clamped;
+  });
 }
 
 /**
@@ -608,7 +976,16 @@ export function patchItem(item, patch, area) {
     if (merged.style.minSize > merged.style.size) merged.style.minSize = merged.style.size;
   }
   if (patch.shape) merged.shape = { ...(item.shape || {}), ...patch.shape };
+  if (patch.card) merged.card = { ...(item.card || {}), ...patch.card };
   const fixed = normalizeElement(merged, 0);
+  if (merged.style) {
+    CARRIED_STYLE_KEYS.forEach((k) => {
+      if (merged.style[k] !== undefined) fixed.style[k] = merged.style[k];
+    });
+  }
+  if (merged.previewCount !== undefined) {
+    fixed.previewCount = merged.previewCount;
+  }
   return { ...fixed, ...clampRectToArea({ x: fixed.x, y: fixed.y, w: fixed.w, h: fixed.h }, area) };
 }
 
@@ -624,6 +1001,11 @@ export function moveItem(item, rect, area) {
     },
     0
   );
+  if (item.style) {
+    CARRIED_STYLE_KEYS.forEach((k) => {
+      if (item.style[k] !== undefined) next.style[k] = item.style[k];
+    });
+  }
   return { ...next, ...clampRectToArea({ x: next.x, y: next.y, w: next.w, h: next.h }, area) };
 }
 

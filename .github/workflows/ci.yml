@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+
+jobs:
+  ci:
+    name: Lint, Test, Audit & Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Secret Scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm run install:all
+
+      - name: Check code formatting
+        run: npm run format:check
+
+      - name: Run linter
+        run: npm run lint
+
+      - name: Security audit (fail on high)
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Run unit & integration tests
+        run: npm run test
+        env:
+          JWT_SECRET: 'test_jwt_secret_with_more_than_32_characters_for_ci'
+          LLM_PROVIDER: 'mock'
+          IMAGE_SEARCH_PROVIDER: 'mock'
+          IMAGE_PROVIDER: 'mock'
+
+      - name: Build frontend
+        run: npm run build
