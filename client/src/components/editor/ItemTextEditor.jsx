@@ -1,5 +1,6 @@
 import React, { useLayoutEffect, useRef } from 'react';
 import { ELEMENT_LIMITS } from '../../../../shared/templateElements.js';
+import { fontStackFor, tamilCssOverrides } from '../../../../shared/textScripts.js';
 
 /* ------------------------------------------------------------------ *
  * Typing words where they stand.
@@ -21,7 +22,10 @@ function caretToEnd(node) {
   selection.addRange(range);
 }
 
-export default function ItemTextEditor({ item, scale, onCommit, onCancel }) {
+import { resolveColorToken, resolveFontToken } from '../../../../shared/templateElements.js';
+import { contrastRatio } from '../../utils/contrast.js';
+
+export default function ItemTextEditor({ item, scale, brandKit, onCommit, onCancel }) {
   const ref = useRef(null);
   const lastRef = useRef(item.text || '');
   const doneRef = useRef(false);
@@ -45,12 +49,19 @@ export default function ItemTextEditor({ item, scale, onCommit, onCancel }) {
   };
 
   const style = item.style || {};
+  const resolvedFont = resolveFontToken(style.fontFamily || 'brand:body', brandKit) || style.fontFamily || 'Inter';
+  const resolvedColor = resolveColorToken(style.color || 'brand:text', brandKit) || style.color || '#0f172a';
+  const ratio = contrastRatio(resolvedColor, '#ffffff');
+  const editColor = ratio !== null && ratio < 3 ? '#0f172a' : resolvedColor;
+  const fontSize = Math.max(8, (style.size || style.fontSize || 20) * scale);
+  const lineHeight = style.lineHeight || 1.2;
+  const rot = Number(item.rotation) || 0;
 
   return (
     <div
       ref={ref}
       role="textbox"
-      aria-multiline="false"
+      aria-multiline="true"
       aria-label="Edit these words"
       contentEditable
       suppressContentEditableWarning
@@ -61,8 +72,7 @@ export default function ItemTextEditor({ item, scale, onCommit, onCancel }) {
         if (event.key === 'Escape') {
           event.preventDefault();
           finish(false);
-        }
-        if (event.key === 'Enter') {
+        } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
           event.preventDefault();
           finish(true);
         }
@@ -92,23 +102,30 @@ export default function ItemTextEditor({ item, scale, onCommit, onCancel }) {
         left: `${Math.round(item.x * scale)}px`,
         top: `${Math.round(item.y * scale)}px`,
         width: `${Math.round(item.w * scale)}px`,
-        height: `${Math.round(item.h * scale)}px`,
+        minHeight: `${Math.round(item.h * scale)}px`,
+        height: 'auto',
         boxSizing: 'border-box',
-        zIndex: 45,
+        zIndex: 55,
         padding: '2px',
-        overflow: 'hidden',
+        overflow: 'visible',
         background: '#ffffff',
         outline: '2px solid #2563eb',
+        borderRadius: '2px',
         cursor: 'text',
-        fontFamily: `'${style.fontFamily || 'Inter'}', sans-serif`,
-        fontSize: `${Math.max(6, (style.size || 20) * scale)}px`,
-        lineHeight: style.lineHeight || 1.2,
-        fontWeight: style.weight || 500,
-        color: style.color || '#0f172a',
+        fontFamily: fontStackFor(resolvedFont, item.text),
+        fontSize: `${fontSize}px`,
+        lineHeight: lineHeight,
+        fontWeight: style.weight || (style.bold ? 700 : 500),
+        color: editColor,
         textAlign: style.align || 'left',
         fontStyle: style.italic ? 'italic' : 'normal',
+        textDecoration: style.textDecoration || 'none',
         letterSpacing: style.letterSpacing ? `${style.letterSpacing * scale}px` : undefined,
-        textTransform: style.uppercase ? 'uppercase' : 'none',
+        textTransform: style.uppercase || style.textTransform === 'uppercase' ? 'uppercase' : 'none',
+        /* Typing Tamil needs the same room and the same face as the finished poster. */
+        ...tamilCssOverrides(item.text || '', { lineHeight, letterSpacing: 0 }),
+        transform: rot ? `rotate(${rot}deg)` : undefined,
+        transformOrigin: '50% 50%',
         whiteSpace: 'pre-wrap',
         overflowWrap: 'anywhere',
         userSelect: 'text',

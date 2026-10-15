@@ -119,7 +119,7 @@ async function run() {
   assert(design.template?.version === templateA.version, 'the snapshot pins the template version');
   assert(Array.isArray(design.template?.zones) && design.template.zones.length > 0, 'the snapshot keeps the template areas');
   assert(Boolean(design.capturedAt), 'the snapshot records when it was taken');
-  assert(designBytes(design) <= DESIGN_MAX_BYTES, 'a normal snapshot is under the 60 KB cap');
+  assert(designBytes(design) <= DESIGN_MAX_BYTES, 'a normal snapshot is under the 200 KB cap');
   assert(!('clientId' in design.brandKit) && !('_id' in design.brandKit), 'the snapshot carries no tenant ids');
   const versionOneDesign = poster.versions[0].design;
   assert(Boolean(versionOneDesign) && versionOneDesign.brandKit?.orgName === clientA.name, 'version 1 keeps its own snapshot');
@@ -163,6 +163,36 @@ async function run() {
     afterEdits.body.data.template?.name === design.template.name,
     'the template returned for rendering is still the old one'
   );
+
+  // 4b. The two strips the poster draws are frozen with it
+  assert(Boolean(design.bands?.header) && Boolean(design.bands?.footer), 'the snapshot keeps both strips');
+  assert(design.bands.header.source === 'brand' && design.bands.header.mode === 'legacy', 'a brand kit that draws its own settings gives the poster that band');
+  assert(design.bands.header.height === kitA.header.height && design.bands.header.y === 0, 'the header strip is pinned at the top at the brand height');
+  assert(design.bands.footer.y === (templateA.size.height || 1350) - design.bands.footer.height, 'the footer strip is pinned to the bottom of the poster');
+  assert(design.brandKit.header.mode === 'legacy' && design.brandKit.header.elements.length > 0, 'the snapshot keeps the brand band and its items');
+  const originalBandsJson = JSON.stringify(design.bands);
+
+  await BrandKit.updateOne(
+    { _id: kitA._id },
+    {
+      $set: {
+        'header.mode': 'elements',
+        'header.height': 150,
+        'header.elements': [
+          { id: 'moved-logo', kind: 'image', x: 30, y: 40, w: 80, h: 80, imageUrl: 'brand:logo' },
+          { id: 'moved-words', kind: 'text', x: 130, y: 60, w: 500, h: 60, text: 'A later band' },
+        ],
+      },
+    }
+  );
+  const afterBandEdit = await request(`/api/posters/${poster._id}`, { token: owner.token });
+  assert(
+    JSON.stringify(afterBandEdit.body.data.poster.design.bands) === originalBandsJson,
+    'a later brand band change does not move a saved poster'
+  );
+  const freshDesign = captureDesign({ brandKit: await BrandKit.findById(kitA._id).lean(), template: templateA.toObject() });
+  assert(freshDesign.bands.header.mode === 'elements' && freshDesign.bands.header.elements.length === 2, 'a poster made now gets the band as it is laid out today');
+  assert(freshDesign.bands.header.height === 150, 'a poster made now gets the band height of today');
 
   // 5. Editing text keeps the existing design
   const edited = await request(`/api/posters/${poster._id}`, {
@@ -258,14 +288,311 @@ async function run() {
   }
 
   // 10. Oversize snapshots are refused before anything is stored
-  const giant = { header: { big: Array.from({ length: 12 }, () => ({ row: Array.from({ length: 12 }, () => ({ cell: 'z'.repeat(600) })) })) } };
+  const giant = {
+    header: Object.fromEntries(
+      Array.from({ length: 40 }, (_, i) => [
+        `key_${i}`,
+        Array.from({ length: 12 }, () => ({ cell: 'z'.repeat(600) })),
+      ])
+    ),
+  };
   let threw = false;
   try {
     captureDesign({ brandKit: giant, template: templateA.toObject() });
   } catch (err) {
     threw = err.status === 400;
   }
-  assert(threw, 'a snapshot above 60 KB is rejected with a 400');
+  assert(threw, 'a snapshot above 200 KB is rejected with a 400');
+
+  // 11. Poster flow with 13 photos, 5 lists and 40 texts saves and reloads identically
+  const megaElements = [
+    {
+      id: 'mega-head',
+      kind: 'text',
+      field: 'headline',
+      text: 'Annual Innovation Conference 2026',
+      x: 50,
+      y: 150,
+      w: 900,
+      h: 80,
+    },
+    ...Array.from({ length: 40 }, (_, i) => ({
+      id: `mega-text-${i + 1}`,
+      kind: 'text',
+      variable: true,
+      key: `text_slot_${i + 1}`,
+      label: `Topic ${i + 1}`,
+      maxLength: 60,
+      x: 50,
+      y: 240 + (i % 20) * 40,
+      w: 200,
+      h: 30,
+    })),
+    ...Array.from({ length: 13 }, (_, i) => ({
+      id: `mega-photo-${i + 1}`,
+      kind: 'image',
+      variable: true,
+      key: `photo_slot_${i + 1}`,
+      label: `Speaker Photo ${i + 1}`,
+      x: 50 + (i % 4) * 200,
+      y: 300 + Math.floor(i / 4) * 150,
+      w: 180,
+      h: 120,
+    })),
+    ...Array.from({ length: 5 }, (_, i) => ({
+      id: `mega-list-${i + 1}`,
+      kind: 'cardlist',
+      key: `list_slot_${i + 1}`,
+      label: `Session List ${i + 1}`,
+      columns: 2,
+      minCount: 0,
+      maxCount: 6,
+      x: 50,
+      y: 400 + i * 100,
+      w: 900,
+      h: 200,
+      card: {
+        w: 300,
+        h: 150,
+        fields: [
+          { key: 'speaker_name', type: 'text', label: 'Speaker Name', maxLength: 40 },
+          { key: 'speaker_pic', type: 'image', label: 'Speaker Picture' },
+        ],
+        items: [],
+      },
+    })),
+  ];
+
+  const megaTemplate = await Template.create({
+    ...getDefaultTemplateData(clientA._id, `Mega Template ${runId}`),
+    editorVersion: 2,
+    elements: megaElements,
+  });
+  created.templateIds.push(megaTemplate._id);
+
+  const cName =
+    process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_CLOUD_NAME !== 'your_cloud_name'
+      ? process.env.CLOUDINARY_CLOUD_NAME
+      : 'your_cloud_name';
+  const cPrefix = `https://res.cloudinary.com/${cName}/image/upload/v1`;
+
+  const megaExtras = {};
+  for (let i = 1; i <= 40; i += 1) {
+    megaExtras[`text_slot_${i}`] = `Speech Topic ${i}`;
+  }
+  const megaImages = {};
+  for (let i = 1; i <= 13; i += 1) {
+    megaImages[`photo_slot_${i}`] = `${cPrefix}/brand/${clientA._id}/speaker_${i}.jpg`;
+  }
+  const megaLists = {};
+  for (let i = 1; i <= 5; i += 1) {
+    megaLists[`list_slot_${i}`] = [
+      {
+        speaker_name: `Keynote ${i}A`,
+        speaker_pic: `${cPrefix}/brand/${clientA._id}/panelist_${i}a.jpg`,
+      },
+      {
+        speaker_name: `Keynote ${i}B`,
+        speaker_pic: `${cPrefix}/brand/${clientA._id}/panelist_${i}b.jpg`,
+      },
+    ];
+  }
+
+  const megaContent = {
+    title: 'Annual Innovation Conference 2026',
+    tagline: 'Leading the Future',
+    date: '15 Nov 2026',
+    time: '10:00 AM',
+    venue: 'Convention Center',
+    details: ['Keynotes', 'Panels', 'Workshops', 'Awards'],
+    imageUrl: `${cPrefix}/brand/${clientA._id}/main_hero.jpg`,
+    extras: megaExtras,
+    images: megaImages,
+    lists: megaLists,
+  };
+
+  const megaSave = await request('/api/posters', {
+    method: 'POST',
+    token: owner.token,
+    body: {
+      templateId: megaTemplate._id.toString(),
+      prompt: `Mega poster test ${runId}`,
+      content: megaContent,
+    },
+  });
+  if (megaSave.status !== 201) {
+    console.error('megaSave failed:', JSON.stringify(megaSave.body));
+  }
+  assert(megaSave.status === 201, 'a poster with 13 photos, 5 lists and 40 texts saves successfully');
+  const megaPoster = megaSave.body.data.poster;
+  created.posterIds.push(megaPoster._id);
+
+  // Snapshot size cap under 200 KB
+  const megaSnapshotBytes = designBytes(megaPoster.design);
+  assert(megaSnapshotBytes <= DESIGN_MAX_BYTES, 'the snapshot stays under 200 KB');
+
+  // Reload identically
+  const megaReload = await request(`/api/posters/${megaPoster._id}`, { token: owner.token });
+  assert(megaReload.status === 200, 'mega poster reloads with 200');
+  const reloadedPoster = megaReload.body.data.poster;
+  assert(reloadedPoster.content.title === megaContent.title, 'reloaded title matches identically');
+  assert(Object.keys(reloadedPoster.content.extras).length === 40, 'reloaded contains all 40 texts');
+  assert(Object.keys(reloadedPoster.content.images).length === 13, 'reloaded contains all 13 photos');
+  assert(Object.keys(reloadedPoster.content.lists).length === 5, 'reloaded contains all 5 lists');
+  assert(
+    JSON.stringify(reloadedPoster.content) === JSON.stringify(megaPoster.content),
+    'poster with 13 photos, 5 lists and 40 texts saves and reloads identically'
+  );
+
+  // Modifying template or Brand Kit afterwards does not change it
+  const originalMegaBrandKitName = megaPoster.design.brandKit.orgName;
+  const originalMegaTemplateName = megaPoster.design.template.name;
+  await BrandKit.updateOne({ _id: kitA._id }, { $set: { orgName: `Altered Kit ${runId}` } });
+  await Template.updateOne({ _id: megaTemplate._id }, { $set: { name: `Altered Template ${runId}` } });
+  const afterModReload = await request(`/api/posters/${megaPoster._id}`, { token: owner.token });
+  const frozenDesign = afterModReload.body.data.poster.design;
+  assert(
+    frozenDesign.brandKit.orgName === originalMegaBrandKitName,
+    'changing Brand Kit afterwards does not alter the saved poster design'
+  );
+  assert(
+    frozenDesign.template.name === originalMegaTemplateName,
+    'changing template afterwards does not alter the saved poster design'
+  );
+
+  // Duplicate copies design and content
+  const megaDup = await request(`/api/posters/${megaPoster._id}/duplicate`, {
+    method: 'POST',
+    token: owner.token,
+  });
+  assert(megaDup.status === 201, 'duplicate mega poster succeeds');
+  const dupPoster = megaDup.body.data.poster;
+  created.posterIds.push(dupPoster._id);
+  assert(Object.keys(dupPoster.content.extras).length === 40, 'duplicate preserves 40 texts');
+  assert(Object.keys(dupPoster.content.images).length === 13, 'duplicate preserves 13 photos');
+  assert(Object.keys(dupPoster.content.lists).length === 5, 'duplicate preserves 5 lists');
+  assert(
+    dupPoster.design.brandKit.orgName === originalMegaBrandKitName,
+    'duplicate copies frozen original brand kit without adopting altered brand kit'
+  );
+  assert(
+    dupPoster.design.template.name === originalMegaTemplateName,
+    'duplicate copies frozen original template without adopting altered template'
+  );
+
+  // apply-latest updates design to current brand kit and template
+  const applyLatestRes = await request(`/api/posters/${megaPoster._id}/apply-latest-design`, {
+    method: 'POST',
+    token: owner.token,
+    body: { expectedVersion: megaPoster.currentVersion },
+  });
+  assert(applyLatestRes.status === 200, 'apply-latest works on mega poster');
+  const megaAppliedPoster = applyLatestRes.body.data.poster;
+  assert(
+    megaAppliedPoster.design.brandKit.orgName === `Altered Kit ${runId}`,
+    'apply-latest updates design to latest brand kit'
+  );
+  assert(
+    megaAppliedPoster.design.template.name === `Altered Template ${runId}`,
+    'apply-latest updates design to latest template'
+  );
+  assert(Object.keys(megaAppliedPoster.content.extras).length === 40, 'apply-latest preserves all 40 texts');
+  assert(Object.keys(megaAppliedPoster.content.images).length === 13, 'apply-latest preserves all 13 photos');
+  assert(Object.keys(megaAppliedPoster.content.lists).length === 5, 'apply-latest preserves all 5 lists');
+
+  // Restore version 1 restores original design and content
+  const restoreV1Res = await request(`/api/posters/${megaPoster._id}/restore`, {
+    method: 'POST',
+    token: owner.token,
+    body: { versionNumber: 1, expectedVersion: megaAppliedPoster.currentVersion },
+  });
+  assert(restoreV1Res.status === 200, 'restore works on mega poster');
+  const restoredMega = restoreV1Res.body.data.poster;
+  assert(
+    restoredMega.design.brandKit.orgName === originalMegaBrandKitName,
+    'restore restores original brand kit look'
+  );
+  assert(
+    restoredMega.design.template.name === originalMegaTemplateName,
+    'restore restores original template look'
+  );
+  assert(Object.keys(restoredMega.content.extras).length === 40, 'restore preserves all 40 texts');
+  assert(Object.keys(restoredMega.content.images).length === 13, 'restore preserves all 13 photos');
+  assert(Object.keys(restoredMega.content.lists).length === 5, 'restore preserves all 5 lists');
+
+  // Cross-tenant poster and foreign asset URLs rejected
+  const megaCrossGet = await request(`/api/posters/${megaPoster._id}`, { token: other.token });
+  assert(megaCrossGet.status === 404, "another client's poster is rejected with 404");
+  const foreignUrl = `${cPrefix}/brand/${clientB._id}/foreign.jpg`;
+  const badImagePatch = await request(`/api/posters/${megaPoster._id}`, {
+    method: 'PATCH',
+    token: owner.token,
+    body: {
+      expectedVersion: restoredMega.currentVersion,
+      content: { ...megaContent, imageUrl: foreignUrl },
+    },
+  });
+  assert(badImagePatch.status === 400, "another client's asset URL in imageUrl is rejected");
+  const badSlotPatch = await request(`/api/posters/${megaPoster._id}`, {
+    method: 'PATCH',
+    token: owner.token,
+    body: {
+      expectedVersion: restoredMega.currentVersion,
+      content: { ...megaContent, images: { ...megaImages, photo_slot_1: foreignUrl } },
+    },
+  });
+  assert(badSlotPatch.status === 400, "another client's asset URL in images is rejected");
+  const badListPatch = await request(`/api/posters/${megaPoster._id}`, {
+    method: 'PATCH',
+    token: owner.token,
+    body: {
+      expectedVersion: restoredMega.currentVersion,
+      content: {
+        ...megaContent,
+        lists: {
+          ...megaLists,
+          list_slot_1: [{ speaker_name: 'Foreign', speaker_pic: foreignUrl }],
+        },
+      },
+    },
+  });
+  assert(badListPatch.status === 400, "another client's asset URL in lists is rejected");
+
+  // Base64 is rejected across imageUrl, images, and lists
+  const base64Sample = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+  const b64Main = await request(`/api/posters/${megaPoster._id}`, {
+    method: 'PATCH',
+    token: owner.token,
+    body: {
+      expectedVersion: restoredMega.currentVersion,
+      content: { ...megaContent, imageUrl: base64Sample },
+    },
+  });
+  assert(b64Main.status === 400, 'base64 in imageUrl is rejected');
+  const b64Slot = await request(`/api/posters/${megaPoster._id}`, {
+    method: 'PATCH',
+    token: owner.token,
+    body: {
+      expectedVersion: restoredMega.currentVersion,
+      content: { ...megaContent, images: { ...megaImages, photo_slot_1: base64Sample } },
+    },
+  });
+  assert(b64Slot.status === 400, 'base64 in images is rejected');
+  const b64List = await request(`/api/posters/${megaPoster._id}`, {
+    method: 'PATCH',
+    token: owner.token,
+    body: {
+      expectedVersion: restoredMega.currentVersion,
+      content: {
+        ...megaContent,
+        lists: {
+          ...megaLists,
+          list_slot_1: [{ speaker_name: 'B64', speaker_pic: base64Sample }],
+        },
+      },
+    },
+  });
+  assert(b64List.status === 400, 'base64 in lists is rejected');
 
   console.log(`\nPoster design tests passed: ${passed} assertions`);
 }

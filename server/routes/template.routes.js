@@ -1,11 +1,14 @@
 import express from 'express';
 import {
   activateTemplate,
+  autosaveTemplateDraft,
   createTemplate,
   deactivateTemplate,
   deleteTemplate,
+  discardTemplateDraft,
   duplicateTemplate,
   getTemplateById,
+  getTemplateDraft,
   getTemplates,
   restoreTemplateVersion,
   updateTemplate,
@@ -15,6 +18,7 @@ import { validateBody, validateParams } from '../middleware/validate.middleware.
 import {
   createTemplateSchemaFor,
   restoreTemplateSchema,
+  templateDraftSchemaFor,
   templateParamsSchema,
   updateTemplateSchemaFor,
 } from '../validation/template.schema.js';
@@ -50,6 +54,17 @@ router.patch(
   validateBody(updateTemplateSchemaFor),
   updateTemplate
 );
+router.put(
+  '/:id/draft',
+  adminOnly,
+  smallBody,
+  validateParams(templateParamsSchema),
+  validateBody(templateDraftSchemaFor),
+  autosaveTemplateDraft
+);
+router.get('/:id/draft', adminOnly, validateParams(templateParamsSchema), getTemplateDraft);
+router.delete('/:id/draft', adminOnly, validateParams(templateParamsSchema), discardTemplateDraft);
+
 router.post('/:id/duplicate', adminOnly, validateParams(templateParamsSchema), duplicateTemplate);
 router.post('/:id/activate', adminOnly, validateParams(templateParamsSchema), activateTemplate);
 router.post('/:id/deactivate', adminOnly, validateParams(templateParamsSchema), deactivateTemplate);

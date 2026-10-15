@@ -14,6 +14,7 @@ import {
   normalizeIconName,
   validateElements,
 } from '../../shared/templateElements.js';
+import { TAMIL_LINE_HEIGHT, hasTamil, tamilAdvanceRatio, tamilStyleRules } from '../../shared/textScripts.js';
 import {
   DECORATION_MAX_OPACITY,
   DESIGN_BLANKS,
@@ -40,6 +41,8 @@ import {
   designsFor,
   distinctTypeStyles,
   estimatedTextHeight,
+  fitTextSize,
+  fitWordSize,
   linesOfWords,
   posterSurface,
   recipeIds,
@@ -108,11 +111,61 @@ const LONG = {
 /* No place, no time and no picture at all - the design has to hold up anyway. */
 const SPARSE = { ...NORMAL, venue: '', time: '', imageUrl: '' };
 
+/* Words in the Tamil range: that script sets wider than Latin and hangs below the line,
+   so every box has to be planned with the room it needs, not the room Latin asked for. */
+const TAMIL = {
+  headline: 'நீர் மீட்பு விழா',
+  tagline: 'ஒவ்வொரு துளியும் முக்கியம் - இன்றே சேமிக்க தொடங்குங்கள்',
+  date: 'சனி 14 மார்ச் 2026',
+  time: 'பிற்பகல் 2 முதல்',
+  venue: 'கடலூர் பொதுப் பூங்கா, 12 துறைமுகப் பாதை',
+  details: [
+    'நகர நீர் வாரியத்தின் தொடக்க உரை',
+    'பள்ளிகளுக்கான நடைமுறைப் பயிற்சிகள்',
+    'இலவச குடிநீர் நிரப்புதல்',
+  ],
+  extras: {
+    title_sub: 'மூன்றாவது ஆண்டு',
+    slogan_1: 'ஒவ்வொரு துளியும்',
+    slogan_2: 'போத்தல் கொண்டு வாருங்கள்',
+    cta_line: 'ஒரு மணிக்கு வாசல் திறக்கும்',
+    cta_button: 'பதிவு செய்ய',
+  },
+  icon: 'droplet',
+  imageUrl: TENANT_PHOTO,
+};
+/* Half Tamil, half English on the same poster: both halves have to stand on one design. */
+const MIXED = {
+  headline: 'Clean Water Fair - நீர் மீட்பு விழா',
+  tagline: 'A free afternoon for all - அனைவருக்கும் இலவசம்',
+  date: 'Sat 14 Mar - சனி 14 மார்ச்',
+  time: '2:00 pm - பிற்பகல் 2',
+  venue: 'Riverside Hall, 12 Quay Road - கடலூர் பொதுப் பூங்கா',
+  details: [
+    'Talks by three local engineers - மூவர் உரை',
+    'Kids corner and face painting - குழந்தைகள் மையம்',
+    'Free bottled water refill - இலவச நிரப்புதல்',
+  ],
+  extras: {
+    title_sub: 'Third year running',
+    slogan_1: 'ஒவ்வொரு துளியும்',
+    slogan_2: 'Bring a reusable bottle',
+    cta_line: 'ஒரு மணிக்கு வாசல் திறக்கும்',
+    cta_button: 'பதிவு செய்ய',
+  },
+  icon: 'droplet',
+  imageUrl: TENANT_PHOTO,
+};
+
 const CONTENTS = [
   ['normal words', NORMAL],
   ['very long words', LONG],
   ['no place and no photo', SPARSE],
+  ['Tamil words', TAMIL],
+  ['Tamil and English words', MIXED],
 ];
+
+const TOTAL_COMBOS = DESIGN_RECIPES.length * RECIPE_VARIANTS.length * RECIPE_PALETTES.length * CONTENTS.length;
 
 function contextFor(size = POSTER) {
   const template = { size };
@@ -381,7 +434,7 @@ for (const design of DESIGN_RECIPES) {
           recordFailure('build problem', built.problems.join(' '));
           if (comboFailed) failedRuns += 1; else passedRuns += 1;
           if (totalRuns % 24 === 0) {
-            console.log(`Progress: ${totalRuns}/384 combinations tested (${passedRuns} passed, ${failedRuns} failed)`);
+            console.log(`Progress: ${totalRuns}/${TOTAL_COMBOS} combinations tested (${passedRuns} passed, ${failedRuns} failed)`);
           }
           continue;
         }
@@ -390,7 +443,7 @@ for (const design of DESIGN_RECIPES) {
           recordFailure('build problem', 'built nothing');
           if (comboFailed) failedRuns += 1; else passedRuns += 1;
           if (totalRuns % 24 === 0) {
-            console.log(`Progress: ${totalRuns}/384 combinations tested (${passedRuns} passed, ${failedRuns} failed)`);
+            console.log(`Progress: ${totalRuns}/${TOTAL_COMBOS} combinations tested (${passedRuns} passed, ${failedRuns} failed)`);
           }
           continue;
         }
@@ -466,7 +519,8 @@ for (const design of DESIGN_RECIPES) {
           if (typeof text === 'string') {
             const singleWords = text.trim().split(/\s+/).filter(Boolean);
             for (const w of singleWords) {
-              const wWidth = Math.ceil(w.length * charWidthOf(item.style.size, item.style));
+              /* Measured with the script of that word: Tamil letters stand wider than Latin ones. */
+              const wWidth = Math.ceil(w.length * charWidthOf(item.style.size, { ...item.style, advance: tamilAdvanceRatio(w) }));
               if (wWidth > item.w + 4) {
                 sweepFailures.brokenWord.push(`${label}: ${item.id} word "${w}" (${wWidth}px) exceeds box (${item.w}px)`);
                 recordFailure('broken word', `${item.id} word "${w}" exceeds box`);
@@ -545,7 +599,7 @@ for (const design of DESIGN_RECIPES) {
         }
 
         if (totalRuns % 24 === 0) {
-          console.log(`Progress: ${totalRuns}/384 combinations tested (${passedRuns} passed, ${failedRuns} failed)`);
+          console.log(`Progress: ${totalRuns}/${TOTAL_COMBOS} combinations tested (${passedRuns} passed, ${failedRuns} failed)`);
         }
       }
     }
@@ -592,6 +646,87 @@ assert(sweepFailures.manyStyles.length === 0, `a poster sets its words in at mos
 assert(sweepFailures.gap.length === 0, `the blocks of a design fill the poster with no large empty strip (${sweepFailures.gap[0] || ''})`);
 assert(sweepFailures.timeout.length === 0, `no combination timed out (${sweepFailures.timeout[0] || ''})`);
 assert(sweepFailures.brokenWord.length === 0, `no broken words (${sweepFailures.brokenWord[0] || ''})`);
+
+/* ------------------------------------------------------------------------- *
+ * 4b. Tamil: wider, deeper, never spaced or capitalised
+ * ------------------------------------------------------------------------- */
+assert(hasTamil(TAMIL.headline) && hasTamil(MIXED.venue), 'the Tamil samples are read as Tamil');
+assert(!hasTamil(NORMAL.headline), 'plain English is not read as Tamil');
+assert(tamilAdvanceRatio(TAMIL.headline) > 1.1, 'Tamil is measured wider than Latin for the same character count');
+assert(tamilAdvanceRatio(NORMAL.headline) === 1, 'Latin keeps its old measure');
+
+const tamilLine = { kind: 'text', w: 400, style: { size: 40, lineHeight: 1.1, weight: 700, uppercase: true } };
+const latinLine = { ...tamilLine, style: { ...tamilLine.style } };
+const tamilNeed = estimatedTextHeight(tamilLine, TAMIL.extras.slogan_1);
+const latinNeed = estimatedTextHeight(latinLine, NORMAL.extras.slogan_1);
+assert(
+  tamilNeed >= 40 * TAMIL_LINE_HEIGHT,
+  `a single Tamil line is planned with at least ${TAMIL_LINE_HEIGHT} leading, however tight the design asked (${tamilNeed})`
+);
+assert(latinNeed < tamilNeed, `the same setting in English stays tighter than Tamil (${latinNeed} against ${tamilNeed})`);
+
+const tamilLines = linesOfWords(TAMIL.tagline, 400, 32);
+const latinLines = linesOfWords(NORMAL.tagline, 400, 32);
+assert(tamilLines >= latinLines, `Tamil wraps into at least as many lines as English in the same box (${tamilLines} against ${latinLines})`);
+
+const tamilWord = TAMIL.extras.slogan_1.split(' ')[0];
+const latinWord = 'Every';
+assert(tamilWord.length >= latinWord.length, `the Tamil word is at least as long as the English one (${tamilWord.length} against ${latinWord.length})`);
+const fittedTamil = fitWordSize(tamilWord, 120, 60);
+const fittedLatin = fitWordSize(latinWord, 120, 60);
+assert(fittedTamil <= fittedLatin, `Tamil is shrunk at least as early as equal-length English in a narrow box (${fittedTamil} against ${fittedLatin})`);
+assert(
+  fitTextSize({ text: TAMIL.headline, width: 500, size: 90, lineHeight: 1.05 }) <=
+    fitTextSize({ text: NORMAL.headline, width: 500, size: 90, lineHeight: 1.05 }),
+  'a Tamil headline is set no larger than the English it replaced'
+);
+
+/* Every Tamil box on a finished Tamil poster is planned with the script's room, and the design's
+   own capitals and letter spacing are neutralised before those words are painted. */
+for (const design of DESIGN_RECIPES) {
+  const built = build(design.id, TAMIL).built.elements;
+  const tamilItems = built
+    .filter((item) => item.kind === 'text' || item.kind === 'field')
+    .filter((item) => {
+      const words = wordsOfItem(item, TAMIL);
+      return hasTamil(Array.isArray(words) ? words.join(' ') : words);
+    });
+  if (tamilItems.length === 0) continue;
+  const bad = tamilItems.filter((item) => {
+    const words = wordsOfItem(item, TAMIL);
+    const rules = tamilStyleRules(Array.isArray(words) ? words.join(' ') : words, item.style);
+    if (rules.lineHeight < TAMIL_LINE_HEIGHT || rules.letterSpacing !== 0 || rules.uppercase === true) return true;
+    return estimatedTextHeight(item, words) > item.h + 1;
+  });
+  assert(
+    bad.length === 0,
+    `${design.id}: every Tamil box is given the script's room, spacing and case (${bad.map((item) => item.id).join(', ')})`
+  );
+}
+
+/* Mixed words: on one poster the Tamil boxes take the script's room while the English boxes next
+   to them keep exactly the setting their author chose. */
+const mixedItems = build('hero', MIXED).built.elements
+  .filter((item) => item.kind === 'text' || item.kind === 'field')
+  .map((item) => ({ item, words: wordsOfItem(item, MIXED) }))
+  .filter(({ words }) => String(Array.isArray(words) ? words.join(' ') : words).trim());
+const mixedTamil = mixedItems.filter(({ words }) => hasTamil(Array.isArray(words) ? words.join(' ') : words));
+const mixedLatin = mixedItems.filter(({ words }) => !hasTamil(Array.isArray(words) ? words.join(' ') : words));
+assert(mixedTamil.length > 0 && mixedLatin.length > 0, 'one poster carries both Tamil and English boxes');
+assert(
+  mixedTamil.every(({ item, words }) => {
+    const rules = tamilStyleRules(Array.isArray(words) ? words.join(' ') : words, item.style);
+    return rules.lineHeight >= TAMIL_LINE_HEIGHT && rules.letterSpacing === 0 && rules.uppercase === false;
+  }),
+  'the Tamil half of a mixed poster takes the script rules'
+);
+assert(
+  mixedLatin.every(({ item, words }) => {
+    const rules = tamilStyleRules(Array.isArray(words) ? words.join(' ') : words, item.style);
+    return Object.keys(rules).length === 0;
+  }),
+  'the English half of a mixed poster keeps the leading and spacing it was designed with'
+);
 
 /* The same design on another brand: most of its colours must move with the brand. */
 const kitColours = new Set();

@@ -26,3 +26,5 @@ Thumbs.db
 # Testing
 test-results/
 playwright-report/
+
+.backups/

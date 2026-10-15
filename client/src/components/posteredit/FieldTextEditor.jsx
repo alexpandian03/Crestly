@@ -1,4 +1,5 @@
 import React, { useLayoutEffect, useRef } from 'react';
+import { tamilCssOverrides } from '../../../../shared/textScripts.js';
 
 /* ------------------------------------------------------------------ *
  * Typing the poster's words where they stand.
@@ -147,6 +148,8 @@ export default function FieldTextEditor({ box, type, text, maxChars, multiline, 
         textAlign: face.textAlign || 'left',
         textTransform: face.uppercase ? 'uppercase' : 'none',
         letterSpacing: face.letterSpacing,
+        /* Tamil typed into the box needs the same room the poster gives it. */
+        ...tamilCssOverrides(text || '', { lineHeight: face.lineHeight || 1.2 }),
         whiteSpace: 'pre-wrap',
         overflowWrap: 'anywhere',
         userSelect: 'text',

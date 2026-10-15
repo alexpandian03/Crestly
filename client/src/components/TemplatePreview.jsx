@@ -120,6 +120,9 @@ export default function TemplatePreview({
             content={sample}
             onOverflow={onOverflow}
             showZoneBorders={showZoneBorders}
+            /* A layout is judged by what it holds, so a blank text space and an empty photo space
+               have to appear here as they do on the Create page instead of vanishing. */
+            showPlaceholders
           />
         </div>
       ) : null}

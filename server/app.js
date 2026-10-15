@@ -11,6 +11,7 @@ import brandKitRoutes from './routes/brandKit.routes.js';
 import uploadRoutes from './routes/upload.routes.js';
 import templateRoutes from './routes/template.routes.js';
 import posterRoutes from './routes/poster.routes.js';
+import assetRoutes from './routes/asset.routes.js';
 
 import { initServerSentry, captureServerException } from './config/sentry.js';
 import { httpLogger } from './utils/logger.js';
@@ -78,6 +79,9 @@ app.use('/templates', templateRoutes);
 
 app.use('/api/posters', posterRoutes);
 app.use('/posters', posterRoutes);
+
+app.use('/api/assets', assetRoutes);
+app.use('/assets', assetRoutes);
 
 // 404 handler for unmatched API routes
 app.use((req, res, next) => {

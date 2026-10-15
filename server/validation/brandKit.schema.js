@@ -1,5 +1,11 @@
 import { z } from 'zod';
 import {
+  BAND_HEIGHTS,
+  BRAND_BAND_MODES,
+  SECTION_LIMITS,
+  brandBandProblems,
+} from '../../shared/templateElements.js';
+import {
   BACKGROUND_PATTERNS,
   BACKGROUND_POSITIONS,
   BACKGROUND_TYPES,
@@ -108,46 +114,83 @@ function brandImageUrl(clientId, label) {
     );
 }
 
-const headerSchema = (clientId) =>
-  z.object({
-    height: numberField('Top band height', RANGES.headerHeight).optional(),
-    background: backgroundOrColor({
-      clientId,
-      types: BACKGROUND_TYPES,
-      label: 'Top band',
-    }).optional(),
-    alignment: z.enum(HEADER_ALIGNMENTS, { error: 'Alignment is not supported.' }).optional(),
-    showLogo: z.boolean().optional(),
-    showOrgName: z.boolean().optional(),
-    logo: z
-      .object({
-        show: z.boolean().optional(),
-        size: numberField('Logo size', RANGES.logoSize).optional(),
-        position: z.enum(LOGO_POSITIONS, 'Logo position is not supported.').optional(),
-      })
-      .optional(),
-    orgName: z
-      .object({
-        show: z.boolean().optional(),
-        text: plainText(TEXT_LIMITS.orgNameText).optional(),
-        style: textStyleSchema().optional(),
-      })
-      .optional(),
-    tagline: z
-      .object({
-        show: z.boolean().optional(),
-        text: plainText(TEXT_LIMITS.tagline).optional(),
-        style: textStyleSchema().optional(),
-      })
-      .optional(),
-    border: z
-      .object({
-        show: z.boolean().optional(),
-        color: maybeColor('Border color'),
-        thickness: numberField('Border thickness', RANGES.borderThickness).optional(),
-      })
-      .optional(),
-  });
+/**
+ * A brand band is drawn either from the kit's own settings or from items an admin placed on
+ * it. The items are the same shape a template's header or footer holds, so they are refused
+ * for the same reasons and in the same words. Where an item may sit depends on the size this
+ * organization's posters are made at, which a partial save does not always carry - the merged
+ * kit checks that in the controller before anything is stored.
+ */
+const bandKeys = (kind) => ({
+  mode: z
+    .enum(BRAND_BAND_MODES, {
+      error: `A ${kind} band is drawn either from the brand's own settings or from items placed on it.`,
+    })
+    .optional(),
+  elements: z
+    .array(z.any())
+    .max(SECTION_LIMITS[kind].maxItems, `The ${kind} can hold at most ${SECTION_LIMITS[kind].maxItems} items.`)
+    .optional(),
+});
+
+const checkBand = (kind, context) => (band, ctx) => {
+  if (!band) return;
+  /* The height has its own range check on the field above, so it is only handed down here to
+     say how tall the strip its items sit in is. Withheld, the item rules fell back to the
+     default band height and refused items an admin had placed on a band they made taller -
+     which the band editor, knowing the height, had said were fine. */
+  const { height, ...rest } = band;
+  const range = BAND_HEIGHTS[kind];
+  const tall = Number(height);
+  const usable = Number.isFinite(tall) && tall >= range.min && tall <= range.max;
+  for (const problem of brandBandProblems(usable ? { ...rest, height: tall } : rest, kind, context)) {
+    ctx.addIssue({ code: 'custom', message: problem });
+  }
+};
+
+const headerSchema = (clientId, bandContext) =>
+  z
+    .object({
+      height: numberField('Top band height', RANGES.headerHeight).optional(),
+      background: backgroundOrColor({
+        clientId,
+        types: BACKGROUND_TYPES,
+        label: 'Top band',
+      }).optional(),
+      alignment: z.enum(HEADER_ALIGNMENTS, { error: 'Alignment is not supported.' }).optional(),
+      showLogo: z.boolean().optional(),
+      showOrgName: z.boolean().optional(),
+      logo: z
+        .object({
+          show: z.boolean().optional(),
+          size: numberField('Logo size', RANGES.logoSize).optional(),
+          position: z.enum(LOGO_POSITIONS, 'Logo position is not supported.').optional(),
+        })
+        .optional(),
+      orgName: z
+        .object({
+          show: z.boolean().optional(),
+          text: plainText(TEXT_LIMITS.orgNameText).optional(),
+          style: textStyleSchema().optional(),
+        })
+        .optional(),
+      tagline: z
+        .object({
+          show: z.boolean().optional(),
+          text: plainText(TEXT_LIMITS.tagline).optional(),
+          style: textStyleSchema().optional(),
+        })
+        .optional(),
+      border: z
+        .object({
+          show: z.boolean().optional(),
+          color: maybeColor('Border color'),
+          thickness: numberField('Border thickness', RANGES.borderThickness).optional(),
+        })
+        .optional(),
+      ...bandKeys('header'),
+    })
+    .superRefine(checkBand('header', bandContext));
 
 const contentSchema = (clientId) =>
   z.object({
@@ -181,56 +224,64 @@ const contentSchema = (clientId) =>
     defaultImageUrl: brandImageUrl(clientId, 'Default photo').optional(),
   });
 
-const footerSchema = (clientId) =>
-  z.object({
-    height: numberField('Bottom band height', RANGES.footerHeight).optional(),
-    background: backgroundOrColor({
-      clientId,
-      types: BACKGROUND_TYPES,
-      label: 'Bottom band',
-    }).optional(),
-    layout: z
-      .number()
-      .refine((value) => FOOTER_LAYOUTS.includes(value), 'Bottom band layout must be 1, 2 or 3 columns.')
-      .optional(),
-    address: plainText(TEXT_LIMITS.address).optional(),
-    phone: plainText(TEXT_LIMITS.phone).optional(),
-    email: plainText(TEXT_LIMITS.email)
-      .refine(
-        (value) => value === '' || /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value),
-        'Enter a valid email address.'
-      )
-      .optional(),
-    website: plainText(TEXT_LIMITS.website).optional(),
-    social: z
-      .array(
-        z.object({
-          platform: z.enum(SOCIAL_PLATFORMS, 'That social network is not supported.'),
-          url: httpsUrl('Social link', 300).refine((value) => value !== '', 'Add the link for this social profile.'),
+const footerSchema = (clientId, bandContext) =>
+  z
+    .object({
+      height: numberField('Bottom band height', RANGES.footerHeight).optional(),
+      background: backgroundOrColor({
+        clientId,
+        types: BACKGROUND_TYPES,
+        label: 'Bottom band',
+      }).optional(),
+      layout: z
+        .number()
+        .refine((value) => FOOTER_LAYOUTS.includes(value), 'Bottom band layout must be 1, 2 or 3 columns.')
+        .optional(),
+      address: plainText(TEXT_LIMITS.address).optional(),
+      phone: plainText(TEXT_LIMITS.phone).optional(),
+      email: plainText(TEXT_LIMITS.email)
+        .refine(
+          (value) => value === '' || /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value),
+          'Enter a valid email address.'
+        )
+        .optional(),
+      website: plainText(TEXT_LIMITS.website).optional(),
+      social: z
+        .array(
+          z.object({
+            platform: z.enum(SOCIAL_PLATFORMS, 'That social network is not supported.'),
+            url: httpsUrl('Social link', 300).refine((value) => value !== '', 'Add the link for this social profile.'),
+          })
+        )
+        .max(MAX_SOCIAL_LINKS, `You can list at most ${MAX_SOCIAL_LINKS} social profiles.`)
+        .optional(),
+      contactText: plainText(TEXT_LIMITS.address).optional(),
+      socials: z.array(plainText(120)).max(MAX_SOCIAL_LINKS, `You can list at most ${MAX_SOCIAL_LINKS} social profiles.`).optional(),
+      legalText: plainText(TEXT_LIMITS.legalText).optional(),
+      style: textStyleSchema().optional(),
+      linkColor: maybeColor('Link color'),
+      divider: z
+        .object({
+          show: z.boolean().optional(),
+          color: maybeColor('Divider color'),
+          thickness: numberField('Divider thickness', RANGES.dividerThickness).optional(),
         })
-      )
-      .max(MAX_SOCIAL_LINKS, `You can list at most ${MAX_SOCIAL_LINKS} social profiles.`)
-      .optional(),
-    contactText: plainText(TEXT_LIMITS.address).optional(),
-    socials: z.array(plainText(120)).max(MAX_SOCIAL_LINKS, `You can list at most ${MAX_SOCIAL_LINKS} social profiles.`).optional(),
-    legalText: plainText(TEXT_LIMITS.legalText).optional(),
-    style: textStyleSchema().optional(),
-    linkColor: maybeColor('Link color'),
-    divider: z
-      .object({
-        show: z.boolean().optional(),
-        color: maybeColor('Divider color'),
-        thickness: numberField('Divider thickness', RANGES.dividerThickness).optional(),
-      })
-      .optional(),
-  });
+        .optional(),
+      ...bandKeys('footer'),
+    })
+    .superRefine(checkBand('footer', bandContext));
 
 /**
  * Full-shape validation of a partial brand kit save. Built per request because the
  * image URLs are checked against the tenant's own Cloudinary folder.
  */
-export function updateBrandKitSchema({ clientId } = {}) {
+export function updateBrandKitSchema({ clientId, size } = {}) {
   const tenant = String(clientId || '');
+  const bandContext = {
+    clientId: tenant,
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+    size: size && { width: size.width, height: size.height },
+  };
   return z.object({
     orgName: plainText(TEXT_LIMITS.orgNameText)
       .refine((value) => value.length > 0, 'Organization name cannot be empty')
@@ -262,9 +313,9 @@ export function updateBrandKitSchema({ clientId } = {}) {
       .optional(),
     preset: z.enum(BRAND_PRESETS, 'That style preset is not supported.').optional(),
     textStyle: textStyleSchema().optional(),
-    header: headerSchema(tenant).optional(),
+    header: headerSchema(tenant, bandContext).optional(),
     content: contentSchema(tenant).optional(),
-    footer: footerSchema(tenant).optional(),
+    footer: footerSchema(tenant, bandContext).optional(),
     defaultPosterSize: z
       .object({
         width: numberField('Poster width', { min: 200, max: 4000 }).optional(),

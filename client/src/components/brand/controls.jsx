@@ -39,6 +39,13 @@ export const FONT_OPTIONS = [
   "Lato",
   "DM Sans",
   "Nunito",
+  // The six that draw Tamil letters as well as English ones.
+  "Noto Sans Tamil",
+  "Noto Serif Tamil",
+  "Hind Madurai",
+  "Mukta Malar",
+  "Catamaran",
+  "Baloo Thambi 2",
 ];
 
 export const WEIGHT_OPTIONS = [

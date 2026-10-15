@@ -23,8 +23,9 @@ export default function AppShell({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
 
+  const isTemplateEditor = /^\/templates\/[^/]+\/edit$/.test(location.pathname);
   const sidebar = isAuthenticated && hasSidebar(user);
-  const showOrgBar = isAuthenticated && user?.role === 'superadmin';
+  const showOrgBar = isAuthenticated && user?.role === 'superadmin' && !isTemplateEditor;
   const org = useClientOptions(showOrgBar);
 
   const [collapsed, setCollapsed] = useState(readCollapsed);
@@ -49,6 +50,10 @@ export default function AppShell({ children }) {
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [drawer]);
+
+  if (isTemplateEditor) {
+    return <main className="min-w-0 flex-1 h-screen w-screen overflow-hidden bg-[#F3F4F6]">{children}</main>;
+  }
 
   const toggleCollapsed = () =>
     setCollapsed((value) => {

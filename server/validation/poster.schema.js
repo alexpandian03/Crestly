@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { CONTENT_LIMITS } from '../services/poster/content.js';
 import { VARIABLE_KEY_PATTERN, VARIABLE_LIMITS, ICON_NAMES } from '../../shared/templateElements.js';
 import { RECIPE_VARIANTS, recipeIds, designById } from '../../shared/designRecipes.js';
+import { EVENT_TYPE_IDS } from '../../shared/eventTypes.js';
 
 const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid ID');
 
@@ -51,8 +52,8 @@ export const generatePosterRequestSchema = z.object({
   instruction: z
     .enum(['shorter', 'minimal', 'more professional', 'emphasize date', 'change image'])
     .optional(),
-  /* "ai" writes a whole design from a recipe; nothing sent means the words-only path. */
-  mode: z.enum(['ai', 'template'], 'Choose either a design written for you or one of your own templates').default('template'),
+  /* "ai" writes a whole design from a recipe; template fills blanks. */
+  mode: z.enum(['ai', 'template'], 'Choose either a design written for you or your own template').default('template'),
   avoidRecipeIds: z
     .array(archetypeOrRecipeId)
     .max(recipeIds().length, 'There are only this many designs to leave out')
@@ -61,6 +62,10 @@ export const generatePosterRequestSchema = z.object({
   recipeId: archetypeOrRecipeId.optional(),
   variant: variantValue.optional(),
   imageUrl: z.string().trim().max(1000, 'Image address is too long').optional(),
+  /** The event type chosen by the user or suggested by the AI. */
+  eventType: z.enum(EVENT_TYPE_IDS, { error: 'Unknown event type' }).optional(),
+  /** Request 1-3 variants in a single generation call. */
+  variants: z.coerce.number().int().min(1).max(3).optional(),
 });
 
 const contentSchema = z.object({
@@ -88,6 +93,12 @@ const contentSchema = z.object({
       z.string().trim().max(600, 'That photo address is too long')
     )
     .optional(),
+  lists: z
+    .record(
+      z.string().trim().regex(VARIABLE_KEY_PATTERN, 'A list name must be 2-24 lower-case letters, numbers or underscores'),
+      z.array(z.record(z.string(), z.any()))
+    )
+    .optional(),
 });
 
 const dateString = z
@@ -110,6 +121,8 @@ export const createPosterSchema = z
     archetype: archetypeOrRecipeId.optional(),
     recipeId: archetypeOrRecipeId.optional(),
     variant: variantValue.optional(),
+    /** Event type chosen when the poster was created. */
+    eventType: z.enum(EVENT_TYPE_IDS, { error: 'Unknown event type' }).optional(),
   })
   .transform((data) => {
     let recipe = data.recipe;
@@ -227,3 +240,42 @@ export const posterImageRequestSchema = z
       recipeId: id,
     };
   });
+
+export const posterDraftSchema = z
+  .object({
+    basedOnVersion: z.coerce.number().int().min(1, 'Current version number is required'),
+    data: z
+      .object({
+        content: contentSchema.optional(),
+        title: z.string().trim().optional(),
+        recipe: recipeChoiceSchema.optional(),
+        archetype: archetypeOrRecipeId.optional(),
+        recipeId: archetypeOrRecipeId.optional(),
+        variant: variantValue.optional(),
+      })
+      .passthrough()
+      .optional(),
+    content: contentSchema.optional(),
+    title: z.string().trim().optional(),
+    recipe: recipeChoiceSchema.optional(),
+    archetype: archetypeOrRecipeId.optional(),
+    recipeId: archetypeOrRecipeId.optional(),
+    variant: variantValue.optional(),
+  })
+  .refine(
+    (data) => data.data !== undefined || data.content !== undefined,
+    { message: 'Provide draft content to save' }
+  );
+
+export const parseCardListSchema = z.object({
+  text: z
+    .string({ required_error: 'Pasted text is required' })
+    .trim()
+    .min(1, 'Please paste some text to tidy')
+    .max(20000, 'Pasted text is too long'),
+  listDefinition: z.record(z.any()).optional(),
+  cardList: z.record(z.any()).optional(),
+});
+
+
+

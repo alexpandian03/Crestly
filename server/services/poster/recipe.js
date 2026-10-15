@@ -120,6 +120,7 @@ export function recipePayload(template) {
     /* The mark the design was drawn with, echoed so saving the same poster rebuilds the same
        picture: a design is only reproducible from what the answer already contains. */
     icon: template.icon,
+    elements: template.elements,
     template: {
       name: template.name,
       editorVersion: template.editorVersion,

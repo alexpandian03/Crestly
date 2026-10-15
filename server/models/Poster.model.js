@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { designById } from '../../shared/designRecipes.js';
+import { EVENT_TYPE_IDS } from '../../shared/eventTypes.js';
 
 const MAX_VERSIONS = 20;
 
@@ -10,6 +11,9 @@ const designSchema = new mongoose.Schema(
   {
     brandKit: { type: Object, default: undefined },
     template: { type: Object, default: undefined },
+    /* The header and footer this poster draws, settled when the design was captured: whose band
+       won, how tall it is, where it sits and what is painted on it. */
+    bands: { type: Object, default: undefined },
     capturedAt: { type: Date, default: () => new Date() },
   },
   { _id: false }
@@ -36,6 +40,7 @@ const posterVersionSchema = new mongoose.Schema(
          the poster's design snapshot, so this stays the plain store. */
       extras: { type: Object, default: undefined },
       images: { type: Object, default: undefined },
+      lists: { type: Object, default: undefined },
     },
     note: { type: String, trim: true, maxlength: 120, default: '' },
     versionNumber: { type: Number, min: 1 },
@@ -93,6 +98,7 @@ const posterSchema = new mongoose.Schema(
          the poster's design snapshot, so this stays the plain store. */
       extras: { type: Object, default: undefined },
       images: { type: Object, default: undefined },
+      lists: { type: Object, default: undefined },
     },
     versions: {
       type: [posterVersionSchema],
@@ -106,6 +112,24 @@ const posterSchema = new mongoose.Schema(
     },
     thumbnailUrl: { type: String, default: '' },
     isDeleted: { type: Boolean, default: false },
+    /** The event type chosen when this poster was created. Stored so the form re-opens correctly. */
+    eventType: {
+      type: String,
+      enum: { values: EVENT_TYPE_IDS, message: '{VALUE} is not a known event type' },
+      default: 'general',
+    },
+    draft: {
+      type: new mongoose.Schema(
+        {
+          data: { type: mongoose.Schema.Types.Mixed, required: true },
+          savedAt: { type: Date, default: () => new Date() },
+          basedOnVersion: { type: Number, required: true },
+          userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+        },
+        { _id: false }
+      ),
+      default: undefined,
+    },
   },
   { timestamps: true }
 );

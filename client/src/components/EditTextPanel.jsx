@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useRef, lazy, Suspense } from "react";
+import React, { useState, useEffect, useRef, lazy, Suspense, useMemo } from "react";
 import { X, Undo2, RotateCcw, Lock, Check, Loader2 } from "lucide-react";
 import PosterImageInput from "./PosterImageInput";
 import { CONTENT_LIMITS as LIMITS } from "../utils/posterContentFields.js";
+import { eventTypeById } from "../../../shared/eventTypes.js";
 
 /* The fill-in spaces are only fetched when the layout actually offers some. */
 const VariableFields = lazy(() => import("./posteredit/VariableFields"));
+const CardListEntriesEditor = lazy(() => import("./posteredit/CardListEntriesEditor"));
 
 function CharCounter({ current, max }) {
   const isNear = current >= max * 0.9;
@@ -46,7 +48,38 @@ export default function EditTextPanel({
   onBlankContent = null,
   onBlankView = null,
   onBlankEdited = null,
+  /** Current event type id — controls which fields are shown with their plain labels */
+  eventType = null,
+  highlightSlotKey = null,
+  onHighlightSlot = null,
+  activeSlotKey = null,
+  onSlotSelect = null,
 }) {
+  // Determine which AI-fillable field ids are shown for this event type.
+  // When no eventType is given, all standard fields are shown (unchanged).
+  const visibleSectionIds = useMemo(() => {
+    if (!eventType) return null; // null means "show all"
+    const cfg = eventTypeById(eventType);
+    if (!cfg) return null;
+    // Only field and text kinds are shown in the edit panel
+    const ids = new Set(
+      cfg.sections
+        .filter((s) => s.kind === "field" || s.kind === "text")
+        .map((s) => s.id)
+    );
+    return ids;
+  }, [eventType]);
+
+  // Get plain label for a section id from the event type config
+  const sectionLabel = useMemo(() => {
+    if (!eventType) return {};
+    const cfg = eventTypeById(eventType);
+    if (!cfg) return {};
+    return Object.fromEntries(cfg.sections.map((s) => [s.id, s.label]));
+  }, [eventType]);
+
+  // Helper: should this standard field appear?
+  const show = (id) => visibleSectionIds === null || visibleSectionIds.has(id);
   // Local state for smooth, un-lagged editing
   const [formData, setFormData] = useState({
     title: "",
@@ -153,7 +186,7 @@ export default function EditTextPanel({
               Edit text
             </h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Preview updates live as you type
+              Fill in words, photo spaces, and event details. Preview updates live.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -212,184 +245,204 @@ export default function EditTextPanel({
 
         {/* Form Fields */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
-          {/* Headline (Title) */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label
-                htmlFor="edit-title"
-                className="text-xs font-semibold text-heading uppercase tracking-wider"
-              >
-                Headline
-              </label>
-              <CharCounter current={formData.title.length} max={LIMITS.title} />
-            </div>
-            <input
-              id="edit-title"
-              type="text"
-              value={formData.title}
-              maxLength={LIMITS.title}
-              onChange={(e) =>
-                handleFieldChange("title", e.target.value, LIMITS.title)
-              }
-              placeholder="e.g. Annual Sports Meet"
-              className="input-field"
-            />
-          </div>
-
-          {/* Short line under the headline (Tagline) */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label
-                htmlFor="edit-tagline"
-                className="text-xs font-semibold text-heading uppercase tracking-wider"
-              >
-                Line under the headline
-              </label>
-              <CharCounter
-                current={formData.tagline.length}
-                max={LIMITS.tagline}
-              />
-            </div>
-            <textarea
-              id="edit-tagline"
-              rows={2}
-              value={formData.tagline}
-              maxLength={LIMITS.tagline}
-              onChange={(e) =>
-                handleFieldChange("tagline", e.target.value, LIMITS.tagline)
-              }
-              placeholder="e.g. Join us for a day of teamwork and competition"
-              className="input-field resize-none"
-            />
-          </div>
-
-          {/* Date and Time grid */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Headline / name field (title or name depending on event type) */}
+          {(show("title") || show("name")) && (
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label
-                  htmlFor="edit-date"
+                  htmlFor="edit-title"
                   className="text-xs font-semibold text-heading uppercase tracking-wider"
                 >
-                  Date
+                  {sectionLabel["name"] || sectionLabel["title"] || "Headline"}
                 </label>
-                <CharCounter current={formData.date.length} max={LIMITS.date} />
+                <CharCounter current={formData.title.length} max={LIMITS.title} />
               </div>
               <input
-                id="edit-date"
+                id="edit-title"
                 type="text"
-                value={formData.date}
-                maxLength={LIMITS.date}
+                value={formData.title}
+                maxLength={LIMITS.title}
                 onChange={(e) =>
-                  handleFieldChange("date", e.target.value, LIMITS.date)
+                  handleFieldChange("title", e.target.value, LIMITS.title)
                 }
-                placeholder="e.g. 18 October 2026"
+                placeholder="e.g. Annual Sports Meet"
                 className="input-field"
               />
             </div>
+          )}
 
+          {/* Tagline / wishes */}
+          {show("tagline") && (
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label
-                  htmlFor="edit-time"
+                  htmlFor="edit-tagline"
                   className="text-xs font-semibold text-heading uppercase tracking-wider"
                 >
-                  Time
+                  {sectionLabel["tagline"] || "Line under the headline"}
                 </label>
-                <CharCounter current={formData.time.length} max={LIMITS.time} />
-              </div>
-              <input
-                id="edit-time"
-                type="text"
-                value={formData.time}
-                maxLength={LIMITS.time}
-                onChange={(e) =>
-                  handleFieldChange("time", e.target.value, LIMITS.time)
-                }
-                placeholder="e.g. 9:00 AM - 4:00 PM"
-                className="input-field"
-              />
-            </div>
-          </div>
-
-          {/* Place (Venue) */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label
-                htmlFor="edit-venue"
-                className="text-xs font-semibold text-heading uppercase tracking-wider"
-              >
-                Place
-              </label>
-              <CharCounter current={formData.venue.length} max={LIMITS.venue} />
-            </div>
-            <input
-              id="edit-venue"
-              type="text"
-              value={formData.venue}
-              maxLength={LIMITS.venue}
-              onChange={(e) =>
-                handleFieldChange("venue", e.target.value, LIMITS.venue)
-              }
-              placeholder="e.g. Central Sports Arena, Campus Ground"
-              className="input-field"
-            />
-          </div>
-
-          {/* Key details (up to 4 lines) */}
-          <div className="space-y-3 pt-2 border-t border-line">
-            <div>
-              <h3 className="text-xs font-semibold text-heading uppercase tracking-wider">
-                Details (up to 4 lines)
-              </h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Brief highlights or instructions for attendees
-              </p>
-            </div>
-
-            {[0, 1, 2, 3].map((idx) => (
-              <div key={idx}>
-                <div className="flex items-center justify-between mb-1">
-                  <label
-                    htmlFor={`edit-detail-${idx}`}
-                    className="text-xs text-muted-foreground"
-                  >
-                    Point {idx + 1}
-                  </label>
-                  <CharCounter
-                    current={formData.details[idx]?.length || 0}
-                    max={LIMITS.detail}
-                  />
-                </div>
-                <input
-                  id={`edit-detail-${idx}`}
-                  type="text"
-                  value={formData.details[idx] || ""}
-                  maxLength={LIMITS.detail}
-                  onChange={(e) => handleDetailChange(idx, e.target.value)}
-                  placeholder={`Detail line ${idx + 1}`}
-                  className="input-field"
+                <CharCounter
+                  current={formData.tagline.length}
+                  max={LIMITS.tagline}
                 />
               </div>
-            ))}
-          </div>
+              <textarea
+                id="edit-tagline"
+                rows={2}
+                value={formData.tagline}
+                maxLength={LIMITS.tagline}
+                onChange={(e) =>
+                  handleFieldChange("tagline", e.target.value, LIMITS.tagline)
+                }
+                placeholder="e.g. Join us for a day of teamwork and competition"
+                className="input-field resize-none"
+              />
+            </div>
+          )}
 
-          {/* Photo */}
-          <div className="pt-4 border-t border-line">
-            <h3 className="text-xs font-semibold text-heading uppercase tracking-wider mb-2">
-              Photo
-            </h3>
-            <PosterImageInput
-              value={content?.imageUrl || content?.image || ""}
-              onChange={(url) =>
-                onApplyChange({
-                  ...content,
-                  imageUrl: url || "",
-                  image: url || "",
-                })
-              }
-            />
-          </div>
+          {/* Date and Time grid */}
+          {(show("date") || show("time")) && (
+            <div className="grid grid-cols-2 gap-3">
+              {show("date") && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label
+                      htmlFor="edit-date"
+                      className="text-xs font-semibold text-heading uppercase tracking-wider"
+                    >
+                      {sectionLabel["date"] || "Date"}
+                    </label>
+                    <CharCounter current={formData.date.length} max={LIMITS.date} />
+                  </div>
+                  <input
+                    id="edit-date"
+                    type="text"
+                    value={formData.date}
+                    maxLength={LIMITS.date}
+                    onChange={(e) =>
+                      handleFieldChange("date", e.target.value, LIMITS.date)
+                    }
+                    placeholder="e.g. 18 October 2026"
+                    className="input-field"
+                  />
+                </div>
+              )}
+
+              {show("time") && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label
+                      htmlFor="edit-time"
+                      className="text-xs font-semibold text-heading uppercase tracking-wider"
+                    >
+                      {sectionLabel["time"] || "Time"}
+                    </label>
+                    <CharCounter current={formData.time.length} max={LIMITS.time} />
+                  </div>
+                  <input
+                    id="edit-time"
+                    type="text"
+                    value={formData.time}
+                    maxLength={LIMITS.time}
+                    onChange={(e) =>
+                      handleFieldChange("time", e.target.value, LIMITS.time)
+                    }
+                    placeholder="e.g. 9:00 AM - 4:00 PM"
+                    className="input-field"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Venue / location */}
+          {show("venue") && (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label
+                  htmlFor="edit-venue"
+                  className="text-xs font-semibold text-heading uppercase tracking-wider"
+                >
+                  {sectionLabel["venue"] || "Place"}
+                </label>
+                <CharCounter current={formData.venue.length} max={LIMITS.venue} />
+              </div>
+              <input
+                id="edit-venue"
+                type="text"
+                value={formData.venue}
+                maxLength={LIMITS.venue}
+                onChange={(e) =>
+                  handleFieldChange("venue", e.target.value, LIMITS.venue)
+                }
+                placeholder="e.g. Central Sports Arena, Campus Ground"
+                className="input-field"
+              />
+            </div>
+          )}
+
+          {/* Key details (up to 4 lines) */}
+          {show("details") && (
+            <div className="space-y-3 pt-2 border-t border-line">
+              <div>
+                <h3 className="text-xs font-semibold text-heading uppercase tracking-wider">
+                  {sectionLabel["details"] || "Details (up to 4 lines)"}
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Brief highlights or instructions for attendees
+                </p>
+              </div>
+
+              {[0, 1, 2, 3].map((idx) => (
+                <div key={idx}>
+                  <div className="flex items-center justify-between mb-1">
+                    <label
+                      htmlFor={`edit-detail-${idx}`}
+                      className="text-xs text-muted-foreground"
+                    >
+                      Point {idx + 1}
+                    </label>
+                    <CharCounter
+                      current={formData.details[idx]?.length || 0}
+                      max={LIMITS.detail}
+                    />
+                  </div>
+                  <input
+                    id={`edit-detail-${idx}`}
+                    type="text"
+                    value={formData.details[idx] || ""}
+                    maxLength={LIMITS.detail}
+                    onChange={(e) => handleDetailChange(idx, e.target.value)}
+                    placeholder={`Detail line ${idx + 1}`}
+                    className="input-field"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Photo — always show unless eventType explicitly has no photo/mainPhoto section */}
+          {(() => {
+            const cfg = eventType ? eventTypeById(eventType) : null;
+            const hasPhotoSection = !cfg || cfg.sections.some((s) => s.kind === "photo");
+            return hasPhotoSection;
+          })() && (
+            <div className="pt-4 border-t border-line">
+              <h3 className="text-xs font-semibold text-heading uppercase tracking-wider mb-2">
+                {sectionLabel["mainPhoto"] || "Photo"}
+              </h3>
+              <PosterImageInput
+                value={content?.imageUrl || content?.image || ""}
+                onChange={(url) =>
+                  onApplyChange({
+                    ...content,
+                    imageUrl: url || "",
+                    image: url || "",
+                  })
+                }
+              />
+            </div>
+          )}
 
           {/* Spaces the layout left to be filled in */}
           {blankDesign && onBlankContent ? (
@@ -403,6 +456,22 @@ export default function EditTextPanel({
                 onContentChange={onBlankContent}
                 onViewChange={onBlankView}
                 onEdited={onBlankEdited}
+                highlightSlotKey={highlightSlotKey}
+                onHighlightSlot={onHighlightSlot}
+                activeSlotKey={activeSlotKey}
+                onSlotSelect={onSlotSelect}
+              />
+            </Suspense>
+          ) : null}
+
+          {/* Card lists (Speakers, Schedule, etc.) */}
+          {blankDesign ? (
+            <Suspense fallback={null}>
+              <CardListEntriesEditor
+                design={blankDesign}
+                content={content}
+                onContentChange={onBlankContent || onApplyChange}
+                canUpload={canUploadBlanks}
               />
             </Suspense>
           ) : null}

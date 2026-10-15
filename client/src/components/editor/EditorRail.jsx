@@ -1,8 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
-  Check,
   Circle,
   Copy,
   ExternalLink,
@@ -12,19 +11,28 @@ import {
   Image as ImageIcon,
   ImagePlus,
   Layers,
+  LayoutGrid,
   ListChecks,
+  Loader2,
   Lock,
   LockOpen,
   Palette,
+  Plus,
   RotateCcw,
+  Search,
   Shapes,
   Sliders,
   Sparkles,
   Square,
   Trash2,
   Type,
+  Upload,
   X,
 } from "lucide-react";
+import api from "../../services/api";
+import { useAuth } from "../../context/AuthContext";
+import { directUploadAsset } from "../../utils/assetUpload";
+import { CARD_LIST_PRESETS } from "../../utils/cardListHelpers";
 import BrandImageField from "../brand/BrandImageField";
 import {
   BackgroundEditor,
@@ -35,16 +43,17 @@ import {
   Toggle,
 } from "../brand/controls";
 import {
-  BRAND_COLOR_TOKENS,
-  CONTENT_DECORATIONS,
   DEFAULT_PAGE_BACKGROUND,
   DEFAULT_PAGE_DECORATION,
   DEFAULT_PAGE_INFO_CARD,
   DEFAULT_PAGE_WATERMARK,
   ELEMENT_LIMITS,
+  ICON_NAMES,
+  VARIABLE_LIMITS,
   isBrandColorToken,
   resolveColorToken,
 } from "../../../../shared/templateElements.js";
+import { posterIconComponent } from "../posterIcons.js";
 import { toHex } from "../../utils/contrast.js";
 import {
   FIELD_LABELS,
@@ -57,6 +66,7 @@ import {
   layersOf,
   modeOf,
   pictureCountOf,
+  userImageCount,
 } from "../../utils/templateEditorItems";
 
 /* ------------------------------------------------------------------ *
@@ -75,42 +85,61 @@ export const RAIL_TABS = [
     title: "Built-in fields",
     Icon: ListChecks,
   },
+  { key: "cardlists", label: "Lists", title: "Card lists", Icon: LayoutGrid },
   { key: "text", label: "Text", title: "Add text", Icon: Type },
   { key: "images", label: "Images", title: "Photos", Icon: ImageIcon },
   { key: "shapes", label: "Shapes", title: "Shapes", Icon: Shapes },
-  { key: "layers", label: "Layers", title: "Layers", Icon: Layers },
+  { key: "layers", label: "Order", title: "What is in front", Icon: Layers },
   { key: "page", label: "Page", title: "Page settings", Icon: Sliders },
   { key: "brand", label: "Brand", title: "Brand style", Icon: Palette },
 ];
 
-export default function EditorRail({ tab, onTab }) {
+export default function EditorRail({ tab, onTab, activeSection = "content" }) {
   return (
     <nav
       aria-label="What to add"
-      className="flex w-14 shrink-0 flex-col items-center gap-1 border-r border-[#E5E7EB] bg-[#FAFAFA] py-2"
+      className="flex w-[72px] shrink-0 flex-col items-center gap-1 border-r border-[#E5E7EB] bg-[#FAFAFA] py-2"
     >
       {RAIL_TABS.map(({ key, label, Icon }) => {
+        const disabled = (key === "fields" || key === "cardlists") && activeSection !== "content";
         const active = tab === key;
         return (
           <button
             key={key}
             type="button"
+            disabled={disabled}
             aria-label={label}
-            title={label}
+            title={
+              disabled
+                ? "Fields can only be placed in the content area"
+                : label
+            }
             aria-pressed={active}
-            onClick={() => onTab(active ? "" : key)}
-            className={`flex w-12 flex-col items-center gap-1 rounded-[6px] py-2 text-[11px] font-medium leading-tight transition-colors ${
-              active
-                ? "bg-[#F3F4F6] text-[#111827]"
-                : "text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827]"
+            onClick={() => {
+              if (!disabled) onTab(active ? "" : key);
+            }}
+            className={`group flex w-16 flex-col items-center gap-1.5 rounded-[6px] py-1.5 text-[11px] font-medium leading-tight transition-colors ${
+              disabled
+                ? "opacity-30 cursor-not-allowed text-[#9CA3AF]"
+                : active
+                  ? "text-[#111827]"
+                  : "text-[#6B7280] hover:text-[#111827]"
             }`}
           >
-            <Icon
-              className={`h-[18px] w-[18px] ${
-                active ? "text-[#111827]" : "text-[#6B7280]"
+            <div
+              className={`flex h-8 w-8 items-center justify-center rounded-[8px] border transition-all ${
+                disabled
+                  ? "border-transparent bg-gray-100 text-[#9CA3AF]"
+                  : active
+                    ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB] shadow-xs"
+                    : "border-[#D1D5DB] bg-white text-[#4B5563] group-hover:border-[#9CA3AF] group-hover:bg-[#F9FAFB]"
               }`}
-            />
-            {label}
+            >
+              <Icon className="h-4 w-4" />
+            </div>
+            <span className={active ? "font-semibold text-[#111827]" : "text-[#4B5563]"}>
+              {label}
+            </span>
           </button>
         );
       })}
@@ -126,6 +155,7 @@ function Row({
   dropTarget = false,
   handle = null,
   inList = false,
+  allItems = null,
 }) {
   return (
     <div
@@ -143,7 +173,7 @@ function Row({
         onClick={() => onSelect(item.id)}
         className="min-w-0 flex-1 truncate text-left text-xs font-medium text-[#111827] hover:text-[#2563EB] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2563EB]"
       >
-        {itemLabel(item)}
+        {itemLabel(item, allItems)}
       </button>
       {children}
     </div>
@@ -243,14 +273,6 @@ function AddButton({ onClick, children, disabled = false }) {
 
 function Note({ children }) {
   return <p className="text-[11px] text-muted-foreground">{children}</p>;
-}
-
-function Warning({ children }) {
-  return (
-    <p className="rounded-btn border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] leading-snug text-amber-800">
-      {children}
-    </p>
-  );
 }
 
 const RADIUS = ELEMENT_LIMITS.radius;
@@ -427,82 +449,245 @@ function NumberRow({ label, value, min, max, onLive, onCommit }) {
   );
 }
 
-function FieldsPanel({ items, selectedId, actions }) {
+function CardListsPanel({ items, selectedId, actions, activeSection, search = "" }) {
+  const cardLists = (items || []).filter((it) => it.kind === "cardlist");
+  const filteredPresets = CARD_LIST_PRESETS.filter((p) =>
+    !search ? true : p.label.toLowerCase().includes(search.toLowerCase()) || p.description.toLowerCase().includes(search.toLowerCase())
+  );
+
+  if (activeSection !== "content") {
+    return (
+      <div className="rounded-[8px] border border-[#E5E7EB] bg-slate-50 p-4 text-center">
+        <p className="text-xs text-[#6B7280]">
+          Card lists can only be placed in the Content area.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Quick Add Presets */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider">
+            Add a card list
+          </span>
+          <span className="text-[11px] font-mono text-[#6B7280]">
+            {cardLists.length}/12
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 gap-2">
+          {filteredPresets.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              disabled={cardLists.length >= 12}
+              onClick={() => actions.addCardList?.(preset.data)}
+              className="flex items-start gap-2.5 rounded-[6px] border border-[#E5E7EB] bg-white p-2.5 text-left hover:border-[#2563EB] hover:bg-blue-50/30 transition-colors disabled:opacity-50"
+            >
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[4px] bg-blue-50 text-[#2563EB] mt-0.5">
+                <Plus className="h-3.5 w-3.5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold text-[#111827]">{preset.label}</p>
+                <p className="text-[11px] text-[#6B7280] truncate">{preset.description}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Existing Card Lists */}
+      {cardLists.length > 0 && (
+        <div className="border-t border-[#E5E7EB] pt-3">
+          <span className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider mb-2 block">
+            Lists on this poster
+          </span>
+
+          <div className="space-y-2">
+            {cardLists.map((cl) => {
+              const isSelected = cl.id === selectedId;
+              return (
+                <div
+                  key={cl.id}
+                  onClick={() => actions.select?.(cl.id)}
+                  className={`rounded-[6px] border p-2.5 transition-colors cursor-pointer ${
+                    isSelected
+                      ? 'border-[#2563EB] bg-blue-50/40 ring-1 ring-[#2563EB]'
+                      : 'border-[#E5E7EB] bg-white hover:border-[#CBD5E1]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-bold text-[#111827]">
+                      {cl.label || cl.key}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        title="Delete list"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          actions.remove?.(cl.id);
+                        }}
+                        className="text-[#9CA3AF] hover:text-red-600 p-0.5"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] text-[#6B7280]">
+                    <span>
+                      {cl.columns || 2} cols · max {cl.maxCount || 12}
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        actions.editCard?.(cl.id);
+                      }}
+                      className="text-xs font-semibold text-[#2563EB] hover:underline"
+                    >
+                      Draw card →
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FieldsPanel({ items, selectedId, actions, search = "" }) {
+  const q = search.trim().toLowerCase();
+  const visibleFields = FIELD_ORDER.filter(
+    (field) => !q || FIELD_LABELS[field].toLowerCase().includes(q)
+  );
+
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
         The poster&rsquo;s own parts, whose words come from what the person
         filling it in types.
       </p>
-      <ul className="space-y-1.5">
-        {FIELD_ORDER.map((field) => {
-          const placed = items.filter(
-            (item) => item.kind === "field" && item.field === field,
-          );
-          if (placed.length === 0) {
+      {visibleFields.length === 0 ? (
+        <p className="text-xs text-[#9CA3AF] py-2 text-center">No fields match your search.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {visibleFields.map((field) => {
+            const placed = items.filter(
+              (item) => item.kind === "field" && item.field === field,
+            );
+            if (placed.length === 0) {
+              return (
+                <li key={field}>
+                  <AddButton onClick={() => actions.addField(field)}>
+                    Add {FIELD_LABELS[field]}
+                  </AddButton>
+                </li>
+              );
+            }
             return (
-              <li key={field}>
-                <AddButton onClick={() => actions.addField(field)}>
-                  Add {FIELD_LABELS[field]}
-                </AddButton>
+              <li key={field} className="space-y-1">
+                {placed.map((item) => (
+                  <Row
+                    key={item.id}
+                    item={item}
+                    selected={item.id === selectedId}
+                    onSelect={actions.select}
+                  >
+                    <TinyButton
+                      label={item.locked ? "Allow moving" : "Keep in place"}
+                      icon={lockIcon(item.locked)}
+                      onClick={() => actions.toggleLock(item.id)}
+                    />
+                    <TinyButton
+                      label="Remove"
+                      icon={<X className="h-3.5 w-3.5" />}
+                      disabled={isHeadlineItem(item)}
+                      onClick={() => actions.remove(item.id)}
+                    />
+                  </Row>
+                ))}
               </li>
             );
-          }
-          return (
-            <li key={field} className="space-y-1">
-              {placed.map((item) => (
-                <Row
-                  key={item.id}
-                  item={item}
-                  selected={item.id === selectedId}
-                  onSelect={actions.select}
-                >
-                  <TinyButton
-                    label={item.locked ? "Allow moving" : "Keep in place"}
-                    icon={lockIcon(item.locked)}
-                    onClick={() => actions.toggleLock(item.id)}
-                  />
-                  <TinyButton
-                    label="Remove"
-                    icon={<X className="h-3.5 w-3.5" />}
-                    disabled={isHeadlineItem(item)}
-                    onClick={() => actions.remove(item.id)}
-                  />
-                </Row>
-              ))}
-            </li>
-          );
-        })}
-      </ul>
+          })}
+        </ul>
+      )}
       <Note>The headline always stays on the poster.</Note>
     </div>
   );
 }
 
-function TextPanel({ items, selectedId, actions }) {
-  const textItems = items.filter((item) => item.kind === "text");
+function TextPanel({ items, selectedId, actions, activeSection = "content", search = "" }) {
+  const q = search.trim().toLowerCase();
+  const textItems = items.filter((item) => item.kind === "text" && (!q || itemLabel(item).toLowerCase().includes(q)));
   const counters = counterLine(items);
+
+  const brandChips = [
+    { token: "{{brand.orgName}}", label: "Organization" },
+    { token: "{{brand.website}}", label: "Website" },
+    { token: "{{brand.phone}}", label: "Phone" },
+    { token: "{{brand.email}}", label: "Email" },
+    { token: "{{brand.address}}", label: "Address" },
+    { token: "{{brand.legalText}}", label: "Legal text" },
+  ].filter((c) => !q || c.label.toLowerCase().includes(q) || c.token.toLowerCase().includes(q));
+
+  const visibleVariants = Object.entries(TEXT_VARIANTS).filter(
+    ([key, variant]) => !q || variant.label.toLowerCase().includes(q) || key.toLowerCase().includes(q)
+  );
+
   return (
     <div className="space-y-3">
+      {activeSection !== "content" && brandChips.length > 0 ? (
+        <div className="space-y-2 rounded-[6px] border border-[#E5E7EB] bg-[#FAFAFA] p-3">
+          <p className="text-[13px] font-semibold text-[#111827]">Brand text</p>
+          <p className="text-[11px] text-[#6B7280]">
+            Click a chip to place brand details in the band:
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {brandChips.map(({ token, label }) => (
+              <button
+                key={token}
+                type="button"
+                onClick={() => actions.addBrandText?.(token)}
+                className="rounded-[4px] border border-[#E5E7EB] bg-white px-2 py-1 text-xs font-medium text-[#111827] hover:border-[#2563EB] hover:bg-[#EFF6FF]"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <p className="text-xs text-muted-foreground">
-        A new box is words the assistant writes for each poster; switch it to
-        Locked for words of your own.
+        {activeSection !== "content"
+          ? "Add a line of words for the top or bottom. It stays fixed on every poster."
+          : "A new box is words the assistant writes for each poster; switch it to Locked for words of your own."}
       </p>
-      <div className="space-y-1.5">
-        {Object.entries(TEXT_VARIANTS).map(([key, variant]) => (
-          <AddButton key={key} onClick={() => actions.addText(key)}>
-            Add {variant.label}
-          </AddButton>
-        ))}
-      </div>
-      {counters.fullTexts ? (
+      {visibleVariants.length > 0 ? (
+        <div className="space-y-1.5">
+          {visibleVariants.map(([key, variant]) => (
+            <AddButton key={key} onClick={() => actions.addText(key)}>
+              Add {variant.label}
+            </AddButton>
+          ))}
+        </div>
+      ) : null}
+      {activeSection === "content" && counters.fullTexts ? (
         <Note>
           A new box will hold fixed words of your own, since {counters.texts}.
         </Note>
       ) : null}
       {textItems.length > 0 ? (
         <div className="space-y-1.5 border-t border-[#E5E7EB] pt-3">
-          <p className="text-[13px] font-semibold text-[#111827]">On this poster</p>
+          <p className="text-[13px] font-semibold text-[#111827]">In this section</p>
           {textItems.map((item) => (
             <Row
               key={item.id}
@@ -525,66 +710,234 @@ function TextPanel({ items, selectedId, actions }) {
         </div>
       ) : null}
       <Note>
-        {counters.texts} · {items.length} of {ELEMENT_LIMITS.maxItems} items
-        placed.
+        {items.length} of {activeSection === "content" ? ELEMENT_LIMITS.maxItems : 15} items placed.
       </Note>
     </div>
   );
 }
 
-function ImagesPanel({ items, selectedId, actions, brandKit }) {
+function ImagesPanel({ items, selectedId, actions, brandKit, activeSection = "content", search = "" }) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "superadmin" || user?.role === "clientadmin";
+
+  const [assets, setAssets] = useState([]);
+  const [loadingAssets, setLoadingAssets] = useState(false);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const fileInputRef = useRef(null);
+
+  const fetchAssets = useCallback(async (pageNum = 1, searchQuery = "", append = false) => {
+    setLoadingAssets(true);
+    try {
+      const res = await api.get("/assets", {
+        params: {
+          q: searchQuery,
+          page: pageNum,
+          limit: 12,
+        },
+      });
+      const data = res.data?.data || {};
+      const newItems = Array.isArray(data.items) ? data.items : [];
+      setAssets((prev) => (append ? [...prev, ...newItems] : newItems));
+      setPage(data.page || pageNum);
+      setTotalPages(data.pages || 1);
+    } catch {
+      // Fallback
+    } finally {
+      setLoadingAssets(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAssets(1, search, false);
+  }, [fetchAssets, search]);
+
+  const handleUploadFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    setIsUploading(true);
+    setUploadError("");
+    try {
+      const asset = await directUploadAsset(file);
+      if (asset?.url) {
+        setAssets((prev) => [asset, ...prev]);
+        // Add as a static image to canvas
+        actions.insertImage(asset.url);
+      }
+    } catch (err) {
+      setUploadError(err.message || "Could not upload photo. Please try another one.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleDeleteAsset = async (assetId, e) => {
+    e.stopPropagation();
+    if (!window.confirm("Remove this photo from your library?")) return;
+    try {
+      await api.delete(`/assets/${assetId}`);
+      setAssets((prev) => prev.filter((a) => a._id !== assetId));
+    } catch {
+      alert("Could not remove photo. Please try again.");
+    }
+  };
+
+  const q = search.trim().toLowerCase();
   const pictures = items.filter(
-    (item) => item.kind === "image" || item.field === "photo",
+    (item) => (item.kind === "image" || item.field === "photo") && (!q || itemLabel(item).toLowerCase().includes(q)),
   );
   const chosen = pictures.find((item) => item.id === selectedId) || null;
   const defaultPhoto = brandKit?.content?.defaultImageUrl || "";
   const own = pictureCountOf(items);
-  const left = ELEMENT_LIMITS.maxImage - own;
-  const counters = counterLine(items);
+  const left = (activeSection === "content" ? ELEMENT_LIMITS.maxImage : 15) - own;
+  const userImgCount = userImageCount(items);
+  const maxVarImages = VARIABLE_LIMITS.maxImage;
 
   return (
-    <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">
-        A new photo space is one the person filling the poster in replaces.
-      </p>
-      {left > 0 ? (
-        <BrandImageField
-          insert
-          kind="template"
-          label="Upload a photo"
-          value=""
-          onChange={(url) => actions.insertImage(url)}
-          hint={
-            <Note>
-              {left} of {ELEMENT_LIMITS.maxImage} photo spaces left.{" "}
-              {counters.images}.
-            </Note>
-          }
+    <div className="space-y-4">
+      {/* Upload Button */}
+      <div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          className="hidden"
+          onChange={handleUploadFile}
         />
-      ) : (
-        <Warning>
-          This template already has {ELEMENT_LIMITS.maxImage} photos of its own,
-          which is the most it can hold. Take one away below to put another in
-          its place.
-        </Warning>
+        <button
+          type="button"
+          disabled={isUploading || left <= 0}
+          onClick={() => fileInputRef.current?.click()}
+          className="w-full flex items-center justify-center gap-2 rounded-[6px] bg-[#2563EB] hover:bg-[#1D4ED8] disabled:opacity-50 text-white px-3 py-2 text-xs font-semibold shadow-sm transition-colors"
+        >
+          {isUploading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>Preparing & uploading photo...</span>
+            </>
+          ) : (
+            <>
+              <Upload className="h-4 w-4" />
+              <span>Upload photo (JPG, PNG, WebP)</span>
+            </>
+          )}
+        </button>
+        {uploadError && (
+          <p className="mt-1.5 text-[11px] text-red-600 font-medium">{uploadError}</p>
+        )}
+      </div>
+
+      {/* Brand Kit Logo Button */}
+      <div className="rounded-[6px] border border-[#E5E7EB] bg-[#FAFAFA] p-2.5 space-y-1.5">
+        <div className="text-[11px] font-semibold text-[#111827]">Brand Logo</div>
+        <button
+          type="button"
+          onClick={() => (actions.addBrandLogo ? actions.addBrandLogo() : actions.insertImage("brand:logo"))}
+          className="w-full flex items-center gap-2 rounded-[6px] border border-[#E5E7EB] bg-white px-2.5 py-1.5 text-xs font-medium text-[#111827] hover:border-[#2563EB] hover:bg-[#EFF6FF] transition-colors"
+        >
+          <div className="w-5 h-5 rounded bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
+            <Sparkles className="w-3 h-3" />
+          </div>
+          <span className="truncate">Logo (from the Brand Kit)</span>
+        </button>
+      </div>
+
+      {/* Empty Photo Space Button */}
+      {activeSection === "content" && (
+        <div>
+          <button
+            type="button"
+            disabled={userImgCount >= maxVarImages || left <= 0}
+            onClick={() => actions.addImage()}
+            className="w-full flex items-center justify-center gap-1.5 rounded-[6px] border border-[#E5E7EB] bg-white hover:bg-[#F9FAFB] disabled:opacity-40 disabled:cursor-not-allowed px-3 py-2 text-xs font-medium text-[#374151] transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5 text-[#6B7280]" />
+            <span>Add empty photo space ({userImgCount} of {maxVarImages})</span>
+          </button>
+          <p className="mt-1 text-[11px] text-[#6B7280]">
+            A blank space for users making the poster to fill in.
+          </p>
+        </div>
       )}
 
-      <AddButton disabled={left <= 0} onClick={() => actions.addImage()}>
-        {left > 0
-          ? "Add an empty photo space"
-          : `No photo spaces left (${ELEMENT_LIMITS.maxImage})`}
-      </AddButton>
+      {/* Asset Library Grid */}
+      <div className="space-y-2 border-t border-[#E5E7EB] pt-3">
+        <div className="flex items-center justify-between">
+          <p className="text-[12px] font-semibold text-[#111827]">Photo Library</p>
+          <span className="text-[11px] text-[#6B7280]">Click or drag to place</span>
+        </div>
 
-      {counters.fullImages ? (
-        <Note>
-          A new space will keep the picture you put in it, since{" "}
-          {counters.images}.
-        </Note>
-      ) : null}
+        {loadingAssets && assets.length === 0 ? (
+          <div className="py-6 flex flex-col items-center justify-center text-[#9CA3AF] text-xs gap-1.5">
+            <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+            <span>Loading photos...</span>
+          </div>
+        ) : assets.length === 0 ? (
+          <div className="rounded-[6px] border border-dashed border-[#D1D5DB] p-4 text-center text-xs text-[#6B7280]">
+            No photos found. Upload a photo above to add to your organization&apos;s library.
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            {assets.map((asset) => (
+              <div
+                key={asset._id}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData("text/plain", asset.url);
+                }}
+                onClick={() => actions.insertImage(asset.url)}
+                className="group relative flex flex-col rounded-[6px] border border-[#E5E7EB] bg-white overflow-hidden cursor-pointer hover:border-[#2563EB] hover:shadow-sm transition-all"
+                title={`${asset.name || "Photo"} — click or drag to add to poster`}
+              >
+                <div className="aspect-[4/3] w-full bg-[#F3F4F6] overflow-hidden flex items-center justify-center">
+                  <img
+                    src={asset.url}
+                    alt={asset.name || "Photo"}
+                    crossOrigin="anonymous"
+                    className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                    loading="lazy"
+                  />
+                </div>
+                <div className="p-1.5 px-2 bg-white flex items-center justify-between gap-1 border-t border-[#F3F4F6]">
+                  <span className="text-[11px] font-medium text-[#374151] truncate">
+                    {asset.name || "Untitled"}
+                  </span>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      title="Delete photo from library"
+                      onClick={(e) => handleDeleteAsset(asset._id, e)}
+                      className="opacity-0 group-hover:opacity-100 p-1 text-[#9CA3AF] hover:text-red-600 rounded hover:bg-red-50 transition-all shrink-0"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
-      {pictures.length > 0 ? (
-        <div className="space-y-1.5">
-          <p className="text-[13px] font-semibold text-[#111827]">On this poster</p>
+        {/* Load more button */}
+        {page < totalPages && (
+          <button
+            type="button"
+            disabled={loadingAssets}
+            onClick={() => fetchAssets(page + 1, search, true)}
+            className="w-full py-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-[4px] transition-colors"
+          >
+            {loadingAssets ? "Loading more..." : "Load more photos"}
+          </button>
+        )}
+      </div>
+
+      {/* On This Poster Section */}
+      {pictures.length > 0 && (
+        <div className="space-y-1.5 border-t border-[#E5E7EB] pt-3">
+          <p className="text-[12px] font-semibold text-[#111827]">On this poster</p>
           {pictures.map((item) => (
             <Row
               key={item.id}
@@ -605,11 +958,6 @@ function ImagesPanel({ items, selectedId, actions, brandKit }) {
             </Row>
           ))}
         </div>
-      ) : (
-        <Note>
-          A photo space with nothing in it shows nothing at all, so the poster
-          stays clean either way.
-        </Note>
       )}
 
       {chosen ? (
@@ -677,35 +1025,98 @@ function ImagesPanel({ items, selectedId, actions, brandKit }) {
   );
 }
 
-function ShapesPanel({ items, selectedId, actions, brandKit = null }) {
-  const shapes = items.filter((item) => item.kind === "shape");
-  const chosen = shapes.find((item) => item.id === selectedId) || null;
+function ShapesPanel({ items, selectedId, actions, brandKit = null, search = "" }) {
+  const q = search.trim().toLowerCase();
+  const shapesAndIcons = items.filter(
+    (item) =>
+      (item.kind === "shape" || item.kind === "icon") &&
+      (!q || itemLabel(item).toLowerCase().includes(q))
+  );
+  const chosen = shapesAndIcons.find((item) => item.id === selectedId) || null;
   const shape = chosen?.shape || {};
-  const line = shape.type === "line";
+  const isLine = shape.type === "line";
+  const isIconChosen = chosen?.kind === "icon";
+
+  const visibleVariants = Object.entries(SHAPE_VARIANTS).filter(
+    ([key, variant]) =>
+      !q || variant.label.toLowerCase().includes(q) || key.toLowerCase().includes(q)
+  );
+
+  const filteredIcons = ICON_NAMES.filter(
+    (name) => !q || name.toLowerCase().includes(q)
+  );
 
   return (
     <div className="space-y-3">
-      <div className="space-y-1.5">
-        {Object.entries(SHAPE_VARIANTS).map(([key, variant]) => (
-          <AddButton key={key} onClick={() => actions.addShape(key)}>
-            <span className="flex items-center gap-2">
-              {key === "circle" ? (
-                <Circle className="h-3.5 w-3.5" />
-              ) : key === "line" ? (
-                <ArrowDown className="h-3.5 w-3.5 rotate-90" />
-              ) : (
-                <Square className="h-3.5 w-3.5" />
-              )}
-              Add a {variant.label.toLowerCase()}
-            </span>
-          </AddButton>
-        ))}
-      </div>
-
-      {shapes.length > 0 ? (
+      {/* 8 SHAPES */}
+      {visibleVariants.length > 0 ? (
         <div className="space-y-1.5">
+          <p className="text-[13px] font-semibold text-[#111827]">Shapes</p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {visibleVariants.map(([key, variant]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => actions.addShape(key)}
+                className="flex items-center gap-2 rounded-[6px] border border-[#E5E7EB] bg-[#FAFAFA] px-2.5 py-2 text-left text-xs font-medium text-[#111827] hover:border-[#2563EB] hover:bg-[#EFF6FF] transition-colors"
+              >
+                {key === "circle" ? (
+                  <Circle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                ) : key === "line" ? (
+                  <ArrowDown className="h-3.5 w-3.5 rotate-90 text-slate-600 shrink-0" />
+                ) : key === "star" ? (
+                  <Sparkles className="h-3.5 w-3.5 text-yellow-500 shrink-0" />
+                ) : key === "triangle" ? (
+                  <ArrowUp className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                ) : key === "rounded-rect" ? (
+                  <Square className="h-3.5 w-3.5 rounded text-emerald-600 shrink-0" />
+                ) : (
+                  <Square className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                )}
+                <span className="truncate">{variant.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {/* ALLOWED ICONS */}
+      {filteredIcons.length > 0 && (
+        <div className="pt-2 border-t border-[#E5E7EB] space-y-1.5">
+          <div className="flex items-center justify-between">
+            <p className="text-[13px] font-semibold text-[#111827]">Icons</p>
+            <span className="text-[10px] text-[#6B7280]">
+              {filteredIcons.length} available
+            </span>
+          </div>
+          <div className="grid grid-cols-4 gap-1.5 max-h-48 overflow-y-auto p-1 border border-[#E5E7EB] rounded-[6px] bg-[#FAFAFA]">
+            {filteredIcons.map((name) => {
+              const IconComp = posterIconComponent(name);
+              if (!IconComp) return null;
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  title={`Add ${name}`}
+                  onClick={() => actions.addIcon?.(name)}
+                  className="flex flex-col items-center justify-center p-2 rounded-[4px] bg-white border border-[#E5E7EB] hover:border-[#2563EB] hover:bg-[#EFF6FF] text-[#374151] hover:text-[#2563EB] transition-colors"
+                >
+                  <IconComp className="h-5 w-5" />
+                  <span className="text-[9px] truncate max-w-full mt-1 text-[#6B7280]">
+                    {name}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ITEMS IN THIS SECTION */}
+      {shapesAndIcons.length > 0 ? (
+        <div className="space-y-1.5 border-t border-[#E5E7EB] pt-3">
           <p className="text-[13px] font-semibold text-[#111827]">On this poster</p>
-          {shapes.map((item) => (
+          {shapesAndIcons.map((item) => (
             <Row
               key={item.id}
               item={item}
@@ -727,126 +1138,170 @@ function ShapesPanel({ items, selectedId, actions, brandKit = null }) {
         </div>
       ) : (
         <Note>
-          A line, a box or a circle behind the words is often what makes a
-          poster look finished.
+          A shape, line or icon adds structure and polish to your poster.
         </Note>
       )}
 
+      {/* CHOSEN ITEM EDITING */}
       {chosen ? (
         <div className="space-y-3 border-t border-[#E5E7EB] pt-3">
-          <p className="text-[13px] font-semibold text-[#111827]">This shape</p>
-          <div className="flex gap-1.5">
-            {["rect", "circle", "line"].map((type) => (
-              <button
-                key={type}
-                type="button"
-                aria-pressed={shape.type === type}
-                onClick={() => actions.setShape(chosen.id, { type })}
-                className={`flex-1 rounded-btn border px-2 py-1 text-[11px] font-semibold ${
-                  shape.type === type
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-line text-body hover:bg-section"
-                }`}
-              >
-                {SHAPE_VARIANTS[type].label}
-              </button>
-            ))}
-          </div>
+          <p className="text-[13px] font-semibold text-[#111827]">
+            {isIconChosen ? "This icon" : "This shape"}
+          </p>
 
-          {line ? (
+          {isIconChosen ? (
             <>
               <ColourRow
-                label="Line colour"
-                value={shape.stroke || shape.fill || ""}
-                fallback="#334155"
+                label="Icon colour"
+                value={chosen.style?.color || ""}
+                fallback="#0f172a"
                 brandKit={brandKit}
-                onPick={(color) =>
-                  actions.setShape(chosen.id, { stroke: color, fill: "" })
-                }
-                onCommit={(color) =>
-                  actions.setShape(chosen.id, { stroke: color, fill: "" })
-                }
+                onPick={(color) => actions.setStyleLive(chosen.id, { color })}
+                onCommit={(color) => actions.setStyle(chosen.id, { color })}
               />
               <NumberRow
                 label="Line thickness"
-                value={Number(shape.strokeWidth) || 4}
+                value={Number(chosen.style?.strokeWidth) || 2}
                 min={1}
-                max={STROKE.max}
-                onLive={(strokeWidth) =>
-                  actions.setShape(chosen.id, { strokeWidth })
-                }
-                onCommit={(strokeWidth) =>
-                  actions.setShape(chosen.id, { strokeWidth })
-                }
+                max={4}
+                onLive={(strokeWidth) => actions.setStyleLive(chosen.id, { strokeWidth })}
+                onCommit={(strokeWidth) => actions.setStyle(chosen.id, { strokeWidth })}
+              />
+              <AmountRow
+                label="See-through"
+                value={opacityOf(chosen.style)}
+                min={OPACITY.min}
+                max={OPACITY.max}
+                step={0.05}
+                readout={`${Math.round(opacityOf(chosen.style) * 100)}%`}
+                onLive={(opacity) => actions.setStyleLive(chosen.id, { opacity })}
+                onCommit={(opacity) => actions.setStyle(chosen.id, { opacity })}
               />
             </>
           ) : (
             <>
-              <ColourRow
-                label="Fill colour"
-                value={shape.fill || ""}
-                fallback="#059669"
-                brandKit={brandKit}
-                onPick={(fill) => actions.setShape(chosen.id, { fill })}
-                onCommit={(fill) => actions.setShape(chosen.id, { fill })}
+              {/* Shape variant selector */}
+              <div className="flex gap-1 flex-wrap">
+                {Object.keys(SHAPE_VARIANTS).map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    aria-pressed={shape.type === type}
+                    onClick={() => actions.setShape(chosen.id, { type })}
+                    className={`rounded-[4px] border px-2 py-1 text-[11px] font-semibold ${
+                      shape.type === type
+                        ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB]"
+                        : "border-[#E5E7EB] text-[#374151] hover:bg-[#F9FAFB]"
+                    }`}
+                  >
+                    {SHAPE_VARIANTS[type].label}
+                  </button>
+                ))}
+              </div>
+
+              {isLine ? (
+                <>
+                  <ColourRow
+                    label="Line colour"
+                    value={shape.stroke || shape.fill || ""}
+                    fallback="#334155"
+                    brandKit={brandKit}
+                    onPick={(color) =>
+                      actions.setShape(chosen.id, { stroke: color, fill: "" })
+                    }
+                    onCommit={(color) =>
+                      actions.setShape(chosen.id, { stroke: color, fill: "" })
+                    }
+                  />
+                  <NumberRow
+                    label="Line thickness"
+                    value={Number(shape.strokeWidth) || 4}
+                    min={1}
+                    max={STROKE.max}
+                    onLive={(strokeWidth) =>
+                      actions.setShape(chosen.id, { strokeWidth })
+                    }
+                    onCommit={(strokeWidth) =>
+                      actions.setShape(chosen.id, { strokeWidth })
+                    }
+                  />
+                </>
+              ) : (
+                <>
+                  <ColourRow
+                    label="Fill colour"
+                    value={shape.fill || ""}
+                    fallback="#059669"
+                    brandKit={brandKit}
+                    onPick={(fill) => actions.setShape(chosen.id, { fill })}
+                    onCommit={(fill) => actions.setShape(chosen.id, { fill })}
+                  />
+                  <ColourRow
+                    label="Border colour"
+                    value={shape.stroke || ""}
+                    fallback="#0f172a"
+                    brandKit={brandKit}
+                    onPick={(stroke) => actions.setShape(chosen.id, { stroke })}
+                    onCommit={(stroke) => actions.setShape(chosen.id, { stroke })}
+                  />
+                  <NumberRow
+                    label="Border thickness"
+                    value={Number(shape.strokeWidth) || 0}
+                    min={STROKE.min}
+                    max={STROKE.max}
+                    onLive={(strokeWidth) =>
+                      actions.setShape(chosen.id, { strokeWidth })
+                    }
+                    onCommit={(strokeWidth) =>
+                      actions.setShape(chosen.id, { strokeWidth })
+                    }
+                  />
+                  {shape.type === "rect" || shape.type === "rounded-rect" ? (
+                    <AmountRow
+                      label="Rounded corners"
+                      value={Math.min(
+                        RADIUS.max,
+                        Math.max(RADIUS.min, Number(chosen.style?.radius ?? shape.radius) || 0),
+                      )}
+                      min={RADIUS.min}
+                      max={RADIUS.max}
+                      readout={Math.round(Number(chosen.style?.radius ?? shape.radius) || 0)}
+                      onLive={(radius) => {
+                        actions.setStyleLive(chosen.id, { radius });
+                        actions.setShape(chosen.id, { radius });
+                      }}
+                      onCommit={(radius) => {
+                        actions.setStyle(chosen.id, { radius });
+                        actions.setShape(chosen.id, { radius });
+                      }}
+                    />
+                  ) : null}
+                </>
+              )}
+
+              <AmountRow
+                label="See-through"
+                value={opacityOf(chosen.style)}
+                min={OPACITY.min}
+                max={OPACITY.max}
+                step={0.05}
+                readout={`${Math.round(opacityOf(chosen.style) * 100)}%`}
+                onLive={(opacity) => actions.setStyleLive(chosen.id, { opacity })}
+                onCommit={(opacity) => actions.setStyle(chosen.id, { opacity })}
               />
-              <ColourRow
-                label="Border colour"
-                value={shape.stroke || ""}
-                fallback="#0f172a"
-                brandKit={brandKit}
-                onPick={(stroke) => actions.setShape(chosen.id, { stroke })}
-                onCommit={(stroke) => actions.setShape(chosen.id, { stroke })}
-              />
-              <NumberRow
-                label="Border thickness"
-                value={Number(shape.strokeWidth) || 0}
-                min={STROKE.min}
-                max={STROKE.max}
-                onLive={(strokeWidth) =>
-                  actions.setShape(chosen.id, { strokeWidth })
-                }
-                onCommit={(strokeWidth) =>
-                  actions.setShape(chosen.id, { strokeWidth })
-                }
-              />
-              {shape.type === "rect" ? (
-                <AmountRow
-                  label="Rounded corners"
-                  value={Math.min(
-                    RADIUS.max,
-                    Math.max(RADIUS.min, Number(chosen.style?.radius) || 0),
-                  )}
-                  min={RADIUS.min}
-                  max={RADIUS.max}
-                  readout={Math.round(Number(chosen.style?.radius) || 0)}
-                  onLive={(radius) =>
-                    actions.setStyleLive(chosen.id, { radius })
-                  }
-                  onCommit={(radius) => actions.setStyle(chosen.id, { radius })}
-                />
-              ) : null}
             </>
           )}
-
-          <AmountRow
-            label="See-through"
-            value={opacityOf(chosen.style)}
-            min={OPACITY.min}
-            max={OPACITY.max}
-            step={0.05}
-            readout={`${Math.round(opacityOf(chosen.style) * 100)}%`}
-            onLive={(opacity) => actions.setStyleLive(chosen.id, { opacity })}
-            onCommit={(opacity) => actions.setStyle(chosen.id, { opacity })}
-          />
         </div>
       ) : null}
     </div>
   );
 }
 
-function LayersPanel({ items, selectedId, hiddenIds, actions }) {
-  const layers = layersOf(items);
+function LayersPanel({ items, selectedId, hiddenIds, actions, search = "" }) {
+  const q = search.trim().toLowerCase();
+  const layers = layersOf(items).filter(
+    (item) => !q || itemLabel(item).toLowerCase().includes(q)
+  );
   const [drag, setDrag] = useState(null);
 
   const rowUnder = (event) => {
@@ -901,6 +1356,7 @@ function LayersPanel({ items, selectedId, hiddenIds, actions }) {
             <li key={item.id}>
               <Row
                 item={item}
+                allItems={items}
                 selected={item.id === selectedId}
                 onSelect={actions.select}
                 inList
@@ -1311,6 +1767,7 @@ export function EditorPanel({
   hiddenIds,
   brandKit,
   page,
+  activeSection = "content",
   onPageChange,
   onResetPageSection,
   onApplyColorToken,
@@ -1318,6 +1775,12 @@ export function EditorPanel({
   actions,
   onClose,
 }) {
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    setSearch("");
+  }, [tab]);
+
   useEffect(() => {
     if (!tab) return undefined;
     const escape = (event) => {
@@ -1335,11 +1798,11 @@ export function EditorPanel({
     <div
       role="dialog"
       aria-label={title}
-      className="absolute bottom-0 left-0 top-0 z-[55] w-[300px] max-w-[86vw] overflow-y-auto border-r border-[#E5E7EB] bg-white p-4"
+      className="absolute bottom-0 left-0 top-0 z-[55] w-[320px] max-w-[86vw] flex flex-col border-r border-[#E5E7EB] bg-white shadow-md"
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-[13px] font-semibold text-[#111827]">{title}</h2>
+      <div className="flex items-center justify-between gap-2 border-b border-[#E5E7EB] p-3 pb-2.5 shrink-0">
+        <h2 className="text-sm font-semibold text-[#111827]">{title}</h2>
         <button
           type="button"
           aria-label="Close this panel"
@@ -1350,52 +1813,96 @@ export function EditorPanel({
         </button>
       </div>
 
-      {tab === "fields" ? (
-        <FieldsPanel items={items} selectedId={selectedId} actions={actions} />
-      ) : null}
-      {tab === "text" ? (
-        <TextPanel items={items} selectedId={selectedId} actions={actions} />
-      ) : null}
-      {tab === "images" ? (
-        <ImagesPanel
-          items={items}
-          selectedId={selectedId}
-          actions={actions}
-          brandKit={brandKit}
-        />
-      ) : null}
-      {tab === "shapes" ? (
-        <ShapesPanel
-          items={items}
-          selectedId={selectedId}
-          actions={actions}
-          brandKit={brandKit}
-        />
-      ) : null}
-      {tab === "layers" ? (
-        <LayersPanel
-          items={items}
-          selectedId={selectedId}
-          hiddenIds={hiddenIds}
-          actions={actions}
-        />
-      ) : null}
-      {tab === "page" ? (
-        <PagePanel
-          page={page}
-          brandKit={brandKit}
-          onPageChange={onPageChange}
-          onResetSection={onResetPageSection}
-        />
-      ) : null}
-      {tab === "brand" ? (
-        <BrandPanel
-          selectedItem={items.find((item) => item.id === selectedId) || null}
-          brandKit={brandKit}
-          onApplyColorToken={onApplyColorToken}
-          onApplyFontToken={onApplyFontToken}
-        />
-      ) : null}
+      <div className="p-3 pb-1 shrink-0">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-[#9CA3AF]" />
+          <input
+            type="text"
+            placeholder={`Search ${title.toLowerCase()}...`}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="h-8 w-full rounded-[6px] border border-[#E5E7EB] bg-[#F9FAFB] pl-8 pr-7 text-xs text-[#111827] placeholder-[#9CA3AF] focus:border-[#2563EB] focus:bg-white focus:outline-none"
+          />
+          {search ? (
+            <button
+              type="button"
+              aria-label="Clear search"
+              onClick={() => setSearch("")}
+              className="absolute right-2 top-2 text-[#9CA3AF] hover:text-[#111827]"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-3 pt-2">
+        {tab === "fields" ? (
+          <FieldsPanel items={items} selectedId={selectedId} actions={actions} search={search} />
+        ) : null}
+        {tab === "cardlists" ? (
+          <CardListsPanel
+            items={items}
+            selectedId={selectedId}
+            actions={actions}
+            activeSection={activeSection}
+            search={search}
+          />
+        ) : null}
+        {tab === "text" ? (
+          <TextPanel
+            items={items}
+            selectedId={selectedId}
+            actions={actions}
+            activeSection={activeSection}
+            search={search}
+          />
+        ) : null}
+        {tab === "images" ? (
+          <ImagesPanel
+            items={items}
+            selectedId={selectedId}
+            actions={actions}
+            brandKit={brandKit}
+            activeSection={activeSection}
+            search={search}
+          />
+        ) : null}
+        {tab === "shapes" ? (
+          <ShapesPanel
+            items={items}
+            selectedId={selectedId}
+            actions={actions}
+            brandKit={brandKit}
+            search={search}
+          />
+        ) : null}
+        {tab === "layers" ? (
+          <LayersPanel
+            items={items}
+            selectedId={selectedId}
+            hiddenIds={hiddenIds}
+            actions={actions}
+            search={search}
+          />
+        ) : null}
+        {tab === "page" ? (
+          <PagePanel
+            page={page}
+            brandKit={brandKit}
+            onPageChange={onPageChange}
+            onResetSection={onResetPageSection}
+          />
+        ) : null}
+        {tab === "brand" ? (
+          <BrandPanel
+            selectedItem={items.find((item) => item.id === selectedId) || null}
+            brandKit={brandKit}
+            onApplyColorToken={onApplyColorToken}
+            onApplyFontToken={onApplyFontToken}
+          />
+        ) : null}
+      </div>
     </div>
   );
 }

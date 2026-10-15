@@ -93,9 +93,28 @@ export function storedEditorVersion(template) {
     : LEGACY_EDITOR_VERSION;
 }
 
-/** Keeps a template document (items plus its history) near the size the database can hold. */
+export const TEMPLATE_DOC_TOO_BIG_MESSAGE =
+  'This template is too big to save. Remove a few items and try again.';
+
+/** Whether the design on its own is something the database can hold. History is not counted. */
 export function assertTemplateDocSize(candidate) {
-  if (jsonBytes(candidate) > TEMPLATE_DOC_MAX_BYTES) {
-    throw badRequest('This template is too big to save. Remove a few items and try again.');
+  if (jsonBytes({ ...candidate, versions: [] }) > TEMPLATE_DOC_MAX_BYTES) {
+    throw badRequest(TEMPLATE_DOC_TOO_BIG_MESSAGE);
   }
+}
+
+/**
+ * What is on the canvas is the thing being saved; the earlier states kept beside it are a
+ * convenience. The oldest fall off the back until the whole document fits, so the sentence
+ * above only ever reaches the user when the design itself cannot be stored.
+ *
+ * `candidate` is the document as it will be written, apart from its history.
+ */
+export function versionsThatFit(candidate, versions) {
+  const list = Array.isArray(versions) ? [...versions] : [];
+  assertTemplateDocSize(candidate);
+  while (list.length && jsonBytes({ ...candidate, versions: list }) > TEMPLATE_DOC_MAX_BYTES) {
+    list.shift();
+  }
+  return list;
 }

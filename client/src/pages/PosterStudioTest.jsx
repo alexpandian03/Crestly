@@ -33,6 +33,7 @@ import {
   buildElements,
 } from '../../../shared/designRecipes.js';
 import { iconForCategory } from '../../../shared/templateElements.js';
+import { TAMIL_FONT_FAMILIES } from '../../../shared/textScripts.js';
 
 /** Small inline marks so the dev page needs no uploaded assets. */
 const logoMark = (bg, fg, letter) =>
@@ -664,6 +665,16 @@ const ITEM_SAMPLE_SPARE = {
   imageUrl: '',
 };
 
+const ITEM_SAMPLE_TAMIL = {
+  title: 'நீர் மீட்பு விழா',
+  tagline: 'ஒவ்வொரு துளியும் முக்கியம் - இன்றே சேமிக்க தொடங்குங்கள்',
+  date: 'சனி 14 பிப்ரவரி 2026',
+  time: 'காலை 10 – மாலை 5',
+  venue: 'வடமாவட்ட கல்வி நிறுவனம், அரங்கம் B - Northbridge Institute, Hall B',
+  details: ['ஒன்பது மாவட்டங்களின் பள்ளிகள்', 'ஆசிரியர்களின் நீதிபதிகள்', 'குடும்பங்களுக்கு இலவசம்'],
+  imageUrl: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=900&q=80&auto=format&fit=crop',
+};
+
 /** Three renderings of the SAME placed items, so the word fitting is what changes. */
 const ITEM_SAMPLES = [
   {
@@ -679,8 +690,14 @@ const ITEM_SAMPLES = [
     content: ITEM_SAMPLE_LONG,
   },
   {
+    id: 'items-tamil',
+    label: '3 · The same items, Tamil and English words',
+    note: 'Tamil lines stand wider and hang lower: each box gives them the room they need and nothing is cut off',
+    content: ITEM_SAMPLE_TAMIL,
+  },
+  {
     id: 'items-spare',
-    label: '3 · No place, no photo',
+    label: '4 · No place, no photo',
     note: 'an empty place and an empty photo draw nothing at all - no blank label, no empty box, in the poster or the file',
     content: ITEM_SAMPLE_SPARE,
   },
@@ -750,6 +767,40 @@ const RECIPE_WORDS_SPARE = {
   },
 };
 
+const RECIPE_WORDS_TAMIL = {
+  title: 'நீர் மீட்பு விழா',
+  tagline: 'ஒவ்வொரு துளியும் முக்கியம் - இன்றே சேமிக்க தொடங்குங்கள்',
+  date: 'சனி 14 பிப்ரவரி 2026',
+  time: 'காலை 10 – மாலை 5',
+  venue: 'வடமாவட்ட கல்வி நிறுவனம், அரங்கம் B',
+  details: ['ஒன்பது மாவட்டங்களின் பள்ளிகள்', 'ஆசிரியர்களின் நீதிபதிகள்', 'குடும்பங்களுக்கு இலவச நுழைவு'],
+  imageUrl: 'https://images.unsplash.com/photo-1532094318353-a1e32f8b7d3c?w=900&q=80&auto=format&fit=crop',
+  extras: {
+    title_sub: 'பள்ளிகளுக்காக',
+    slogan_1: 'ஆர்வம் வரவேற்கப்படுகிறது',
+    slogan_2: 'உங்கள் கேள்விகளை கொண்டு வாருங்கள்',
+    cta_line: '1 பிப்ரவரிக்கு முன் உங்கள் குழுவை பதிவு செய்யுங்கள்',
+    cta_button: 'பதிவு செய்ய',
+  },
+};
+
+const RECIPE_WORDS_MIXED = {
+  title: 'Winter Science Fair - குளிர்கால அறிவியல் விழா',
+  tagline: 'Two days of projects - இரண்டு நாள் நிகழ்வு',
+  date: 'Saturday, 14 February - சனி 14 பிப்ரவரி 2026',
+  time: '10:00 – 17:00',
+  venue: 'Northbridge Institute, Hall B - வடமாவட்ட நிறுவனம்',
+  details: ['Nine districts - ஒன்பது மாவட்டங்கள்', 'Faculty judges', 'Free entry for families - இலவசம்'],
+  imageUrl: 'https://images.unsplash.com/photo-1532094318353-a1e32f8b7d3c?w=900&q=80&auto=format&fit=crop',
+  extras: {
+    title_sub: 'For schools - பள்ளிகளுக்காக',
+    slogan_1: 'Curiosity welcome',
+    slogan_2: 'ஆர்வம் வரவேற்கப்படுகிறது',
+    cta_line: 'Register before 1 February',
+    cta_button: 'Sign up',
+  },
+};
+
 const RECIPE_WORD_SETS = [
   {
     id: 'recipe-normal',
@@ -768,6 +819,18 @@ const RECIPE_WORD_SETS = [
     label: 'No place, no photo',
     note: 'the design is built without those boxes at all, so no empty label or frame is left behind',
     words: RECIPE_WORDS_SPARE,
+  },
+  {
+    id: 'recipe-tamil',
+    label: 'Tamil words',
+    note: 'Tamil stands wider than English and hangs lower: every box gives it that room, nothing is cut off',
+    words: RECIPE_WORDS_TAMIL,
+  },
+  {
+    id: 'recipe-mixed',
+    label: 'Tamil and English together',
+    note: 'one poster carrying both: the Tamil lines get their room, the English lines keep the look they were given',
+    words: RECIPE_WORDS_MIXED,
   },
 ];
 
@@ -1060,6 +1123,390 @@ const SAVED_POSTER_CONTENT = {
   },
 };
 
+const samplePhotoSvg = (bg, label) =>
+  'data:image/svg+xml;utf8,' +
+  encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300">` +
+      `<rect width="300" height="300" rx="12" fill="${bg}"/>` +
+      `<text x="150" y="160" font-family="Helvetica,Arial,sans-serif" font-size="28" font-weight="700" fill="#ffffff" text-anchor="middle">${label}</text>` +
+      `</svg>`
+  );
+
+// 1. Custom header and footer with tokens drawn with two brand kits
+const CUSTOM_SECTIONS_TEST_TEMPLATE = {
+  name: 'Custom Sections & Brand Tokens',
+  category: 'Event',
+  size: { width: 1080, height: 1350 },
+  editorVersion: 2,
+  sections: {
+    header: {
+      mode: 'custom',
+      height: 120,
+      background: { type: 'color', color: 'brand:secondary' },
+      elements: [
+        {
+          id: 'cs-hdr-logo',
+          kind: 'image',
+          src: 'brand:logo',
+          x: 60,
+          y: 25,
+          w: 70,
+          h: 70,
+          locked: true,
+        },
+        {
+          id: 'cs-hdr-org',
+          kind: 'text',
+          text: '{{brand.orgName}}',
+          x: 150,
+          y: 28,
+          w: 600,
+          h: 40,
+          style: {
+            size: 32,
+            weight: 700,
+            color: 'brand:text',
+            fontFamily: 'brand:heading',
+          },
+          locked: true,
+        },
+        {
+          id: 'cs-hdr-tag',
+          kind: 'text',
+          text: 'ANNUAL TECH SUMMIT 2026',
+          x: 150,
+          y: 72,
+          w: 600,
+          h: 26,
+          style: {
+            size: 16,
+            weight: 600,
+            color: 'brand:accent',
+            fontFamily: 'brand:body',
+            letterSpacing: 2,
+          },
+          locked: true,
+        },
+      ],
+    },
+    content: {
+      page: {
+        background: { mode: 'custom', type: 'color', color: '#090d16' },
+      },
+      elements: [
+        {
+          id: 'cs-cnt-title',
+          kind: 'text',
+          text: 'Next Generation AI Ecosystems',
+          x: 80,
+          y: 220,
+          w: 920,
+          h: 130,
+          style: {
+            size: 58,
+            weight: 800,
+            color: 'brand:primary',
+            fontFamily: 'brand:heading',
+            align: 'center',
+          },
+        },
+        {
+          id: 'cs-cnt-desc',
+          kind: 'text',
+          text: 'Connecting industry pioneers, researchers and architects shaping the decentralized future.',
+          x: 100,
+          y: 380,
+          w: 880,
+          h: 80,
+          style: {
+            size: 22,
+            weight: 400,
+            color: 'brand:text',
+            fontFamily: 'brand:body',
+            align: 'center',
+          },
+        },
+        {
+          id: 'cs-cnt-badge',
+          kind: 'shape',
+          shape: { type: 'rect', fill: 'brand:primary' },
+          style: { radius: 24 },
+          x: 390,
+          y: 500,
+          w: 300,
+          h: 60,
+        },
+        {
+          id: 'cs-cnt-btn',
+          kind: 'text',
+          text: 'REGISTER NOW',
+          x: 390,
+          y: 512,
+          w: 300,
+          h: 36,
+          style: {
+            size: 18,
+            weight: 700,
+            color: '#ffffff',
+            align: 'center',
+            letterSpacing: 1,
+          },
+        },
+      ],
+    },
+    footer: {
+      mode: 'custom',
+      height: 90,
+      background: { type: 'color', color: 'brand:secondary' },
+      elements: [
+        {
+          id: 'cs-ftr-rule',
+          kind: 'shape',
+          shape: { type: 'line', stroke: 'brand:primary', strokeWidth: 2 },
+          x: 40,
+          y: 1262,
+          w: 1000,
+          h: 2,
+          locked: true,
+        },
+        {
+          id: 'cs-ftr-text',
+          kind: 'text',
+          text: '{{brand.website}}   •   {{brand.phone}}   •   {{brand.email}}',
+          x: 50,
+          y: 1285,
+          w: 980,
+          h: 40,
+          style: {
+            size: 16,
+            weight: 500,
+            color: 'brand:text',
+            fontFamily: 'brand:body',
+            align: 'center',
+          },
+          locked: true,
+        },
+      ],
+    },
+  },
+};
+
+// 2. Template with 13 photos
+const THIRTEEN_PHOTOS_TEMPLATE = {
+  name: 'Showcase 13 Photos',
+  category: 'Event',
+  size: { width: 1080, height: 1350 },
+  editorVersion: 2,
+  sections: {
+    header: { mode: 'brand', height: 80 },
+    footer: { mode: 'brand', height: 70 },
+    content: {
+      page: { background: { mode: 'custom', type: 'color', color: '#0b1120' } },
+      elements: [
+        {
+          id: 'p13-title',
+          kind: 'text',
+          text: 'Community Gallery · 13 Photographs',
+          x: 60,
+          y: 110,
+          w: 960,
+          h: 40,
+          style: { size: 28, weight: 700, color: '#f8fafc', align: 'center' },
+        },
+        {
+          id: 'photo-1',
+          kind: 'image',
+          imageUrl: samplePhotoSvg('#3b82f6', 'Hero Photo #1'),
+          x: 60,
+          y: 165,
+          w: 960,
+          h: 290,
+          style: { radius: 14 },
+        },
+        ...Array.from({ length: 12 }, (_, i) => {
+          const col = i % 4;
+          const row = Math.floor(i / 4);
+          const colors = ['#059669', '#d97706', '#dc2626', '#7c3aed', '#0284c7', '#db2777', '#4f46e5', '#ea580c', '#0891b2', '#16a34a', '#9333ea', '#65a30d'];
+          return {
+            id: `photo-${i + 2}`,
+            kind: 'image',
+            imageUrl: samplePhotoSvg(colors[i % colors.length], `Pic #${i + 2}`),
+            x: 60 + col * (228 + 16),
+            y: 475 + row * (180 + 16),
+            w: 228,
+            h: 180,
+            style: { radius: 10 },
+          };
+        }),
+      ],
+    },
+  },
+};
+
+// 3. 3 card lists with 2, 3 and 5 entries
+const CARD_LISTS_TEST_TEMPLATE = {
+  name: 'Card Lists Showcase',
+  category: 'Event',
+  size: { width: 1080, height: 1350 },
+  editorVersion: 2,
+  sections: {
+    header: { mode: 'brand', height: 80 },
+    footer: { mode: 'brand', height: 70 },
+    content: {
+      page: { background: { mode: 'custom', type: 'color', color: '#0d131f' } },
+      elements: [
+        {
+          id: 'cl-hdr',
+          kind: 'text',
+          text: 'Tech Summit Programme',
+          x: 60,
+          y: 100,
+          w: 960,
+          h: 45,
+          style: { size: 32, weight: 800, color: '#f8fafc', align: 'center' },
+        },
+        {
+          id: 'cl-list-1',
+          kind: 'cardlist',
+          key: 'keynotes',
+          columns: 2,
+          gapX: 20,
+          gapY: 10,
+          x: 60,
+          y: 160,
+          w: 960,
+          h: 170,
+          align: 'center',
+          card: {
+            w: 470,
+            h: 150,
+            fields: [{ key: 'speaker', type: 'text' }, { key: 'role', type: 'text' }],
+            items: [
+              { id: 'c1-p', kind: 'shape', shape: { type: 'rect', fill: '#1e293b' }, style: { radius: 12 }, x: 0, y: 0, w: 470, h: 150 },
+              { id: 'c1-t', kind: 'text', text: 'KEYNOTE SPEAKER', x: 24, y: 20, w: 420, h: 22, style: { size: 12, weight: 700, color: '#38bdf8', letterSpacing: 2 } },
+              { id: 'c1-s', kind: 'text', fieldKey: 'speaker', text: '{{speaker}}', x: 24, y: 48, w: 420, h: 40, style: { size: 26, weight: 700, color: '#ffffff' } },
+              { id: 'c1-r', kind: 'text', fieldKey: 'role', text: '{{role}}', x: 24, y: 94, w: 420, h: 30, style: { size: 16, color: '#94a3b8' } },
+            ],
+          },
+        },
+        {
+          id: 'cl-list-2',
+          kind: 'cardlist',
+          key: 'tracks',
+          columns: 3,
+          gapX: 16,
+          gapY: 10,
+          x: 60,
+          y: 350,
+          w: 960,
+          h: 150,
+          align: 'center',
+          card: {
+            w: 309,
+            h: 130,
+            fields: [{ key: 'track', type: 'text' }, { key: 'desc', type: 'text' }],
+            items: [
+              { id: 'c2-p', kind: 'shape', shape: { type: 'rect', fill: '#1e293b' }, style: { radius: 10 }, x: 0, y: 0, w: 309, h: 130 },
+              { id: 'c2-tr', kind: 'text', fieldKey: 'track', text: '{{track}}', x: 18, y: 18, w: 270, h: 24, style: { size: 14, weight: 700, color: '#10b981' } },
+              { id: 'c2-d', kind: 'text', fieldKey: 'desc', text: '{{desc}}', x: 18, y: 50, w: 270, h: 56, style: { size: 16, weight: 600, color: '#f1f5f9' } },
+            ],
+          },
+        },
+        {
+          id: 'cl-list-3',
+          kind: 'cardlist',
+          key: 'sessions',
+          columns: 3,
+          gapX: 16,
+          gapY: 14,
+          x: 60,
+          y: 520,
+          w: 960,
+          h: 300,
+          align: 'left',
+          card: {
+            w: 309,
+            h: 110,
+            fields: [{ key: 'time', type: 'text' }, { key: 'title', type: 'text' }],
+            items: [
+              { id: 'c3-p', kind: 'shape', shape: { type: 'rect', fill: '#1e293b' }, style: { radius: 10 }, x: 0, y: 0, w: 309, h: 110 },
+              { id: 'c3-tm', kind: 'text', fieldKey: 'time', text: '{{time}}', x: 16, y: 16, w: 277, h: 20, style: { size: 12, weight: 700, color: '#f59e0b' } },
+              { id: 'c3-ti', kind: 'text', fieldKey: 'title', text: '{{title}}', x: 16, y: 42, w: 277, h: 50, style: { size: 16, weight: 600, color: '#ffffff' } },
+            ],
+          },
+        },
+      ],
+    },
+  },
+};
+
+const CARD_LISTS_TEST_CONTENT = {
+  title: 'Tech Summit Programme',
+  lists: {
+    keynotes: [
+      { speaker: 'Dr. Evelyn Vance', role: 'VP of Autonomous Systems' },
+      { speaker: 'Marcus Sterling', role: 'Head of AI Research' },
+    ],
+    tracks: [
+      { track: 'TRACK 1', desc: 'Neural Architecture Search' },
+      { track: 'TRACK 2', desc: 'Realtime Agent Systems' },
+      { track: 'TRACK 3', desc: 'Secure Model Deployments' },
+    ],
+    sessions: [
+      { time: '09:00 AM', title: 'Breakfast & Registration' },
+      { time: '10:30 AM', title: 'Opening Remarks' },
+      { time: '01:00 PM', title: 'Panel: Frontier Models' },
+      { time: '02:30 PM', title: 'Technical Deep Dives' },
+      { time: '04:00 PM', title: 'Closing Networking Gala' },
+    ],
+  },
+};
+
+// 4. Rotated and masked items
+const ROTATED_AND_MASKED_TEMPLATE = {
+  name: 'Rotated & Masked Showcase',
+  category: 'Event',
+  size: { width: 1080, height: 1350 },
+  editorVersion: 2,
+  sections: {
+    header: { mode: 'brand', height: 80 },
+    footer: { mode: 'brand', height: 70 },
+    content: {
+      page: { background: { mode: 'custom', type: 'color', color: '#080c14' } },
+      elements: [
+        {
+          id: 'rm-hdr',
+          kind: 'text',
+          text: 'Masks & Rotations Showcase',
+          x: 60,
+          y: 100,
+          w: 960,
+          h: 40,
+          style: { size: 30, weight: 800, color: '#f8fafc', align: 'center' },
+        },
+        { id: 'sh-tri', kind: 'shape', shape: { type: 'triangle', fill: '#3b82f6', stroke: '#93c5fd', strokeWidth: 2 }, x: 80, y: 160, w: 140, h: 140 },
+        { id: 'sh-dia', kind: 'shape', shape: { type: 'diamond', fill: '#ec4899', stroke: '#fbcfe8', strokeWidth: 2 }, x: 270, y: 160, w: 140, h: 140 },
+        { id: 'sh-star', kind: 'shape', shape: { type: 'star', fill: '#eab308', stroke: '#fef08a', strokeWidth: 2 }, x: 460, y: 160, w: 140, h: 140 },
+        { id: 'sh-hex', kind: 'shape', shape: { type: 'hexagon', fill: '#10b981', stroke: '#a7f3d0', strokeWidth: 2 }, x: 650, y: 160, w: 140, h: 140 },
+        { id: 'sh-circ', kind: 'shape', shape: { type: 'circle', fill: '#8b5cf6', stroke: '#ddd6fe', strokeWidth: 2 }, x: 840, y: 160, w: 140, h: 140 },
+        { id: 'm-circ', kind: 'image', mask: 'circle', imageUrl: samplePhotoSvg('#1d4ed8', 'Circle'), x: 70, y: 340, w: 180, h: 180 },
+        { id: 'm-tri', kind: 'image', mask: 'triangle', imageUrl: samplePhotoSvg('#059669', 'Triangle'), x: 310, y: 340, w: 180, h: 180 },
+        { id: 'm-hex', kind: 'image', mask: 'hexagon', imageUrl: samplePhotoSvg('#d97706', 'Hexagon'), x: 550, y: 340, w: 180, h: 180 },
+        { id: 'm-star', kind: 'image', mask: 'star', imageUrl: samplePhotoSvg('#dc2626', 'Star'), x: 790, y: 340, w: 180, h: 180 },
+        { id: 'm-dia', kind: 'image', mask: 'diamond', imageUrl: samplePhotoSvg('#7c3aed', 'Diamond'), x: 190, y: 560, w: 180, h: 180 },
+        { id: 'm-blob', kind: 'image', mask: 'blob', imageUrl: samplePhotoSvg('#db2777', 'Blob'), x: 430, y: 560, w: 180, h: 180 },
+        { id: 'm-round', kind: 'image', mask: 'rounded', style: { radius: 24 }, imageUrl: samplePhotoSvg('#0891b2', 'Rounded'), x: 670, y: 560, w: 180, h: 180 },
+        { id: 'rot-plate-1', kind: 'shape', shape: { type: 'rect', fill: '#ef4444' }, style: { radius: 8 }, rotation: -15, x: 80, y: 800, w: 260, h: 70 },
+        { id: 'rot-txt-1', kind: 'text', text: 'LIMITED PASS -15°', rotation: -15, x: 80, y: 820, w: 260, h: 30, style: { size: 18, weight: 800, color: '#ffffff', align: 'center', letterSpacing: 1 } },
+        { id: 'rot-plate-2', kind: 'shape', shape: { type: 'rect', fill: '#f59e0b' }, style: { radius: 8 }, rotation: 20, x: 410, y: 800, w: 260, h: 70 },
+        { id: 'rot-txt-2', kind: 'text', text: 'SPECIAL GUEST +20°', rotation: 20, x: 410, y: 820, w: 260, h: 30, style: { size: 18, weight: 800, color: '#0b0f17', align: 'center', letterSpacing: 1 } },
+        { id: 'rot-plate-3', kind: 'shape', shape: { type: 'rect', fill: '#10b981' }, style: { radius: 8 }, rotation: -45, x: 740, y: 780, w: 220, h: 70 },
+        { id: 'rot-txt-3', kind: 'text', text: 'VIP -45°', rotation: -45, x: 740, y: 800, w: 220, h: 30, style: { size: 18, weight: 800, color: '#ffffff', align: 'center', letterSpacing: 1 } },
+      ],
+    },
+  },
+};
+
 /** The numbers the renderer actually paints, in the words this page reports. */
 function layerReadout(kit, tpl) {
   const brand = resolvePosterBrand(kit, tpl);
@@ -1122,6 +1569,7 @@ const GOOGLE_FONTS_HEADING = [
   'Playfair Display',
   'Plus Jakarta Sans',
   'Cinzel',
+  ...TAMIL_FONT_FAMILIES,
 ];
 
 const GOOGLE_FONTS_BODY = [
@@ -1131,6 +1579,7 @@ const GOOGLE_FONTS_BODY = [
   'Lato',
   'DM Sans',
   'Nunito',
+  ...TAMIL_FONT_FAMILIES,
 ];
 
 const FORMAT_PRESETS = [
@@ -1671,6 +2120,92 @@ export default function PosterStudioTest() {
             >
               Use above for export
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Renderer V2: Sections, Card Lists, Masks, Rotations & 13 Photos ── */}
+      <div className="pt-10 border-t border-slate-800 space-y-6">
+        <div>
+          <h2 className="text-xl font-bold text-white">Renderer V2: Sections, Card Lists, Masks, Rotations &amp; 13 Photos</h2>
+          <p className="text-slate-400 text-sm mt-1">
+            Showcases: (1 &amp; 2) Custom header &amp; footer with brand tokens drawn with two brand kits; (3) Template with 13 photo slots; (4) 3 Card lists with 2, 3 and 5 entries (last row centered); (5) Rotated and masked items.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider">
+              1 · Custom Header &amp; Footer (Professional Brand)
+            </p>
+            <PosterPreview
+              brandKit={SAMPLE_BRANDS[0].kit}
+              template={CUSTOM_SECTIONS_TEST_TEMPLATE}
+              content={{ title: 'Next Generation AI Ecosystems' }}
+              showZoneBorders={showZoneBorders}
+            />
+            <p className="text-[10px] font-mono text-slate-400">
+              Custom header &amp; footer with brand tokens (logo, Northbridge Capital orgName, website/phone/email) drawn with Professional brand kit.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider">
+              2 · Custom Header &amp; Footer (Bold Brand)
+            </p>
+            <PosterPreview
+              brandKit={SAMPLE_BRANDS[1].kit}
+              template={CUSTOM_SECTIONS_TEST_TEMPLATE}
+              content={{ title: 'Next Generation AI Ecosystems' }}
+              showZoneBorders={showZoneBorders}
+            />
+            <p className="text-[10px] font-mono text-slate-400">
+              Same custom header &amp; footer template with brand tokens drawn with Bold brand kit (Ironforge Fitness, orange accent, Cinzel font).
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider">
+              3 · Template with 13 Photos
+            </p>
+            <PosterPreview
+              brandKit={SAMPLE_BRANDS[0].kit}
+              template={THIRTEEN_PHOTOS_TEMPLATE}
+              content={{ title: 'Community Gallery' }}
+              showZoneBorders={showZoneBorders}
+            />
+            <p className="text-[10px] font-mono text-slate-400">
+              Hero photograph + 12 grid photographs arranged across canvas. 13 photo slots render simultaneously.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider">
+              4 · 3 Card Lists (2, 3 and 5 Entries)
+            </p>
+            <PosterPreview
+              brandKit={SAMPLE_BRANDS[0].kit}
+              template={CARD_LISTS_TEST_TEMPLATE}
+              content={CARD_LISTS_TEST_CONTENT}
+              showZoneBorders={showZoneBorders}
+            />
+            <p className="text-[10px] font-mono text-slate-400">
+              List 1 (2 keynotes), List 2 (3 tracks), and List 3 (5 breakout sessions with the last 2-card row centered in a 3-column grid).
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider">
+              5 · Rotated &amp; Masked Items
+            </p>
+            <PosterPreview
+              brandKit={SAMPLE_BRANDS[0].kit}
+              template={ROTATED_AND_MASKED_TEMPLATE}
+              content={{ title: 'Masks & Rotations Showcase' }}
+              showZoneBorders={showZoneBorders}
+            />
+            <p className="text-[10px] font-mono text-slate-400">
+              Shapes (triangle, diamond, star, hexagon, circle), Masks (circle, triangle, hexagon, star, diamond, blob, rounded), and Rotations (-15°, +20°, -45°).
+            </p>
           </div>
         </div>
       </div>

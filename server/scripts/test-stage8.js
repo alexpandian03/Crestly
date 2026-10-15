@@ -9,6 +9,7 @@ import Client from '../models/Client.model.js';
 import BrandKit from '../models/BrandKit.model.js';
 import Template, { getDefaultTemplateData } from '../models/Template.model.js';
 import Poster, { POSTER_MAX_VERSIONS } from '../models/Poster.model.js';
+import Asset from '../models/Asset.model.js';
 import { generateToken } from '../services/auth.service.js';
 import storageService from '../services/storage.js';
 import { DESIGN_MAX_BYTES } from '../services/poster/design.js';
@@ -48,6 +49,7 @@ const created = {
   brandKitIds: [],
   posterIds: [],
   thumbnailPublicIds: [],
+  assetIds: [],
 };
 let server;
 let baseUrl;
@@ -131,6 +133,7 @@ async function cleanup() {
     await storageService.deleteAsset(publicId).catch(() => {});
   }
   await Poster.deleteMany({ _id: { $in: created.posterIds } }).catch(() => {});
+  await Asset.deleteMany({ _id: { $in: created.assetIds } }).catch(() => {});
   await Template.deleteMany({ _id: { $in: created.templateIds } }).catch(() => {});
   await BrandKit.deleteMany({ _id: { $in: created.brandKitIds } }).catch(() => {});
   await User.deleteMany({ _id: { $in: created.userIds } }).catch(() => {});
@@ -440,6 +443,27 @@ async function run() {
 
   const adminDelete = await request(`/api/posters/${longPoster._id}`, { method: 'DELETE', token: admin.token });
   assert(adminDelete.status === 200, 'clientadmin can delete any poster of the client');
+
+  // Deleting a poster does not delete shared assets
+  const sharedAsset = await Asset.create({
+    clientId: clientA._id,
+    url: OK_IMAGE,
+    name: `Shared Asset ${runId}`,
+    createdBy: owner.user._id,
+    createdAt: new Date(),
+  });
+  created.assetIds.push(sharedAsset._id);
+
+  const posterWithShared = await savePoster(
+    owner,
+    templateA._id,
+    `with shared asset ${runId}`,
+    validContent({ imageUrl: OK_IMAGE })
+  );
+  const deleteWithShared = await request(`/api/posters/${posterWithShared._id}`, { method: 'DELETE', token: owner.token });
+  assert(deleteWithShared.status === 200, 'poster with shared asset deleted');
+  const sharedAssetCheck = await Asset.findById(sharedAsset._id);
+  assert(Boolean(sharedAssetCheck) && !sharedAssetCheck.isDeleted, 'deleting a poster does not delete shared assets');
 
   // 17. Thumbnail upload
   const notAnImage = await uploadThumbnail(poster._id, owner.token, {

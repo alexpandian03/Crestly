@@ -1,9 +1,11 @@
-import { designsFor, recipeIds, RECIPE_VARIANTS } from '../../../../shared/designRecipes.js';
-import { iconForWords, isSamplePlaceholder } from '../../../../shared/templateElements.js';
+import { designsFor, recipeIds, RECIPE_VARIANTS, relativeLuminance, contrastRatio } from '../../../../shared/designRecipes.js';
+import { iconForWords, isSamplePlaceholder, contentArea, resolveColorToken } from '../../../../shared/templateElements.js';
+import { eventTypeById, isValidEventType, guessEventType } from '../../../../shared/eventTypes.js';
 import {
   matchCategoryFromText,
   preferredArchetypesFor,
   sanitizeAndTruncateDesign,
+  sanitizeString,
   selectArchetypeAndVariant,
   stripInstructionWords,
   trimToWords,
@@ -134,6 +136,17 @@ export function extractVenue(text) {
     return '';
   }
 
+  // Tamil venue detection
+  if (/[\u0B80-\u0BFF]/.test(t)) {
+    const tamilPlaces = ['மண்டபம்', 'அரங்கம்', 'மைதானம்', 'வளாகம்', 'திடல்', 'பூங்கா', 'நிலையம்', 'நகர்', 'சென்னை', 'மதுரை', 'கோவை', 'திருச்சி', 'சேலம்'];
+    const clauses = t.split(/[\n,;.]/).map((c) => c.trim()).filter(Boolean);
+    for (const c of clauses) {
+      if (tamilPlaces.some((p) => c.includes(p))) {
+        return c;
+      }
+    }
+  }
+
   // 1. Look for "at <place>" or "in <place>" or "venue: <place>" first
   const atIn = t.match(/\b(?:at|in|venue:?)\s+([A-Za-z0-9][A-Za-z0-9\s,'-]{1,45}?)(?:,\s*|\.\s*|\s+(?:on|from|with|including|for)\b|$)/i);
   if (atIn) {
@@ -149,7 +162,7 @@ export function extractVenue(text) {
     'community center', 'community centre', 'community grounds',
     'school ground', 'college ground', 'town square', 'city center', 'city centre',
     'main stadium', 'campus auditorium', 'auditorium', 'grand ballroom',
-    'green valley park', 'central park', 'sports complex', 'sports ground'
+    'green valley park', 'central park', 'sports complex', 'sports ground', 'park'
   ];
   for (const place of knownPlaces) {
     const rx = new RegExp(`\\b([A-Za-z0-9'\\s]{0,25}?\\b${place})\\b`, 'i');
@@ -364,6 +377,27 @@ function defaultKeywords(category, sampleKeywords) {
   }
 }
 
+export function extractKeywordsFromText(text, category, sampleKeywords) {
+  if (sampleKeywords) return trimToWords(sampleKeywords, 4);
+  const t = String(text || '').trim();
+  const stopWords = new Set([
+    'a', 'an', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from',
+    'up', 'about', 'into', 'over', 'after', 'beneath', 'under', 'above', 'please', 'include', 'add',
+    'make', 'create', 'featuring', 'open', 'all', 'join', 'us', 'come', 'celebrate',
+    'am', 'pm', 'date', 'time', 'venue', 'location', 'free', 'admission', 'ticket', 'registration'
+  ]);
+  const words = t
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !stopWords.has(w) && !/^\d+$/.test(w));
+
+  if (words.length >= 2) {
+    return words.slice(0, 4).join(' ');
+  }
+  return defaultKeywords(category, sampleKeywords);
+}
+
 /** Deterministic by keyword: the same description always gives the same design and words. */
 function designAnswer({ text, date, time, venue, avoidRecipeIds, variant, instruction }) {
   const lower = text.toLowerCase();
@@ -379,7 +413,7 @@ function designAnswer({ text, date, time, venue, avoidRecipeIds, variant, instru
   let archetype = selection.archetype;
   const forcedVariant = selection.variant;
 
-  const wantsPhoto = lower.includes('sport') || lower.includes('fest') || lower.includes('pongal') || lower.includes('cultural') || lower.includes('blood') || lower.includes('diwali') || Boolean(sample?.imageQuery);
+  const wantsPhoto = lower.includes('sport') || lower.includes('fest') || lower.includes('pongal') || lower.includes('cultural') || lower.includes('blood') || lower.includes('diwali') || lower.includes('market') || lower.includes('food') || lower.includes('music') || lower.includes('concert') || lower.includes('bakes') || lower.includes('bakery') || lower.includes('party') || lower.includes('hackathon') || lower.includes('exhibition') || lower.includes('dance') || Boolean(sample?.imageQuery);
   const avoids = (Array.isArray(avoidRecipeIds) ? avoidRecipeIds : []).map((id) => String(id).toLowerCase());
   if (wantsPhoto && !avoids.includes('photo-hero') && !instruction) {
     archetype = 'photo-hero';
@@ -390,11 +424,13 @@ function designAnswer({ text, date, time, venue, avoidRecipeIds, variant, instru
   const cta = extractCta(text);
 
   let title = '';
-  if (sample?.title?.main) {
+  const headline = firstClauseOf(text);
+  if (headline && headline.length >= 4 && !isSamplePlaceholder(headline)) {
+    title = headline;
+  } else if (sample?.title?.main) {
     title = sample.title.main;
   } else {
-    const headline = firstClauseOf(text);
-    title = headline.length > 5 ? headline : 'Featured Community Event';
+    title = 'Featured Community Event';
   }
 
   const kicker = sample?.title?.sub
@@ -406,7 +442,7 @@ function designAnswer({ text, date, time, venue, avoidRecipeIds, variant, instru
     : extractSubtitle(text, title, category, sample);
 
   const bullets = extractBullets(text, sample?.bullets || ['Everyone is welcome to join']);
-  const photoKeywords = defaultKeywords(category, sample?.imageQuery);
+  const photoKeywords = extractKeywordsFromText(text, category, sample?.imageQuery);
 
   const iconWords = [words, title, photoKeywords].filter(Boolean).join(' ');
   const icon = iconForWords(iconWords, category);
@@ -436,6 +472,111 @@ function designAnswer({ text, date, time, venue, avoidRecipeIds, variant, instru
   });
 }
 
+
+/**
+ * Procedural mock generator for variants=3.
+ * Returns 3 different text versions (different kicker, subtitle, bullets, and CTA, same facts).
+ * Strictly preserves Tamil language and never invents date, time, venue, or price.
+ */
+export function generateMockVariants({ text = '', date = '', time = '', venue = '', instruction = '' } = {}) {
+  const isTamil = /[\u0B80-\u0BFF]/.test(text);
+  const clauses = text
+    .split(/[\n;.]|(?:\s*[-–—]\s*)/)
+    .map((c) => c.trim())
+    .filter(Boolean);
+
+  let mainTitle = '';
+  if (isTamil) {
+    const tamilClause = clauses.find((c) => /[\u0B80-\u0BFF]/.test(c) && c.length >= 3);
+    mainTitle = tamilClause || clauses[0] || 'சிறப்பு நிகழ்வு';
+  } else {
+    const first = firstClauseOf(text);
+    mainTitle = first.length > 5 ? first : 'Community Event';
+  }
+
+  const commonDate = date || '';
+  const commonTime = time || '';
+  const commonVenue = venue || 'Venue to be announced';
+
+  if (isTamil) {
+    return {
+      variants: [
+        {
+          kicker: 'சிறப்பு நிகழ்வு',
+          title: mainTitle,
+          subtitle: 'அனைவரும் வருகை தந்து சிறப்பிக்க வேண்டுகிறோம்',
+          bullets: ['இலவச அனுமதி', 'முன்பதிவு அவசியம்', 'சிறப்பு ஏற்பாடுகள் உண்டு'],
+          date: commonDate,
+          time: commonTime,
+          venue: commonVenue,
+          cta: 'அனைவரும் வருக',
+          photoKeywords: 'community celebration event',
+        },
+        {
+          kicker: 'முக்கிய அறிவிப்பு',
+          title: mainTitle,
+          subtitle: 'நம் சமூகத்தின் பெருமைமிகு கொண்டாட்டம்',
+          bullets: ['அனைத்து வயதினருக்கும் அனுமதி', 'நேரலை மற்றும் சிறப்பு நிகழ்வுகள்', 'உடனடி பதிவு'],
+          date: commonDate,
+          time: commonTime,
+          venue: commonVenue,
+          cta: 'இன்றே பதியுங்கள்',
+          photoKeywords: 'community celebration event',
+        },
+        {
+          kicker: 'அன்புடன் அழைக்கிறோம்',
+          title: mainTitle,
+          subtitle: 'ஒன்றிணைவோம் மகிழ்வோம் சமூகமாய் வாழ்வோம்',
+          bullets: ['சிறப்பு விருந்தினர்கள் பங்கேற்பு', 'சான்றிதழ் வழங்கப்படும்', 'உணவு வசதி செய்யப்பட்டுள்ளது'],
+          date: commonDate,
+          time: commonTime,
+          venue: commonVenue,
+          cta: 'பதிவு செய்ய',
+          photoKeywords: 'community celebration event',
+        },
+      ],
+    };
+  }
+
+  return {
+    variants: [
+      {
+        kicker: 'Special Event',
+        title: mainTitle,
+        subtitle: 'Join us for an inspiring gathering and celebration',
+        bullets: ['Registration open to everyone', 'Special guest presentations', 'Refreshments provided'],
+        date: commonDate,
+        time: commonTime,
+        venue: commonVenue,
+        cta: 'Open to all',
+        photoKeywords: 'event celebration community',
+      },
+      {
+        kicker: 'Community Showcase',
+        title: mainTitle,
+        subtitle: 'Experience extraordinary moments together with us',
+        bullets: ['Interactive sessions and activities', 'Connect with community leaders', 'Certificates awarded'],
+        date: commonDate,
+        time: commonTime,
+        venue: commonVenue,
+        cta: 'Register today',
+        photoKeywords: 'event people meeting',
+      },
+      {
+        kicker: 'Official Invitation',
+        title: mainTitle,
+        subtitle: 'Mark your calendar for this exclusive gathering',
+        bullets: ['All age groups welcome', 'Early arrivals get priority seating', 'Door prizes and giveaways'],
+        date: commonDate,
+        time: commonTime,
+        venue: commonVenue,
+        cta: 'Save your spot',
+        photoKeywords: 'gathering conference celebration',
+      },
+    ],
+  };
+}
+
 export async function generateWithMock({
   prompt,
   brandKit,
@@ -445,6 +586,9 @@ export async function generateWithMock({
   mode = 'content',
   avoidRecipeIds = [],
   variant = null,
+  eventType = null,
+  contentArea = null,
+  variants = 1,
 }) {
   const text = (prompt || '').trim();
 
@@ -478,9 +622,64 @@ export async function generateWithMock({
     venue = 'Venue to be announced';
   }
 
+  // 3a. Mode "variants": 3 variants in ONE call
+  if (mode === 'variants' || variants === 3) {
+    return generateMockVariants({ text, date, time, venue, instruction });
+  }
+
   // 3b. Mode "ai": one ready design, written from the same extracted facts.
   if (mode === 'design') {
     return designAnswer({ text, date, time, venue, avoidRecipeIds, variant, instruction });
+  }
+
+  // 3c. Mode "fill": AI Fill returns JSON ONLY for requested variable texts.
+  if (mode === 'fill') {
+    const slots = Array.isArray(variables) ? variables.filter((s) => s?.key) : [];
+    const fillResult = {};
+    const cleanVenue = venue === 'Venue to be announced' ? '' : venue;
+
+    for (const slot of slots) {
+      const key = slot.key;
+      const k = key.toLowerCase();
+      const lbl = (slot.label || '').toLowerCase();
+      const max = Number(slot.maxLength) || 80;
+
+      let val = '';
+      if (k.includes('date') || lbl.includes('date')) {
+        val = date;
+      } else if (k.includes('time') || lbl.includes('time') || lbl.includes('hour')) {
+        val = time;
+      } else if (k.includes('venue') || k.includes('place') || k.includes('location') || lbl.includes('venue') || lbl.includes('location')) {
+        val = cleanVenue;
+      } else if (k.includes('kicker') || lbl.includes('kicker') || lbl.includes('category')) {
+        val = extractKicker(text, '', matchCategoryFromText(text) || 'general', null);
+      } else if (k.includes('title') || k.includes('headline') || lbl.includes('headline') || lbl.includes('title')) {
+        if (k.includes('sub') || lbl.includes('sub')) {
+          val = '';
+        } else {
+          const firstClause = firstClauseOf(text);
+          val = firstClause.length > 3 ? firstClause : (text.slice(0, 40) || 'Event');
+        }
+      } else if (k.includes('subtitle') || lbl.includes('subtitle') || k.includes('tagline') || lbl.includes('tagline')) {
+        val = extractSubtitle(text, '', matchCategoryFromText(text) || 'general', null);
+      } else if (k.includes('cta') || lbl.includes('call to action') || lbl.includes('action')) {
+        val = extractCta(text)?.line || '';
+      } else if (k.includes('button') || lbl.includes('button')) {
+        val = extractCta(text)?.button || '';
+      } else if (k.includes('sponsor') || lbl.includes('sponsor')) {
+        const sm = text.match(/\b(?:sponsor(?:ed by)?|partner(?:ed by)?)\s+([A-Za-z0-9\s,'&-]+?)(?:,\s*|\.\s*|\s+(?:on|at)\b|$)/i);
+        val = sm ? sm[1].trim() : '';
+      } else if (k.includes('hashtag') || lbl.includes('hashtag')) {
+        const hm = text.match(/#([A-Za-z0-9_]+)/);
+        val = hm ? hm[0] : '';
+      } else {
+        const km = text.match(new RegExp(`\\b${key}:?\\s+([^,\\n.]+)`, 'i'));
+        val = km ? km[1].trim() : '';
+      }
+
+      fillResult[key] = sanitizeString(val).slice(0, max);
+    }
+    return fillResult;
   }
 
   // 4. Extract or derive Title

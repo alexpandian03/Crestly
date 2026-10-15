@@ -17,6 +17,8 @@ export default function DesignChooser({
   selectedTemplateId,
   onSelectTemplate,
   brandKit,
+  /** Current event type id — filters the template list */
+  eventType,
 }) {
   const [category, setCategory] = useState("All");
 
@@ -25,20 +27,37 @@ export default function DesignChooser({
     [modes],
   );
 
+  // Filter by event type first: [] / missing means "all types".
+  const typeFiltered = useMemo(() => {
+    if (!eventType || eventType === "general") return templates;
+    return templates.filter((t) => {
+      const tags = t.eventTypes;
+      if (!Array.isArray(tags) || tags.length === 0) return true; // applies to all
+      return tags.includes(eventType);
+    });
+  }, [templates, eventType]);
+
   const categories = useMemo(() => {
     const set = new Set();
-    templates.forEach((t) => {
+    typeFiltered.forEach((t) => {
       if (t.category) set.add(t.category);
     });
     return set.size > 0 ? ["All", ...Array.from(set)] : ["All"];
-  }, [templates]);
+  }, [typeFiltered]);
+
+  // Reset category when event type changes and the current category disappears
+  React.useEffect(() => {
+    if (category !== "All" && !categories.includes(category)) {
+      setCategory("All");
+    }
+  }, [categories, category]);
 
   const shown = useMemo(() => {
-    if (category === "All") return templates;
-    return templates.filter(
+    if (category === "All") return typeFiltered;
+    return typeFiltered.filter(
       (t) => (t.category || "General").toLowerCase() === category.toLowerCase(),
     );
-  }, [templates, category]);
+  }, [typeFiltered, category]);
 
   return (
     <div className="space-y-2.5">
@@ -53,7 +72,9 @@ export default function DesignChooser({
         className={
           cards.length === 1
             ? "space-y-2"
-            : "grid grid-cols-1 sm:grid-cols-2 gap-2.5"
+            : cards.length === 2
+            ? "grid grid-cols-1 sm:grid-cols-2 gap-2.5"
+            : "grid grid-cols-1 sm:grid-cols-3 gap-2.5"
         }
       >
         {cards.map((card) => {

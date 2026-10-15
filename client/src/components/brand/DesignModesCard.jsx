@@ -24,20 +24,24 @@ export default function DesignModesCard() {
   const { activeClientId } = useAuth();
   const [modes, setModes] = useState(null);
   const [saved, setSaved] = useState(null);
+  const [organization, setOrganization] = useState(activeClientId);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!activeClientId) return undefined;
     let cancelled = false;
     (async () => {
       setLoading(true);
       setError("");
       try {
-        const res = await api.get(`/clients/${activeClientId}`);
-        const next = designModesOf(res.data?.data?.client);
+        /* An administrator of one organization never picks it - it is already their own - so
+           asking for "the organization of this page" is what leaves the card waiting forever. */
+        const res = await api.get(activeClientId ? `/clients/${activeClientId}` : "/clients/me");
+        const client = res.data?.data?.client;
+        const next = designModesOf(client);
         if (cancelled) return;
+        setOrganization(client?._id || activeClientId);
         setModes(next);
         setSaved(next);
       } catch (err) {
@@ -72,11 +76,15 @@ export default function DesignModesCard() {
       setError(BOTH_OFF_MESSAGE);
       return;
     }
+    if (!organization) {
+      setError("We could not work out which organization this is. Please reload this page.");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
       const res = await api.patch(
-        `/clients/${activeClientId}`,
+        `/clients/${organization}`,
         designModesPayload(modes),
       );
       const next = designModesOf(res.data?.data?.client);

@@ -6,21 +6,31 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   AlertCircle,
+  AlertTriangle,
   ArrowLeft,
   CheckCircle2,
+  ChevronDown,
+  Cloud,
+  Eye,
+  Grid,
   History as HistoryIcon,
   Keyboard,
   Loader2,
+  Maximize2,
+  Minimize2,
+  Minus,
   Monitor,
-  Redo2,
+  Plus,
+  RotateCcw,
   Save,
-  Undo2,
+  Sliders,
 } from "lucide-react";
 import api from "../services/api";
+import { friendlyError } from "../utils/brandImage";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
@@ -30,19 +40,49 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog";
+import { Label } from "../components/ui/label";
 import TemplatePreview from "../components/TemplatePreview";
 import EditorStage from "../components/editor/EditorStage";
 import EditorRail, { EditorPanel } from "../components/editor/EditorRail";
-import ItemToolbar from "../components/editor/ItemToolbar";
+import ContextualToolbar from "../components/editor/ContextualToolbar";
 import VersionDrawer from "../components/builder/VersionDrawer";
+import SectionSettingsPanel from "../components/editor/SectionSettingsPanel";
+const CardEditorModal = React.lazy(
+  () => import("../components/editor/CardEditorModal"),
+);
 import { useAuth } from "../context/AuthContext";
 import { TEMPLATE_SAMPLE_CONTENT } from "../data/demoPosters";
 import {
   EDITOR_VERSION,
   ELEMENT_LIMITS,
   VARIABLE_LIMITS,
+  BRAND_BAND_KINDS as BRAND_BANDS,
+  brandBandProblems,
   defaultPage,
+  legacyToSections,
+  migrateTemplateLabels,
+  validateTemplateSections,
 } from "../../../shared/templateElements.js";
+import {
+  brandLayerTemplate,
+  changedBrandBands,
+  editingTemplateFromKit,
+  pickSampleTemplate,
+} from "../utils/brandBands";
 import {
   TEMPLATE_CATEGORIES,
   resolveTemplateSize,
@@ -53,22 +93,19 @@ import {
   NAME_LIMIT,
   NOTE_LIMIT,
   aiTextCount,
-  cleanItems,
   commitItemText,
   duplicateItem,
   fixedTextProblems,
   isHeadlineItem,
-  itemsArea,
-  itemsSignature,
   keepWithinLimits,
   moveItem,
   newFieldItem,
   newImageItem,
   newShapeItem,
+  newIconItem,
   newTextItem,
   patchItem,
   pictureCountOf,
-  problemsFor,
   readClipboard,
   setLayerOrder,
   setItemMeta,
@@ -162,15 +199,16 @@ function useWideScreen() {
   return wide;
 }
 
-function itemsOf(template) {
-  return Array.isArray(template?.elements) ? template.elements : [];
-}
-
-export default function TemplateEdit() {
+export default function TemplateEdit({ brandLayer = false }) {
   const { id = "" } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user, activeClientId } = useAuth();
   const wide = useWideScreen();
+
+  /* The brand layer opens on the band the Brand Kit page pointed at. */
+  const wantedBand = searchParams.get("section") === "footer" ? "footer" : "header";
+  const startingSection = brandLayer ? wantedBand : "content";
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -178,33 +216,96 @@ export default function TemplateEdit() {
   const [brandKit, setBrandKit] = useState(null);
   const [namesById, setNamesById] = useState({});
   const [baseline, setBaseline] = useState("[]");
+  /* The brand layer only: the layout borrowed as a sample, and the kit exactly as it was read,
+     so a save can tell which band moved and refuse to overwrite somebody else's work. */
+  const [sample, setSample] = useState(null);
+  const [kitAsLoaded, setKitAsLoaded] = useState(null);
 
   const [name, setName] = useState("");
   const [category, setCategory] = useState("Event");
   const [note, setNote] = useState("");
 
+  const [activeSection, setActiveSection] = useState(startingSection);
+  const [showFullPoster, setShowFullPoster] = useState(true);
+  const [editorScale, setEditorScale] = useState(0.5);
+  const [percentInput, setPercentInput] = useState("50%");
+
+  useEffect(() => {
+    setPercentInput(`${Math.round(editorScale * 100)}%`);
+  }, [editorScale]);
+
+  const handleScaleChange = useCallback((scale) => {
+    setEditorScale(scale);
+  }, []);
+
   const [hist, dispatch] = useReducer(historyReducer, {
     past: [],
-    present: { items: [], page: defaultPage() },
+    present: { sections: null },
     future: [],
   });
-  const stateRef = useRef({ items: [], page: defaultPage() });
+  const stateRef = useRef({ sections: null });
   useEffect(() => {
-    stateRef.current = hist.present || { items: [], page: defaultPage() };
+    stateRef.current = hist.present || { sections: null };
   }, [hist.present]);
   const txRef = useRef(null);
   const readState = useCallback(
-    () => stateRef.current || { items: [], page: defaultPage() },
+    () => stateRef.current || { sections: null },
     [],
   );
-  const readItems = useCallback(() => readState().items || [], [readState]);
+  const readSections = useCallback(() => readState().sections, [readState]);
+  const readActiveItems = useCallback(
+    () => readSections()?.[activeSection]?.elements || [],
+    [readSections, activeSection],
+  );
 
   const [selectedId, setSelectedId] = useState("");
+  const [selectedIds, setSelectedIds] = useState([]);
   const [editingId, setEditingId] = useState("");
+  const [editingCardId, setEditingCardId] = useState("");
   const [tab, setTab] = useState("");
+
+  const handleItemSelect = useCallback((id, isShift = false) => {
+    if (!id) {
+      setSelectedId("");
+      setSelectedIds([]);
+      return;
+    }
+    if (isShift) {
+      setSelectedIds((prev) => {
+        const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+        setSelectedId(next[next.length - 1] || "");
+        return next;
+      });
+    } else {
+      setSelectedId(id);
+      setSelectedIds([id]);
+    }
+  }, []);
+
+  const handleSelectMultiple = useCallback((ids, isShift = false) => {
+    if (!ids || ids.length === 0) {
+      if (!isShift) {
+        setSelectedId("");
+        setSelectedIds([]);
+      }
+      return;
+    }
+    if (isShift) {
+      setSelectedIds((prev) => {
+        const set = new Set([...prev, ...ids]);
+        const next = Array.from(set);
+        setSelectedId(next[next.length - 1] || "");
+        return next;
+      });
+    } else {
+      setSelectedIds(ids);
+      setSelectedId(ids[ids.length - 1] || "");
+    }
+  }, []);
   const [zoom, setZoom] = useState("fit");
   const [guidesOn, setGuidesOn] = useState(true);
   const [gridOn, setGridOn] = useState(false);
+  const [rulersOn, setRulersOn] = useState(false);
   /* Which items are kept out of the way while placing. This is only ever about the editor:
      nothing is hidden on a real poster, and the saved template has no such idea at all. */
   const [hiddenIds, setHiddenIds] = useState(() => new Set());
@@ -213,64 +314,183 @@ export default function TemplateEdit() {
   const [saving, setSaving] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [banner, setBanner] = useState(null);
+  const [itemsOverflow, setItemsOverflow] = useState(false);
+  const [settingsDrawerOpen, setSettingsDrawerOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [backModalOpen, setBackModalOpen] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.().catch(() => {});
+      setIsFullscreen(true);
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+      setIsFullscreen(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleFsChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", handleFsChange);
+    return () => document.removeEventListener("fullscreenchange", handleFsChange);
+  }, []);
 
   const size = useMemo(() => resolveTemplateSize(saved), [saved]);
-  const area = useMemo(() => itemsArea(brandKit, { size }), [brandKit, size]);
-  const items = useMemo(
-    () => cleanItems(hist.present?.items || [], area),
-    [hist.present?.items, area],
+  const sections = useMemo(
+    () => hist.present?.sections || legacyToSections(saved, brandKit),
+    [hist.present?.sections, saved, brandKit],
   );
-  const page = hist.present?.page || defaultPage();
+
+  const cardListItem = useMemo(() => {
+    if (!editingCardId) return null;
+    const contentElements = sections.content?.elements || [];
+    return contentElements.find((it) => it.id === editingCardId) || null;
+  }, [editingCardId, sections.content?.elements]);
+
+  const activeArea = useMemo(() => {
+    const headerHeight = sections.header?.height ?? 80;
+    const footerHeight = sections.footer?.height ?? 70;
+    if (activeSection === "header") {
+      return { x: 0, y: 0, w: size.width, h: headerHeight };
+    }
+    if (activeSection === "footer") {
+      return {
+        x: 0,
+        y: Math.max(0, size.height - footerHeight),
+        w: size.width,
+        h: footerHeight,
+      };
+    }
+    return {
+      x: 0,
+      y: headerHeight,
+      w: size.width,
+      h: Math.max(0, size.height - headerHeight - footerHeight),
+    };
+  }, [activeSection, sections.header?.height, sections.footer?.height, size]);
+
+  const activeItems = useMemo(
+    () => sections[activeSection]?.elements || [],
+    [sections, activeSection],
+  );
+
+  const contentAreaBox = useMemo(() => {
+    const headerHeight = sections.header?.height ?? 80;
+    const footerHeight = sections.footer?.height ?? 70;
+    return {
+      x: 0,
+      y: headerHeight,
+      w: size.width,
+      h: Math.max(0, size.height - headerHeight - footerHeight),
+    };
+  }, [sections.header?.height, sections.footer?.height, size]);
+
+  const contentItemsOutside = useMemo(() => {
+    /* In the brand layer the middle of the poster is borrowed from somebody's real layout, so
+       nothing there is ever "out of place" - only the band being placed is the user's work. */
+    if (brandLayer) return [];
+    const contentElements = sections.content?.elements || [];
+    return contentElements.filter((item) => {
+      return (
+        item.y < contentAreaBox.y ||
+        item.y + item.h > contentAreaBox.y + contentAreaBox.h ||
+        item.x < contentAreaBox.x ||
+        item.x + item.w > contentAreaBox.x + contentAreaBox.w
+      );
+    });
+  }, [brandLayer, sections.content?.elements, contentAreaBox]);
+
+  const page = useMemo(
+    () => sections.content?.page || defaultPage(),
+    [sections.content?.page],
+  );
+
+  const isContentCustom = useMemo(() => {
+    return ["background", "decoration", "watermark", "infoCard"].some(
+      (k) => page[k]?.mode === "custom",
+    );
+  }, [page]);
 
   const draftTemplate = useMemo(
-    () => ({
-      id,
-      name,
-      category,
-      size,
-      zones: saved?.zones || [],
-      layout: saved?.layout || {},
-      page,
-      editorVersion: EDITOR_VERSION,
-      elements: items,
-    }),
-    [id, name, category, size, saved, page, items],
+    () =>
+      brandLayer
+        ? brandLayerTemplate(sections, sample, size)
+        : {
+            id,
+            name,
+            category,
+            size,
+            zones: saved?.zones || [],
+            layout: saved?.layout || {},
+            sections,
+            editorVersion: EDITOR_VERSION,
+            elements: sections.content?.elements || [],
+            page: sections.content?.page || defaultPage(),
+          },
+    [brandLayer, sample, id, name, category, size, saved, sections],
   );
 
   const dirty =
     Boolean(saved) &&
-    (name.trim() !== (saved.name || "") ||
-      category !== (saved.category || "Event") ||
-      itemsSignature(items) + "::" + JSON.stringify(page) !== baseline);
+    (brandLayer
+      ? JSON.stringify(sections) !== baseline
+      : name.trim() !== (saved.name || "") ||
+        category !== (saved.category || "Event") ||
+        JSON.stringify(sections) !== baseline);
 
   const selected = useMemo(
-    () => items.find((item) => item.id === selectedId) || null,
-    [items, selectedId],
+    () => activeItems.find((item) => item.id === selectedId) || null,
+    [activeItems, selectedId],
   );
   /* Everything the save would refuse, in one list: the shared rules first, then the one
      thing only the editor can tell - a box of your own words nobody has written yet. */
-  const problems = useMemo(
-    () => [
-      ...problemsFor(items, { brandKit, size }),
-      ...fixedTextProblems(items),
-    ],
-    [items, brandKit, size],
-  );
+  const problems = useMemo(() => {
+    if (brandLayer) {
+      const kit = kitAsLoaded || brandKit;
+      return BRAND_BANDS.flatMap((kind) => {
+        const elements = sections[kind]?.elements || [];
+        return brandBandProblems(
+          {
+            mode: elements.length > 0 ? "elements" : "legacy",
+            height: sections[kind]?.height,
+            background: sections[kind]?.background,
+            elements,
+          },
+          kind,
+          { brandKit: kit, size },
+        );
+      });
+    }
+    return [
+      ...validateTemplateSections(sections, { brandKit, template: saved, size }),
+      ...fixedTextProblems(sections.content?.elements || []),
+    ];
+  }, [brandLayer, sections, brandKit, kitAsLoaded, saved, size]);
 
   /* ------------------------------------------------------------ load */
   /** Puts a template from the server into the editor and calls the work saved. */
   const applyLoaded = useCallback((template, kit) => {
-    const clean = cleanItems(
-      itemsOf(template),
-      itemsArea(kit, { size: resolveTemplateSize(template) }),
-    );
-    const loadedPage = template.page ? { ...defaultPage(), ...template.page } : defaultPage();
+    const sec = legacyToSections(template, kit);
+    // Existing templates keep their items; items that were forced locked become unlocked on next save
+    if (sec.header?.elements) {
+      sec.header.elements = sec.header.elements.map((el) => ({ ...el, locked: false }));
+    }
+    if (sec.footer?.elements) {
+      sec.footer.elements = sec.footer.elements.map((el) => ({ ...el, locked: false }));
+    }
+    // Migrate existing templates on load: rename those labels to "Text N" and "Photo N" with a quiet note
+    const migration = migrateTemplateLabels(sec);
+    if (migration.migrated) {
+      setNote((prev) => prev || "Renamed generic field labels to clear numbers.");
+    }
     setSaved(template);
     setName(template.name || "");
     setCategory(template.category || "Event");
     if (kit) setBrandKit(kit);
-    setBaseline(itemsSignature(clean) + "::" + JSON.stringify(loadedPage));
-    dispatch({ type: "reset", present: { items: clean, page: loadedPage } });
+    setBaseline(JSON.stringify(sec));
+    dispatch({ type: "reset", present: { sections: sec } });
     txRef.current = null;
     setHiddenIds(new Set());
   }, []);
@@ -279,6 +499,23 @@ export default function TemplateEdit() {
     setLoading(true);
     setLoadError("");
     try {
+      if (brandLayer) {
+        const [kitRes, templatesRes] = await Promise.all([
+          api.get("/brand-kit"),
+          api.get("/templates").catch(() => null),
+        ]);
+        const kit = kitRes?.data?.data?.brandKit;
+        if (!kit) {
+          setLoadError("We could not open your organization header and footer.");
+          return false;
+        }
+        const kitSize = resolveTemplateSize({ size: kit.defaultPosterSize });
+        const list = templatesRes?.data?.data?.templates || [];
+        setSample(pickSampleTemplate(list, kitSize));
+        setKitAsLoaded(kit);
+        applyLoaded(editingTemplateFromKit(kit, kitSize), kit);
+        return true;
+      }
       const [templateRes, kitRes, usersRes] = await Promise.all([
         api.get(`/templates/${id}`),
         api.get("/brand-kit").catch(() => null),
@@ -304,14 +541,18 @@ export default function TemplateEdit() {
       return true;
     } catch (err) {
       setLoadError(
-        err?.response?.data?.error?.message ||
-          "We could not open this template.",
+        friendlyError(
+          err,
+          brandLayer
+            ? "We could not open your organization header and footer."
+            : "We could not open this template.",
+        ),
       );
       return false;
     } finally {
       setLoading(false);
     }
-  }, [applyLoaded, id]);
+  }, [applyLoaded, brandLayer, id]);
 
   useEffect(() => {
     load();
@@ -319,16 +560,25 @@ export default function TemplateEdit() {
 
   /* ----------------------------------------------------------- edits */
   /**
-   * One change to the item list. Live changes (a slider being dragged, a colour being
+   * One change to the active section's item list. Live changes (a slider being dragged, a colour being
    * picked) are kept out of the undo stack until the gesture ends, so one action is one
    * step back.
    */
   const edit = useCallback(
     (mutate, { live = false } = {}) => {
       const current = readState();
-      const nextItems = mutate(current.items || []);
-      if (!Array.isArray(nextItems) || nextItems === current.items) return;
-      const next = { ...current, items: nextItems };
+      const currentSections = current.sections || legacyToSections(saved, brandKit);
+      const activeElements = currentSections[activeSection]?.elements || [];
+      const nextElements = mutate(activeElements);
+      if (!Array.isArray(nextElements) || nextElements === activeElements) return;
+      const nextSections = {
+        ...currentSections,
+        [activeSection]: {
+          ...currentSections[activeSection],
+          elements: nextElements,
+        },
+      };
+      const next = { ...current, sections: nextSections };
       if (live) {
         if (txRef.current === null) txRef.current = current;
         dispatch({ type: "live", present: next });
@@ -338,69 +588,119 @@ export default function TemplateEdit() {
       txRef.current = null;
       dispatch({ type: "commit", from, present: next });
     },
-    [readState],
+    [readState, saved, brandKit, activeSection],
+  );
+
+  const editSection = useCallback(
+    (sectionKey, patch) => {
+      const current = readState();
+      const currentSections = current.sections || legacyToSections(saved, brandKit);
+      const targetSection = currentSections[sectionKey] || {};
+      const nextSections = {
+        ...currentSections,
+        [sectionKey]: {
+          ...targetSection,
+          ...patch,
+        },
+      };
+      const next = { ...current, sections: nextSections };
+      dispatch({ type: "commit", from: current, present: next });
+    },
+    [readState, saved, brandKit],
   );
 
   const editPage = useCallback(
-    (section, patch) => {
+    (sectionKey, patch) => {
       const current = readState();
-      const currentSection = current.page?.[section] || {};
+      const currentSections = current.sections || legacyToSections(saved, brandKit);
+      const currentPage = currentSections.content?.page || defaultPage();
+      const currentSub = currentPage[sectionKey] || {};
       const nextPage = {
-        ...(current.page || defaultPage()),
-        [section]: { ...currentSection, ...patch },
+        ...currentPage,
+        [sectionKey]: { ...currentSub, ...patch },
       };
-      const next = { ...current, page: nextPage };
+      const nextSections = {
+        ...currentSections,
+        content: {
+          ...currentSections.content,
+          page: nextPage,
+        },
+      };
+      const next = { ...current, sections: nextSections };
       dispatch({ type: "commit", from: current, present: next });
     },
-    [readState],
+    [readState, saved, brandKit],
   );
 
   const resetPageSection = useCallback(
-    (section) => {
+    (sectionKey) => {
       const current = readState();
+      const currentSections = current.sections || legacyToSections(saved, brandKit);
+      const currentPage = currentSections.content?.page || defaultPage();
       const nextPage = {
-        ...(current.page || defaultPage()),
-        [section]: { mode: "brand" },
+        ...currentPage,
+        [sectionKey]: { mode: "brand" },
       };
-      const next = { ...current, page: nextPage };
+      const nextSections = {
+        ...currentSections,
+        content: {
+          ...currentSections.content,
+          page: nextPage,
+        },
+      };
+      const next = { ...current, sections: nextSections };
       dispatch({ type: "commit", from: current, present: next });
     },
-    [readState],
+    [readState, saved, brandKit],
   );
 
-  const resetItemToBrand = useCallback(
-    (itemId) => {
-      edit((itemsList) => {
-        return itemsList.map((item) => {
-          if (item.id !== itemId) return item;
-          const isHead =
-            isHeadlineItem(item) || item.field === "title" || item.field === "tagline";
-          if (item.kind === "text") {
-            return {
-              ...item,
-              style: {
-                ...item.style,
-                fontFamily: isHead ? "brand:heading" : "brand:body",
-                color: isHead ? "brand:heading" : "brand:text",
-              },
-            };
-          }
-          if (item.kind === "shape") {
-            const isLine = item.shape?.type === "line";
-            return {
-              ...item,
-              shape: {
-                ...item.shape,
-                fill: isLine ? "" : "brand:primary",
-                stroke: isLine ? "brand:primary" : (item.shape?.stroke ? "brand:primary" : ""),
-              },
-            };
-          }
-          return item;
-        });
-      });
+  const moveContentItemsInside = useCallback(() => {
+    const current = readState();
+    const currentSections = current.sections || legacyToSections(saved, brandKit);
+    const contentElements = currentSections.content?.elements || [];
+    const moved = contentElements.map((item) =>
+      moveItem(item, { x: item.x, y: item.y }, contentAreaBox),
+    );
+    const nextSections = {
+      ...currentSections,
+      content: {
+        ...currentSections.content,
+        elements: moved,
+      },
+    };
+    const next = { ...current, sections: nextSections };
+    dispatch({ type: "commit", from: current, present: next });
+  }, [readState, saved, brandKit, contentAreaBox]);
+
+  /* Each area keeps the zoom you left it at, so going back to the footer does not put you
+     back at whatever the header happened to be shown at. */
+  const viewMemory = useRef({});
+
+  const switchSection = useCallback(
+    (nextSec, nextSelectedId = "") => {
+      /* The brand layer has no middle of its own: what shows there is a sample of somebody
+         else's layout, so it cannot be stepped into. */
+      if (brandLayer && nextSec === "content") return;
+      if (nextSec === activeSection) {
+        if (nextSelectedId) {
+          setSelectedId(nextSelectedId);
+          setSelectedIds([nextSelectedId]);
+        }
+        /* Already there but looking at the whole poster: step into the area. */
+        if (showFullPoster) setShowFullPoster(false);
+        return;
+      }
+      const remembered = viewMemory.current[nextSec];
+      viewMemory.current[activeSection] = { zoom, full: showFullPoster };
+      setSelectedId(nextSelectedId || "");
+      setSelectedIds(nextSelectedId ? [nextSelectedId] : []);
+      setEditingId("");
+      setActiveSection(nextSec);
+      /* A first visit shows the area as wide as the screen; a return keeps your own zoom. */
+      setZoom(remembered ? remembered.zoom : "fit");
+      setShowFullPoster(remembered ? remembered.full : false);
     },
-    [edit],
+    [activeSection, brandLayer, showFullPoster, zoom],
   );
 
   const applyColorToken = useCallback(
@@ -455,105 +755,213 @@ export default function TemplateEdit() {
     [edit, selectedId],
   );
 
+  /* One thing, or everything picked at once - the tools write to whichever is in front of you. */
   const mapOne = useCallback(
     (itemId, mutate) => (list) => {
-      const index = list.findIndex((item) => item.id === itemId);
-      if (index < 0) return list;
-      const changed = mutate(list[index]);
-      if (!changed) return list;
-      const next = list.slice();
-      next[index] = changed;
-      return next;
+      const wanted = new Set(Array.isArray(itemId) ? itemId : [itemId]);
+      let touched = false;
+      const next = list.map((item) => {
+        if (!wanted.has(item.id)) return item;
+        const changed = mutate(item);
+        if (!changed || changed === item) return item;
+        touched = true;
+        return changed;
+      });
+      return touched ? next : list;
     },
     [],
   );
 
   const commitRect = useCallback(
     (itemId, rect) =>
-      edit(mapOne(itemId, (item) => moveItem(item, rect, area))),
-    [area, edit, mapOne],
+      edit(mapOne(itemId, (item) => moveItem(item, rect, activeArea))),
+    [activeArea, edit, mapOne],
+  );
+
+  const commitMultiMove = useCallback(
+    (moves) => {
+      edit((list) => {
+        const moveMap = new Map(moves.map((m) => [m.id, m.rect]));
+        return list.map((item) => {
+          const rect = moveMap.get(item.id);
+          return rect ? moveItem(item, rect, activeArea) : item;
+        });
+      });
+    },
+    [activeArea, edit],
+  );
+
+  const commitRotation = useCallback(
+    (itemId, rotation) => {
+      edit(mapOne(itemId, (item) => patchItem(item, { rotation }, activeArea)));
+    },
+    [activeArea, edit, mapOne],
+  );
+
+  const fitHeight = useCallback(
+    (itemId, newH) => {
+      edit(
+        (list) => {
+          const idx = list.findIndex((it) => it.id === itemId);
+          if (idx < 0) return list;
+          const curH = list[idx].h;
+          const targetH = Math.max(ELEMENT_LIMITS.minHeight, Math.round(newH));
+          if (curH === targetH) return list;
+          const next = list.slice();
+          next[idx] = { ...list[idx], h: targetH };
+          return next;
+        },
+        { live: true },
+      );
+    },
+    [edit],
   );
 
   const patchStyle = useCallback(
-    (itemId, stylePatch) =>
-      edit(
-        mapOne(itemId, (item) => patchItem(item, { style: stylePatch }, area)),
-      ),
-    [area, edit, mapOne],
+    (itemId, patch) => {
+      const { shape, card, imageUrl, mask, previewCount, align, ...restStyle } = patch || {};
+      const itemPatch = {};
+      if (shape !== undefined) itemPatch.shape = shape;
+      if (card !== undefined) itemPatch.card = card;
+      if (imageUrl !== undefined) itemPatch.imageUrl = imageUrl;
+      if (mask !== undefined) itemPatch.mask = mask;
+      if (previewCount !== undefined) itemPatch.previewCount = previewCount;
+      if (align !== undefined) itemPatch.align = align;
+      if (Object.keys(restStyle).length > 0) itemPatch.style = restStyle;
+      return edit(
+        mapOne(itemId, (item) => patchItem(item, itemPatch, activeArea)),
+      );
+    },
+    [activeArea, edit, mapOne],
   );
 
   const liveStyle = useCallback(
-    (itemId, stylePatch) =>
-      edit(
-        mapOne(itemId, (item) => patchItem(item, { style: stylePatch }, area)),
+    (itemId, patch) => {
+      const { shape, card, imageUrl, mask, previewCount, align, ...restStyle } = patch || {};
+      const itemPatch = {};
+      if (shape !== undefined) itemPatch.shape = shape;
+      if (card !== undefined) itemPatch.card = card;
+      if (imageUrl !== undefined) itemPatch.imageUrl = imageUrl;
+      if (mask !== undefined) itemPatch.mask = mask;
+      if (previewCount !== undefined) itemPatch.previewCount = previewCount;
+      if (align !== undefined) itemPatch.align = align;
+      if (Object.keys(restStyle).length > 0) itemPatch.style = restStyle;
+      return edit(
+        mapOne(itemId, (item) => patchItem(item, itemPatch, activeArea)),
         { live: true },
-      ),
-    [area, edit, mapOne],
+      );
+    },
+    [activeArea, edit, mapOne],
   );
 
   const setShape = useCallback(
     (itemId, shapePatch) =>
       edit(
-        mapOne(itemId, (item) => patchItem(item, { shape: shapePatch }, area)),
+        mapOne(itemId, (item) => patchItem(item, { shape: shapePatch }, activeArea)),
       ),
-    [area, edit, mapOne],
+    [activeArea, edit, mapOne],
   );
 
   const setImageUrl = useCallback(
     (itemId, url) =>
-      edit(mapOne(itemId, (item) => patchItem(item, { imageUrl: url }, area))),
-    [area, edit, mapOne],
+      edit(mapOne(itemId, (item) => patchItem(item, { imageUrl: url }, activeArea))),
+    [activeArea, edit, mapOne],
   );
 
   const commitText = useCallback(
     (itemId, text) => {
       const words = String(text || "").slice(0, ELEMENT_LIMITS.textChars);
-      edit(
-        mapOne(itemId, (item) =>
-          item.text === words
-            ? item
-            : commitItemText(item, readItems(), words, area),
-        ),
-      );
+      edit((itemsList) => {
+        return itemsList.map((item) => {
+          if (item.id !== itemId) return item;
+          const updated =
+            item.text === words
+              ? item
+              : commitItemText(item, readActiveItems(), words, activeArea);
+
+          if (updated.kind === "text") {
+            const fontSize = Number(updated.style?.size) || 24;
+            const lineHeight = Number(updated.style?.lineHeight) || 1.18;
+            const lines = (updated.text || "").split("\n");
+            const charsPerLine = Math.max(10, Math.floor(updated.w / (fontSize * 0.55)));
+            let totalLines = 0;
+            for (const line of lines) {
+              totalLines += Math.max(1, Math.ceil((line.length || 1) / charsPerLine));
+            }
+            const neededH = Math.max(
+              ELEMENT_LIMITS.minHeight,
+              Math.min(activeArea.h, Math.round(totalLines * fontSize * lineHeight + 4)),
+            );
+            return {
+              ...updated,
+              h: neededH,
+            };
+          }
+          return updated;
+        });
+      });
     },
-    [area, edit, mapOne, readItems],
+    [activeArea, edit, readActiveItems],
   );
 
   /** Locked | the assistant fills the words in | the person replacing a photo fills it in. */
   const changeMode = useCallback(
     (itemId, mode) =>
       edit(
-        mapOne(itemId, (item) => setItemMode(item, readItems(), mode, area)),
+        mapOne(itemId, (item) => setItemMode(item, readActiveItems(), mode, activeArea)),
       ),
-    [area, edit, mapOne, readItems],
+    [activeArea, edit, mapOne, readActiveItems],
   );
 
   const changeMeta = useCallback(
     (itemId, patch) =>
       edit(
-        mapOne(itemId, (item) => setItemMeta(item, readItems(), patch, area)),
+        mapOne(itemId, (item) => setItemMeta(item, readActiveItems(), patch, activeArea)),
       ),
-    [area, edit, mapOne, readItems],
+    [activeArea, edit, mapOne, readActiveItems],
   );
 
   const toggleLock = useCallback(
-    (itemId) =>
-      edit(mapOne(itemId, (item) => ({ ...item, locked: !item.locked }))),
-    [edit, mapOne],
+    (target) => {
+      const ids = Array.isArray(target)
+        ? target
+        : (target ? [target] : (selectedIds.length > 0 ? selectedIds : [selectedId]));
+      const idSet = new Set(ids);
+      const current = readActiveItems();
+      const targeted = current.filter((it) => idSet.has(it.id));
+      const allLocked = targeted.length > 0 && targeted.every((it) => it.locked);
+      edit((list) =>
+        list.map((item) =>
+          idSet.has(item.id) ? { ...item, locked: !allLocked } : item,
+        ),
+      );
+    },
+    [edit, readActiveItems, selectedId, selectedIds],
   );
 
   const add = useCallback(
     (make, warn = "") => {
-      const current = readItems();
-      if (current.length >= ELEMENT_LIMITS.maxItems) {
+      const current = readActiveItems();
+      const maxCount = activeSection === "content" ? ELEMENT_LIMITS.maxItems : 15;
+      if (current.length >= maxCount) {
         setBanner({
           tone: "error",
-          text: `A template holds at most ${ELEMENT_LIMITS.maxItems} items. Remove one first.`,
+          text:
+            activeSection === "content"
+              ? `A template holds at most ${ELEMENT_LIMITS.maxItems} items. Remove one first.`
+              : `You can place up to 15 things here. Remove one first.`,
         });
         return;
       }
-      const item = make(current);
+      let item = make(current);
       if (!item) return;
+      if (activeSection !== "content") {
+        item = {
+          ...item,
+          locked: true,
+          variable: false,
+        };
+      }
       /* A second headline box still needs its own name, even though the first one keeps the plain one. */
       const taken = new Set(current.map((each) => each.id));
       const fresh = taken.has(item.id)
@@ -570,12 +978,146 @@ export default function TemplateEdit() {
       setPreviewOn(false);
       setBanner(warn ? { tone: "warn", text: warn } : null);
     },
-    [edit, readItems],
+    [activeSection, edit, readActiveItems],
   );
 
   const addField = useCallback(
-    (field) => add((list) => newFieldItem(field, list, area)),
-    [add, area],
+    (field) => {
+      if (activeSection !== "content") {
+        setBanner({
+          tone: "error",
+          text: "Spaces to fill in, fields and lists can only be placed in the main content area.",
+        });
+        return;
+      }
+      add((list) => newFieldItem(field, list, activeArea));
+    },
+    [activeSection, add, activeArea],
+  );
+
+  const handleEditCard = useCallback(
+    (id) => {
+      if (activeSection !== "content") {
+        switchSection("content");
+      }
+      setSelectedId(id);
+      setSelectedIds([id]);
+      setEditingCardId(id);
+    },
+    [activeSection, switchSection],
+  );
+
+  const addCardList = useCallback(
+    (presetData) => {
+      if (activeSection !== "content") {
+        setBanner({
+          tone: "error",
+          text: "Card lists can only be placed in the main content area.",
+        });
+        return;
+      }
+      const current = readActiveItems();
+      const existingLists = current.filter((it) => it.kind === "cardlist");
+      if (existingLists.length >= 12) {
+        setBanner({
+          tone: "error",
+          text: "A template can have at most 12 card lists.",
+        });
+        return;
+      }
+      if (current.length >= ELEMENT_LIMITS.maxItems) {
+        setBanner({
+          tone: "error",
+          text: `A template holds at most ${ELEMENT_LIMITS.maxItems} items. Remove one first.`,
+        });
+        return;
+      }
+
+      const existingKeys = new Set(existingLists.map((cl) => cl.key));
+      const baseKey = (presetData?.key || "list").replace(/[^a-z0-9_-]/gi, "");
+      let candidateKey = baseKey || "list";
+      let count = 1;
+      while (existingKeys.has(candidateKey)) {
+        count += 1;
+        candidateKey = `${baseKey}_${count}`;
+      }
+
+      const existingIds = new Set(current.map((it) => it.id));
+      let candidateId = `cardlist-${Date.now().toString(36)}`;
+      while (existingIds.has(candidateId)) {
+        candidateId = `cardlist-${Date.now().toString(36)}-${Math.floor(Math.random() * 100)}`;
+      }
+
+      const defaultW = Math.min(activeArea.w - 40, presetData?.w || 960);
+      const defaultH = Math.min(activeArea.h - 40, presetData?.h || 380);
+      const defaultX = Math.max(activeArea.x, Math.round(activeArea.x + (activeArea.w - defaultW) / 2));
+      const defaultY = Math.max(activeArea.y, Math.round(activeArea.y + (activeArea.h - defaultH) / 2));
+
+      const newItem = {
+        id: candidateId,
+        kind: "cardlist",
+        key: candidateKey,
+        label: presetData?.label || (candidateKey.charAt(0).toUpperCase() + candidateKey.slice(1)),
+        hint: presetData?.hint || "",
+        x: defaultX,
+        y: defaultY,
+        w: defaultW,
+        h: defaultH,
+        columns: presetData?.columns || 2,
+        gapX: presetData?.gapX ?? 24,
+        gapY: presetData?.gapY ?? 24,
+        align: presetData?.align || "left",
+        minCount: presetData?.minCount || 1,
+        maxCount: presetData?.maxCount || 12,
+        previewCount: presetData?.previewCount || 3,
+        card: presetData?.card || {
+          w: 440,
+          h: 160,
+          fields: [
+            { key: "name", label: "Name", type: "text", maxChars: 60, required: true },
+            { key: "role", label: "Role", type: "text", maxChars: 80, required: false },
+          ],
+          items: [
+            {
+              id: "name",
+              kind: "text",
+              x: 16,
+              y: 20,
+              w: 400,
+              h: 36,
+              text: "{{name}}",
+              style: { size: 22, weight: 700, color: "brand:heading", align: "left" },
+            },
+            {
+              id: "role",
+              kind: "text",
+              x: 16,
+              y: 60,
+              w: 400,
+              h: 28,
+              text: "{{role}}",
+              style: { size: 16, weight: 500, color: "brand:body", align: "left" },
+            },
+          ],
+        },
+        locked: false,
+      };
+
+      edit((list) => [...list, newItem]);
+      setSelectedId(newItem.id);
+      setSelectedIds([newItem.id]);
+      setPreviewOn(false);
+    },
+    [activeArea, activeSection, edit, readActiveItems],
+  );
+
+  const handleCommitCard = useCallback(
+    (updatedItem) => {
+      edit((list) =>
+        list.map((it) => (it.id === updatedItem.id ? updatedItem : it)),
+      );
+    },
+    [edit],
   );
 
   /**
@@ -584,37 +1126,60 @@ export default function TemplateEdit() {
    */
   const addText = useCallback(
     (variant) => {
-      const room = aiTextCount(readItems()) < VARIABLE_LIMITS.maxText;
+      const secBgContext = {
+        brandKit,
+        section: activeSection,
+        sections,
+        page: sections?.content?.page,
+      };
+      if (activeSection !== "content") {
+        return add(
+          (list) => newTextItem(variant, list, activeArea, { variable: false, ...secBgContext }),
+          "",
+        );
+      }
+      const room = aiTextCount(readActiveItems()) < VARIABLE_LIMITS.maxText;
       return add(
-        (list) => newTextItem(variant, list, area, { variable: room }),
+        (list) => newTextItem(variant, list, activeArea, { variable: room, ...secBgContext }),
         room ? "" : LIMIT_MESSAGES.text,
       );
     },
-    [add, readItems],
+    [activeSection, add, activeArea, readActiveItems, brandKit, sections],
   );
 
   const addShape = useCallback(
-    (variant) => add((list) => newShapeItem(variant, list, area)),
-    [add, area],
+    (variant) => add((list) => newShapeItem(variant, list, activeArea, { brandKit })),
+    [add, activeArea, brandKit],
+  );
+
+  const addIcon = useCallback(
+    (name) => add((list) => newIconItem(name, list, activeArea)),
+    [add, activeArea],
   );
 
   /** Both doors into a photo box: an empty one, or one carrying a picture just uploaded. */
   const addPhoto = useCallback(
     (url) => {
-      if (pictureCountOf(readItems()) >= ELEMENT_LIMITS.maxImage) {
+      if (activeSection !== "content") {
+        return add(
+          (list) => newImageItem(list, activeArea, url, { variable: false }),
+          "",
+        );
+      }
+      if (pictureCountOf(readActiveItems()) >= ELEMENT_LIMITS.maxImage) {
         setBanner({
           tone: "error",
           text: `A template holds at most ${ELEMENT_LIMITS.maxImage} photos of its own. Remove one first.`,
         });
         return;
       }
-      const room = userImageCount(readItems()) < VARIABLE_LIMITS.maxImage;
+      const room = userImageCount(readActiveItems()) < VARIABLE_LIMITS.maxImage;
       add(
-        (list) => newImageItem(list, area, url, { variable: room }),
+        (list) => newImageItem(list, activeArea, url, { variable: room }),
         room ? "" : LIMIT_MESSAGES.image,
       );
     },
-    [add, area, readItems],
+    [activeSection, add, activeArea, readActiveItems],
   );
 
   const addImage = useCallback(() => addPhoto(""), [addPhoto]);
@@ -623,96 +1188,255 @@ export default function TemplateEdit() {
     [addPhoto],
   );
 
-  const remove = useCallback(
-    (itemId) => {
-      const item = readItems().find((each) => each.id === itemId);
-      if (!item) return;
-      if (isHeadlineItem(item)) {
+  const addBrandText = useCallback(
+    (token) => {
+      if (activeSection === "content") return;
+      const current = readActiveItems();
+      if (current.length >= 15) {
         setBanner({
           tone: "error",
-          text: "The headline always stays on the poster.",
+          text: "You can place up to 15 things here. Remove one first.",
         });
         return;
       }
-      edit((list) => list.filter((each) => each.id !== itemId));
-      setHiddenIds((prev) => {
-        if (!prev.has(itemId)) return prev;
-        const next = new Set(prev);
-        next.delete(itemId);
-        return next;
-      });
-      if (itemId === selectedId) setSelectedId("");
-      if (itemId === editingId) setEditingId("");
+      const item = {
+        id: `text-brand-${Date.now()}`,
+        kind: "text",
+        text: token,
+        x: activeArea.x + 20,
+        y: activeArea.y + Math.max(5, Math.floor((activeArea.h - 30) / 2)),
+        w: Math.min(300, Math.max(100, activeArea.w - 40)),
+        h: 30,
+        z: current.length,
+        locked: true,
+        variable: false,
+        style: {
+          fontFamily: "brand:body",
+          fontSize: 16,
+          color: "brand:text",
+          textAlign: "left",
+        },
+      };
+      edit((list) => [...list, item]);
+      setSelectedId(item.id);
+      setPreviewOn(false);
     },
-    [edit, editingId, readItems, selectedId],
+    [activeArea, activeSection, edit, readActiveItems],
   );
 
-  const duplicate = useCallback(
-    (itemId) => {
-      const current = readItems();
-      if (current.length >= ELEMENT_LIMITS.maxItems) {
-        setBanner({
-          tone: "error",
-          text: `A template holds at most ${ELEMENT_LIMITS.maxItems} items. Remove one first.`,
-        });
-        return;
-      }
-      const item = current.find((each) => each.id === itemId);
-      if (!item) return;
-      const copy = duplicateItem(item, current, area);
-      const { items: placed, reason } = keepWithinLimits([copy], current, area);
-      edit((list) => [...list, ...placed]);
-      setSelectedId(placed[0].id);
-      setBanner(reason ? { tone: "warn", text: reason } : null);
-    },
-    [area, edit, readItems],
-  );
-
-  /** The selected item, kept for this browser tab so it can be put back on another template. */
-  const copyItem = useCallback(
-    (itemId) => {
-      const item = readItems().find((each) => each.id === itemId);
-      if (!item) return;
-      writeClipboard(item);
-      setBanner({
-        tone: "ok",
-        text: "Copied. You can put it back on this poster or on another one.",
-      });
-    },
-    [readItems],
-  );
-
-  const pasteItem = useCallback(() => {
-    const current = readItems();
-    const room = ELEMENT_LIMITS.maxItems - current.length;
-    if (room <= 0) {
+  const addBrandLogo = useCallback(() => {
+    if (activeSection === "content") return;
+    const current = readActiveItems();
+    if (current.length >= 15) {
       setBanner({
         tone: "error",
-        text: `A template holds at most ${ELEMENT_LIMITS.maxItems} items. Remove one first.`,
+        text: "You can place up to 15 things here. Remove one first.",
       });
       return;
     }
-    const { items: offered, problem } = readClipboard(current, area, {
+    const logoH = Math.min(60, Math.max(30, activeArea.h - 20));
+    const logoW = logoH * 2;
+    const item = {
+      id: `logo-brand-${Date.now()}`,
+      kind: "image",
+      imageUrl: "brand:logo",
+      src: "brand:logo",
+      x: activeArea.x + 20,
+      y: activeArea.y + Math.max(5, Math.floor((activeArea.h - logoH) / 2)),
+      w: logoW,
+      h: logoH,
+      z: current.length,
+      locked: true,
+      variable: false,
+      style: {
+        fit: "contain",
+      },
+    };
+    edit((list) => [...list, item]);
+    setSelectedId(item.id);
+    setPreviewOn(false);
+  }, [activeArea, activeSection, edit, readActiveItems]);
+
+  const remove = useCallback(
+    (target) => {
+      const ids = Array.isArray(target)
+        ? target
+        : (target ? [target] : (selectedIds.length > 0 ? selectedIds : [selectedId]));
+      const toRemove = new Set(ids);
+      edit((list) =>
+        list.filter((item) => {
+          if (toRemove.has(item.id)) {
+            if (activeSection === "content" && isHeadlineItem(item)) return true;
+            return false;
+          }
+          return true;
+        }),
+      );
+      setHiddenIds((prev) => {
+        const next = new Set(prev);
+        ids.forEach((id) => next.delete(id));
+        return next;
+      });
+      setSelectedId("");
+      setSelectedIds([]);
+      if (ids.includes(editingId)) setEditingId("");
+    },
+    [activeSection, edit, editingId, selectedId, selectedIds],
+  );
+
+  const duplicate = useCallback(
+    (target) => {
+      const ids = Array.isArray(target)
+        ? target
+        : (target ? [target] : (selectedIds.length > 0 ? selectedIds : [selectedId]));
+      const current = readActiveItems();
+      const maxCount = activeSection === "content" ? ELEMENT_LIMITS.maxItems : 15;
+      if (current.length + ids.length > maxCount) {
+        setBanner({
+          tone: "error",
+          text:
+            activeSection === "content"
+              ? `A template holds at most ${ELEMENT_LIMITS.maxItems} items. Remove one first.`
+              : `You can place up to 15 things here. Remove one first.`,
+        });
+        return;
+      }
+      const toDuplicate = current.filter((each) => ids.includes(each.id));
+      if (!toDuplicate.length) return;
+      if (activeSection !== "content") {
+        if (toDuplicate.some((item) => item.kind === "field" || item.kind === "cardlist" || item.variable)) {
+          setBanner({
+            tone: "error",
+            text: "Spaces to fill in, fields and lists can only be placed in the main content area.",
+          });
+          return;
+        }
+      }
+      const created = [];
+      let workingList = [...current];
+      for (const item of toDuplicate) {
+        const copy = duplicateItem(item, workingList, activeArea);
+        if (activeSection !== "content") {
+          copy.locked = false;
+          copy.variable = false;
+        }
+        workingList.push(copy);
+        created.push(copy);
+      }
+      const { items: placed, reason } = keepWithinLimits(created, current, activeArea);
+      edit((list) => [...list, ...placed]);
+      if (placed.length === 1) {
+        setSelectedId(placed[0].id);
+        setSelectedIds([placed[0].id]);
+      } else {
+        setSelectedIds(placed.map((it) => it.id));
+        setSelectedId(placed[0].id);
+      }
+      setBanner(reason ? { tone: "warn", text: reason } : null);
+    },
+    [activeArea, activeSection, edit, readActiveItems, selectedId, selectedIds],
+  );
+
+  const copyItem = useCallback(
+    (target) => {
+      const ids = Array.isArray(target)
+        ? target
+        : (target ? [target] : (selectedIds.length > 0 ? selectedIds : [selectedId]));
+      const items = readActiveItems().filter((each) => ids.includes(each.id));
+      if (!items.length) return;
+      writeClipboard(items);
+      setBanner({
+        tone: "ok",
+        text: items.length === 1
+          ? "Copied. You can put it back on this poster or on another one."
+          : `Copied ${items.length} items. You can put them back on this poster or on another one.`,
+      });
+    },
+    [readActiveItems, selectedId, selectedIds],
+  );
+
+  const cutItem = useCallback(
+    (target) => {
+      const ids = Array.isArray(target)
+        ? target
+        : (target ? [target] : (selectedIds.length > 0 ? selectedIds : [selectedId]));
+      const current = readActiveItems();
+      const items = current.filter((each) => ids.includes(each.id));
+      if (!items.length) return;
+      writeClipboard(items);
+      const toRemove = new Set(ids);
+      edit((list) =>
+        list.filter((item) => {
+          if (toRemove.has(item.id)) {
+            if (activeSection === "content" && isHeadlineItem(item)) return true;
+            return false;
+          }
+          return true;
+        }),
+      );
+      setSelectedId("");
+      setSelectedIds([]);
+      setBanner({
+        tone: "ok",
+        text: items.length === 1
+          ? "Cut item. You can put it back on this poster or on another one."
+          : `Cut ${items.length} items. You can put them back on this poster or on another one.`,
+      });
+    },
+    [activeSection, edit, readActiveItems, selectedId, selectedIds],
+  );
+
+  const pasteItem = useCallback(() => {
+    const current = readActiveItems();
+    const maxCount = activeSection === "content" ? ELEMENT_LIMITS.maxItems : 15;
+    const room = maxCount - current.length;
+    if (room <= 0) {
+      setBanner({
+        tone: "error",
+        text:
+          activeSection === "content"
+            ? `A template holds at most ${ELEMENT_LIMITS.maxItems} items. Remove one first.`
+            : `You can place up to 15 things here. Remove one first.`,
+      });
+      return;
+    }
+    const { items: offered, problem } = readClipboard(current, activeArea, {
       clientId: activeClientId,
     });
     if (problem) {
       setBanner({ tone: "error", text: problem });
       return;
     }
+    if (activeSection !== "content") {
+      const hasRestricted = offered.some(
+        (it) => it.kind === "field" || it.kind === "cardlist" || it.variable,
+      );
+      if (hasRestricted) {
+        setBanner({
+          tone: "error",
+          text: "Spaces to fill in, fields and lists can only be placed in the main content area.",
+        });
+        return;
+      }
+    }
     const fitting = offered.slice(0, room);
-    const { items: placed, reason } = keepWithinLimits(fitting, current, area);
-    edit((list) => [...list, ...placed]);
-    setSelectedId(placed[placed.length - 1].id);
+    const { items: placed, reason } = keepWithinLimits(fitting, current, activeArea);
+    const lockedPlaced =
+      activeSection !== "content"
+        ? placed.map((it) => ({ ...it, locked: false, variable: false }))
+        : placed;
+    edit((list) => [...list, ...lockedPlaced]);
+    setSelectedId(lockedPlaced[lockedPlaced.length - 1].id);
     setPreviewOn(false);
     setBanner(
       reason
         ? { tone: "warn", text: reason }
         : {
             tone: "ok",
-            text: `Put ${placed.length} ${placed.length === 1 ? "item back" : "items back"} on this poster.`,
+            text: `Put ${lockedPlaced.length} ${lockedPlaced.length === 1 ? "thing back" : "things back"} on this poster.`,
           },
     );
-  }, [activeClientId, area, edit, readItems]);
+  }, [activeClientId, activeArea, activeSection, edit, readActiveItems]);
 
   /**
    * One step forward or back through the stack, or all the way to the front or the
@@ -756,9 +1480,186 @@ export default function TemplateEdit() {
     [edit],
   );
   const reorderTo = useCallback(
-    (itemId, direction) => moveTo(itemId, direction),
-    [moveTo],
+    (target, direction) => {
+      const ids = Array.isArray(target)
+        ? target
+        : (target ? [target] : (selectedIds.length > 0 ? selectedIds : [selectedId]));
+      if (ids.length === 1) {
+        moveTo(ids[0], direction);
+      } else {
+        ids.forEach((id) => moveTo(id, direction));
+      }
+    },
+    [moveTo, selectedId, selectedIds],
   );
+
+  const alignSelected = useCallback(
+    (pos) => {
+      const current = readActiveItems();
+      const ids = selectedIds.length > 0 ? selectedIds : (selectedId ? [selectedId] : []);
+      if (!ids.length) return;
+
+      if (ids.length > 1) {
+        const targets = current.filter((it) => ids.includes(it.id));
+        if (targets.length <= 1) return;
+        const minX = Math.min(...targets.map((it) => it.x));
+        const maxX = Math.max(...targets.map((it) => it.x + it.w));
+        const minY = Math.min(...targets.map((it) => it.y));
+        const maxY = Math.max(...targets.map((it) => it.y + it.h));
+        const bboxW = maxX - minX;
+        const bboxH = maxY - minY;
+
+        edit((list) =>
+          list.map((item) => {
+            if (!ids.includes(item.id)) return item;
+            let nx = item.x;
+            let ny = item.y;
+            if (pos === "left") nx = minX;
+            else if (pos === "center") nx = minX + Math.round((bboxW - item.w) / 2);
+            else if (pos === "right") nx = maxX - item.w;
+            else if (pos === "top") ny = minY;
+            else if (pos === "middle") ny = minY + Math.round((bboxH - item.h) / 2);
+            else if (pos === "bottom") ny = maxY - item.h;
+            return moveItem(item, { x: nx, y: ny }, activeArea);
+          }),
+        );
+      } else {
+        const targetId = ids[0];
+        edit(
+          mapOne(targetId, (item) => {
+            let nx = item.x;
+            let ny = item.y;
+            if (pos === "left") nx = activeArea.x;
+            else if (pos === "center") nx = activeArea.x + Math.round((activeArea.w - item.w) / 2);
+            else if (pos === "right") nx = activeArea.x + activeArea.w - item.w;
+            else if (pos === "top") ny = activeArea.y;
+            else if (pos === "middle") ny = activeArea.y + Math.round((activeArea.h - item.h) / 2);
+            else if (pos === "bottom") ny = activeArea.y + activeArea.h - item.h;
+            return moveItem(item, { x: nx, y: ny }, activeArea);
+          }),
+        );
+      }
+    },
+    [activeArea, edit, mapOne, readActiveItems, selectedId, selectedIds],
+  );
+
+  const distributeSelected = useCallback(
+    (axis) => {
+      const current = readActiveItems();
+      const targets = current.filter((it) => selectedIds.includes(it.id));
+      if (targets.length < 3) return;
+
+      if (axis === "horizontal") {
+        const sorted = [...targets].sort((a, b) => a.x - b.x);
+        const first = sorted[0];
+        const last = sorted[sorted.length - 1];
+        const span = (last.x + last.w) - first.x;
+        const sumW = sorted.reduce((sum, it) => sum + it.w, 0);
+        const totalGap = span - sumW;
+        const gap = totalGap / (sorted.length - 1);
+        let curX = first.x;
+        const posMap = new Map();
+        sorted.forEach((it, idx) => {
+          if (idx === 0) {
+            posMap.set(it.id, it.x);
+          } else {
+            curX += sorted[idx - 1].w + gap;
+            posMap.set(it.id, Math.round(curX));
+          }
+        });
+        edit((list) =>
+          list.map((item) => {
+            if (!posMap.has(item.id)) return item;
+            return moveItem(item, { x: posMap.get(item.id), y: item.y }, activeArea);
+          }),
+        );
+      } else if (axis === "vertical") {
+        const sorted = [...targets].sort((a, b) => a.y - b.y);
+        const first = sorted[0];
+        const last = sorted[sorted.length - 1];
+        const span = (last.y + last.h) - first.y;
+        const sumH = sorted.reduce((sum, it) => sum + it.h, 0);
+        const totalGap = span - sumH;
+        const gap = totalGap / (sorted.length - 1);
+        let curY = first.y;
+        const posMap = new Map();
+        sorted.forEach((it, idx) => {
+          if (idx === 0) {
+            posMap.set(it.id, it.y);
+          } else {
+            curY += sorted[idx - 1].h + gap;
+            posMap.set(it.id, Math.round(curY));
+          }
+        });
+        edit((list) =>
+          list.map((item) => {
+            if (!posMap.has(item.id)) return item;
+            return moveItem(item, { x: item.x, y: posMap.get(item.id) }, activeArea);
+          }),
+        );
+      }
+    },
+    [activeArea, edit, readActiveItems, selectedIds],
+  );
+
+  const matchSizeSelected = useCallback(
+    (dimension) => {
+      const current = readActiveItems();
+      const ids = selectedIds.length > 0 ? selectedIds : (selectedId ? [selectedId] : []);
+      if (ids.length < 2) return;
+      const primary = current.find((it) => it.id === (selectedId || ids[0]));
+      if (!primary) return;
+
+      edit((list) =>
+        list.map((item) => {
+          if (!ids.includes(item.id) || item.id === primary.id) return item;
+          let nw = item.w;
+          let nh = item.h;
+          if (dimension === "width" || dimension === "both") {
+            nw = Math.max(ELEMENT_LIMITS.minWidth, Math.min(activeArea.w, primary.w));
+          }
+          if (dimension === "height" || dimension === "both") {
+            nh = Math.max(ELEMENT_LIMITS.minHeight, Math.min(activeArea.h, primary.h));
+          }
+          return moveItem(item, { x: item.x, y: item.y, w: nw, h: nh }, activeArea);
+        }),
+      );
+    },
+    [activeArea, edit, readActiveItems, selectedId, selectedIds],
+  );
+
+  const groupSelected = useCallback(() => {
+    const ids = selectedIds.length > 1 ? selectedIds : [];
+    if (ids.length < 2) return;
+    const newGroupId = `group-${Date.now()}`;
+    const idSet = new Set(ids);
+    edit((list) =>
+      list.map((item) =>
+        idSet.has(item.id) ? { ...item, groupId: newGroupId } : item,
+      ),
+    );
+  }, [edit, selectedIds]);
+
+  const ungroupSelected = useCallback(() => {
+    const ids = selectedIds.length > 0 ? selectedIds : (selectedId ? [selectedId] : []);
+    if (!ids.length) return;
+    const current = readActiveItems();
+    const targetedGroups = new Set();
+    current.forEach((it) => {
+      if (ids.includes(it.id) && it.groupId) targetedGroups.add(it.groupId);
+    });
+    if (targetedGroups.size === 0) return;
+    edit((list) =>
+      list.map((item) => {
+        if (targetedGroups.has(item.groupId)) {
+          const next = { ...item };
+          delete next.groupId;
+          return next;
+        }
+        return item;
+      }),
+    );
+  }, [edit, readActiveItems, selectedId, selectedIds]);
 
   /** Only ever about the editor: a hidden item still saves and still prints. */
   const toggleHidden = useCallback((itemId) => {
@@ -773,18 +1674,18 @@ export default function TemplateEdit() {
   const resetToSaved = () => {
     if (!saved) return;
     if (!window.confirm("Undo everything back to the last save?")) return;
-    const clean = cleanItems(itemsOf(saved), area);
-    const savedPage = saved.page ? { ...defaultPage(), ...saved.page } : defaultPage();
+    const sec = legacyToSections(saved, brandKit);
     setName(saved.name || "");
     setCategory(saved.category || "Event");
-    setBaseline(itemsSignature(clean) + "::" + JSON.stringify(savedPage));
-    dispatch({ type: "reset", present: { items: clean, page: savedPage } });
+    setBaseline(JSON.stringify(sec));
+    dispatch({ type: "reset", present: { sections: sec } });
     txRef.current = null;
     setBanner(null);
   };
 
   const clearSelection = useCallback(() => {
     setSelectedId("");
+    setSelectedIds([]);
     setEditingId("");
     setTab("");
   }, []);
@@ -802,6 +1703,24 @@ export default function TemplateEdit() {
       const meta = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
 
+      if (event.altKey && !typing) {
+        if (key === "1") {
+          event.preventDefault();
+          switchSection("header");
+          return;
+        }
+        if (key === "2") {
+          event.preventDefault();
+          switchSection("content");
+          return;
+        }
+        if (key === "3") {
+          event.preventDefault();
+          switchSection("footer");
+          return;
+        }
+      }
+
       if (meta && (key === "z" || key === "y") && !typing) {
         event.preventDefault();
         dispatch({
@@ -813,8 +1732,16 @@ export default function TemplateEdit() {
       if (typing || previewOn || drawerOpen) return;
 
       if (key === "escape") {
-        if (tab) setTab("");
-        else if (selectedId) setSelectedId("");
+        if (detailsOpen) setDetailsOpen(false);
+        else if (tab) setTab("");
+        else if (settingsDrawerOpen) setSettingsDrawerOpen(false);
+        else if (!showFullPoster || zoom !== "fit") {
+          setShowFullPoster(true);
+          setZoom("fit");
+        } else if (selectedId || selectedIds.length > 0) {
+          setSelectedId("");
+          setSelectedIds([]);
+        }
         return;
       }
       /* Putting something back needs no selection - it simply lands on this poster. */
@@ -823,21 +1750,35 @@ export default function TemplateEdit() {
         pasteItem();
         return;
       }
-      if (!selectedId) return;
+      if (!selectedId && selectedIds.length === 0) return;
 
       if (meta && key === "d") {
         event.preventDefault();
-        duplicate(selectedId);
+        duplicate(selectedIds.length > 0 ? selectedIds : [selectedId]);
         return;
       }
       if (meta && key === "c") {
         event.preventDefault();
-        copyItem(selectedId);
+        copyItem(selectedIds.length > 0 ? selectedIds : [selectedId]);
+        return;
+      }
+      if (meta && key === "x") {
+        event.preventDefault();
+        cutItem(selectedIds.length > 0 ? selectedIds : [selectedId]);
+        return;
+      }
+      if (meta && key === "g") {
+        event.preventDefault();
+        if (event.shiftKey) {
+          ungroupSelected();
+        } else {
+          groupSelected();
+        }
         return;
       }
       if (key === "delete" || key === "backspace") {
         event.preventDefault();
-        remove(selectedId);
+        remove(selectedIds.length > 0 ? selectedIds : [selectedId]);
         return;
       }
       const arrows = {
@@ -850,31 +1791,55 @@ export default function TemplateEdit() {
         event.preventDefault();
         const step = event.shiftKey ? 10 : 1;
         const [dx, dy] = arrows[key];
-        edit(
-          mapOne(selectedId, (item) =>
-            moveItem(
-              item,
-              { x: item.x + dx * step, y: item.y + dy * step },
-              area,
+        if (selectedIds.length > 1) {
+          const selectedSet = new Set(selectedIds);
+          edit((list) =>
+            list.map((item) =>
+              selectedSet.has(item.id)
+                ? moveItem(
+                    item,
+                    { x: item.x + dx * step, y: item.y + dy * step },
+                    activeArea,
+                  )
+                : item,
             ),
-          ),
-        );
+          );
+        } else if (selectedId) {
+          edit(
+            mapOne(selectedId, (item) =>
+              moveItem(
+                item,
+                { x: item.x + dx * step, y: item.y + dy * step },
+                activeArea,
+              ),
+            ),
+          );
+        }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [
-    area,
+    activeArea,
     copyItem,
+    cutItem,
     drawerOpen,
     duplicate,
     edit,
+    groupSelected,
     mapOne,
     pasteItem,
     previewOn,
     remove,
     selectedId,
+    selectedIds,
+    detailsOpen,
+    settingsDrawerOpen,
+    showFullPoster,
+    switchSection,
     tab,
+    ungroupSelected,
+    zoom,
   ]);
 
   /* --------------------------------------------------- leaving guard */
@@ -890,26 +1855,121 @@ export default function TemplateEdit() {
   }, [dirty]);
 
   const goBack = () => {
-    if (
-      dirty &&
-      !window.confirm(
-        "Leave with these changes unsaved? What you placed will be lost.",
-      )
-    )
+    leaveTo(brandLayer ? "/brand-kit" : "/templates");
+  };
+
+  /* Where an unsaved-changes dialog takes you once the work is saved or thrown away: the list,
+     or the one screen that owns this organization's header and footer. */
+  const [nextRoute, setNextRoute] = useState("/templates");
+  const leaveTo = (path) => {
+    if (dirty) {
+      setNextRoute(path);
+      setBackModalOpen(true);
       return;
-    navigate("/templates");
+    }
+    navigate(path);
+  };
+
+  /* A template that follows the organization's band is edited in one place only, so the link
+     leaves this design behind and opens the brand layer. */
+  const editBrandBand = (kind) => {
+    leaveTo(`/brand-layer/edit?section=${kind}`);
+  };
+
+  const handleComment = (item) => {
+    const currentNote = item?.note || "";
+    const next = window.prompt("Note or comment for this item:", currentNote);
+    if (next !== null) {
+      setItemMeta(item.id, { note: next });
+      toast.success("Comment saved");
+    }
   };
 
   /* ------------------------------------------------------------ save */
+  /**
+   * The brand layer writes the Brand Kit, and only the band that actually moved. Somebody else
+   * may have saved the kit while this screen was open, so the copy on file is read once more
+   * before anything is written, and the save refuses if it is no longer the one being edited.
+   */
+  const saveBrandLayer = async () => {
+    if (problems.length > 0) {
+      setBanner({ tone: "error", text: problems[0], more: problems.slice(1) });
+      return false;
+    }
+    let base = null;
+    try {
+      base = JSON.parse(baseline);
+    } catch {
+      base = null;
+    }
+    const payload = changedBrandBands(sections, base);
+    if (Object.keys(payload).length === 0) {
+      setBanner({ tone: "warn", text: "You have not changed the header or the footer yet." });
+      return false;
+    }
+    setSaving(true);
+    setBanner(null);
+    try {
+      const onFile = await api
+        .get("/brand-kit")
+        .then((res) => res?.data?.data?.brandKit)
+        .catch(() => null);
+      if (
+        onFile?.updatedAt &&
+        kitAsLoaded?.updatedAt &&
+        onFile.updatedAt !== kitAsLoaded.updatedAt
+      ) {
+        setBanner({
+          tone: "error",
+          text: "Somebody else saved the organization header or footer while you were working. Reload to see their version first, then place your changes again.",
+          action: { label: "Reload", run: () => load() },
+        });
+        return false;
+      }
+      const response = await api.put("/brand-kit", payload);
+      const kit = response?.data?.data?.brandKit;
+      if (!kit) throw new Error("missing brand kit");
+      setKitAsLoaded(kit);
+      applyLoaded(
+        editingTemplateFromKit(kit, resolveTemplateSize({ size: kit.defaultPosterSize })),
+        kit,
+      );
+      setBanner({
+        tone: "ok",
+        text: "Saved. Every new poster for your organization now uses this header and footer.",
+        action: { label: "Back to Brand Kit", run: goBack },
+      });
+      toast.success("Brand header and footer saved");
+      return true;
+    } catch (err) {
+      const status = err?.response?.status;
+      setBanner({
+        tone: "error",
+        text:
+          status === 403
+            ? "Only an administrator of this organization can change its header and footer."
+            : friendlyError(err, "That did not save. Try again."),
+        action:
+          status === 404
+            ? { label: "Reload", run: () => load() }
+            : undefined,
+      });
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const save = async () => {
-    if (!saved) return;
+    if (!saved) return false;
+    if (brandLayer) return saveBrandLayer();
     if (!name.trim()) {
       setBanner({ tone: "error", text: "Give the template a name." });
-      return;
+      return false;
     }
     if (problems.length > 0) {
       setBanner({ tone: "error", text: problems[0], more: problems.slice(1) });
-      return;
+      return false;
     }
     setSaving(true);
     setBanner(null);
@@ -917,8 +1977,9 @@ export default function TemplateEdit() {
       const response = await api.patch(`/templates/${id}`, {
         name: name.trim(),
         category,
-        elements: items,
-        page,
+        sections,
+        elements: sections.content?.elements,
+        page: sections.content?.page,
         note: note.trim() || undefined,
         expectedVersion: saved?.version,
       });
@@ -933,6 +1994,7 @@ export default function TemplateEdit() {
         action: { label: "Back to templates", run: goBack },
       });
       toast.success(`Saved as version ${updated.version}`);
+      return true;
     } catch (err) {
       const status = err?.response?.status;
       const message =
@@ -945,6 +2007,7 @@ export default function TemplateEdit() {
             ? { label: "Reload this template", run: () => load() }
             : undefined,
       });
+      return false;
     } finally {
       setSaving(false);
     }
@@ -1004,7 +2067,10 @@ export default function TemplateEdit() {
       <div className="container-page section-pad space-y-4">
         <div className="p-4 rounded-card border border-danger/30 bg-danger/5 text-danger text-sm flex items-center gap-2">
           <AlertCircle className="h-4 w-4 shrink-0" />{" "}
-          {loadError || "This template could not be opened."}
+          {loadError ||
+            (brandLayer
+              ? "Your organization header and footer could not be opened."
+              : "This template could not be opened.")}
         </div>
         <div className="flex gap-2">
           <button
@@ -1016,19 +2082,15 @@ export default function TemplateEdit() {
           </button>
           <button
             type="button"
-            onClick={() => navigate("/templates")}
+            onClick={() => navigate(brandLayer ? "/brand-kit" : "/templates")}
             className="btn-ghost border border-line px-4 py-2 text-sm"
           >
-            Back to templates
+            {brandLayer ? "Back to Brand Kit" : "Back to templates"}
           </button>
         </div>
       </div>
     );
   }
-
-  /* The editor fills the screen below the sticky app header: 64 px, plus the 44 px
-   * organization bar only a superadmin sees. */
-  const headerH = 64 + (user?.role === "superadmin" ? 44 : 0);
 
   const previews = [
     {
@@ -1055,10 +2117,15 @@ export default function TemplateEdit() {
   const panelActions = {
     select: setSelectedId,
     addField,
+    addCardList,
+    editCard: handleEditCard,
     addText,
     addImage,
     insertImage,
     addShape,
+    addIcon,
+    addBrandText,
+    addBrandLogo,
     remove,
     duplicate,
     toggleLock,
@@ -1067,84 +2134,164 @@ export default function TemplateEdit() {
     dropLayer,
     setShape,
     setImageUrl,
+    changeMode,
+    changeMeta,
     setStyle: patchStyle,
     setStyleLive: liveStyle,
   };
 
+  const contextualToolbarElement = wide && !previewOn ? (
+    <ContextualToolbar
+      selectedItem={selected}
+      items={activeItems}
+      selectedIds={selectedIds}
+      isNormalUser={user?.role === "user"}
+      activeSection={activeSection}
+      sections={sections}
+      brandKit={brandKit}
+      page={page}
+      size={size}
+      area={activeArea}
+      showFullPoster={showFullPoster}
+      isContentCustom={isContentCustom}
+      onStyle={patchStyle}
+      onStyleLive={liveStyle}
+      onRect={commitRect}
+      onRotation={commitRotation}
+      onAlign={alignSelected}
+      onDistribute={distributeSelected}
+      onMatchSize={matchSizeSelected}
+      onGroup={groupSelected}
+      onUngroup={ungroupSelected}
+      onToggleLock={toggleLock}
+      onDuplicate={duplicate}
+      onDelete={remove}
+      onReorder={reorderTo}
+      onReplaceImage={setImageUrl}
+      onChangeMode={changeMode}
+      onChangeMeta={changeMeta}
+      onSwitchSection={switchSection}
+      onSectionChange={editSection}
+      onPageChange={editPage}
+      onToggleSettings={() => setSettingsDrawerOpen((prev) => !prev)}
+      isSettingsOpen={settingsDrawerOpen}
+      onToggleShowFullPoster={setShowFullPoster}
+      onEditCard={handleEditCard}
+      onPatchItem={(itemId, patch) =>
+        edit(mapOne(itemId, (item) => patchItem(item, patch, activeArea)))
+      }
+    />
+  ) : null;
+
   return (
-    <div
-      className="flex min-h-0 flex-col"
-      style={{ height: `calc(100vh - ${headerH}px)` }}
-    >
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-[#F3F4F6] select-none">
       {/* ------------------------------------------------------ top bar */}
-      <header className="flex h-12 shrink-0 items-center justify-between border-b border-[#E5E7EB] bg-white px-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <Button
+      <header className="flex h-11 shrink-0 items-center justify-between bg-[#2563EB] px-4 text-white z-30 select-none relative shadow-sm">
+        {/* Far left: Back, Editing menu, Undo & Redo, Saved status */}
+        <div className="flex items-center gap-3 min-w-0">
+          <button
             type="button"
-            variant="ghost"
-            size="sm"
             onClick={goBack}
-            className="h-8 gap-1.5 px-2 text-xs font-medium text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827]"
+            className="flex items-center gap-1.5 rounded-[6px] border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-white/20 transition-colors"
           >
-            <ArrowLeft className="h-4 w-4" /> Back
-          </Button>
+            <ArrowLeft className="h-3.5 w-3.5" />{" "}
+            {brandLayer ? "Back to Brand Kit" : "Back"}
+          </button>
 
-          <label className="min-w-0 flex-1 max-w-sm">
-            <span className="sr-only">Template name</span>
-            <input
-              type="text"
-              value={name}
-              maxLength={NAME_LIMIT}
-              onChange={(event) => setName(event.target.value)}
-              aria-label="Template name"
-              className="h-8 w-full truncate rounded-[6px] border border-transparent bg-transparent px-2 text-[14px] font-semibold text-[#111827] hover:border-[#E5E7EB] focus:border-[#2563EB] focus:bg-white focus:outline-none"
-            />
-          </label>
-        </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex items-center gap-1 rounded-[6px] px-2 py-1.5 text-xs font-semibold text-white hover:bg-white/10 transition-colors"
+              >
+                <span>Editing</span>
+                <ChevronDown className="h-3 w-3 text-white/80" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48 text-xs">
+              {!brandLayer && (
+                <DropdownMenuItem onClick={() => setDetailsOpen(true)}>
+                  <Sliders className="mr-2 h-3.5 w-3.5" /> Template details
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onClick={() => setRulersOn((on) => !on)}>
+                <Grid className="mr-2 h-3.5 w-3.5" /> {rulersOn ? "Hide rulers" : "Show rulers"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setGridOn((on) => !on)}>
+                <Grid className="mr-2 h-3.5 w-3.5" /> {gridOn ? "Hide grid" : "Show grid"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setGuidesOn((on) => !on)}>
+                <Eye className="mr-2 h-3.5 w-3.5" /> {guidesOn ? "Hide guides" : "Show guides"}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!dirty}
+                onClick={resetToSaved}
+                className="text-red-600 focus:text-red-600 focus:bg-red-50 disabled:opacity-40"
+              >
+                <RotateCcw className="mr-2 h-3.5 w-3.5" /> Undo everything
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setKeyboardOpen(true)}>
+                <Keyboard className="mr-2 h-3.5 w-3.5" /> Keyboard shortcuts
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="flex items-center gap-1.5 text-xs text-[#6B7280]">
-            <span
-              className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                dirty ? "bg-[#9CA3AF]" : "bg-[#16A34A]"
-              }`}
-            />
-            <span>
-              {dirty ? "Unsaved changes" : `Saved as version ${saved.version || 1}`}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-0.5">
-            <Button
+          <div className="flex items-center gap-1 text-xs text-white">
+            <button
               type="button"
-              variant="ghost"
-              size="sm"
               onClick={() => dispatch({ type: "undo" })}
               disabled={hist.past.length === 0}
-              aria-label="Undo"
-              title="Undo"
-              className="h-8 w-8 p-0 text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827] disabled:opacity-30"
+              title="Undo (Ctrl+Z)"
+              className="rounded px-1.5 py-1 font-medium hover:bg-white/10 disabled:opacity-40 transition-colors"
             >
-              <Undo2 className="h-4 w-4" />
-            </Button>
-            <Button
+              Undo
+            </button>
+            <span className="text-white/40">·</span>
+            <button
               type="button"
-              variant="ghost"
-              size="sm"
               onClick={() => dispatch({ type: "redo" })}
               disabled={hist.future.length === 0}
-              aria-label="Redo"
-              title="Redo"
-              className="h-8 w-8 p-0 text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827] disabled:opacity-30"
+              title="Redo (Ctrl+Y)"
+              className="rounded px-1.5 py-1 font-medium hover:bg-white/10 disabled:opacity-40 transition-colors"
             >
-              <Redo2 className="h-4 w-4" />
-            </Button>
+              Redo
+            </button>
           </div>
 
+          <div className="flex items-center gap-1.5 text-xs font-medium text-white/90">
+            <span
+              className={`h-2 w-2 rounded-full ${
+                dirty ? "bg-amber-300" : "bg-emerald-300"
+              }`}
+            />
+            <span>{saving ? "Saving..." : dirty ? "Unsaved changes" : "Saved"}</span>
+          </div>
+        </div>
+
+        {/* Center: Template name centred */}
+        <div className="absolute left-1/2 -translate-x-1/2 flex items-center justify-center pointer-events-auto">
+          {brandLayer ? (
+            <p className="truncate text-center text-sm md:text-[15px] font-semibold text-white">
+              Organization header and footer
+            </p>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setDetailsOpen(true)}
+              title="Click to rename or view details"
+              className="max-w-[180px] sm:max-w-[280px] md:max-w-[420px] truncate text-center text-sm md:text-[15px] font-semibold text-white hover:underline focus:outline-none"
+            >
+              {name || "Untitled Template"}
+            </button>
+          )}
+        </div>
+
+        {/* Far right: Edit/Preview, Versions and Save */}
+        <div className="flex items-center gap-2.5 shrink-0">
           <div
             role="group"
             aria-label="Edit or preview"
-            className="flex items-center rounded-[6px] border border-[#E5E7EB] bg-[#F9FAFB] p-0.5"
+            className="hidden sm:flex items-center rounded-[6px] bg-white/15 p-0.5"
           >
             <button
               type="button"
@@ -1152,8 +2299,8 @@ export default function TemplateEdit() {
               onClick={() => setPreviewOn(false)}
               className={`rounded-[4px] px-2.5 py-1 text-xs transition-colors ${
                 !previewOn
-                  ? "bg-white font-semibold text-[#111827]"
-                  : "text-[#6B7280] hover:text-[#111827]"
+                  ? "bg-white font-semibold text-[#2563EB]"
+                  : "text-white/90 hover:text-white"
               }`}
             >
               Edit
@@ -1164,30 +2311,29 @@ export default function TemplateEdit() {
               onClick={() => setPreviewOn(true)}
               className={`rounded-[4px] px-2.5 py-1 text-xs transition-colors ${
                 previewOn
-                  ? "bg-white font-semibold text-[#111827]"
-                  : "text-[#6B7280] hover:text-[#111827]"
+                  ? "bg-white font-semibold text-[#2563EB]"
+                  : "text-white/90 hover:text-white"
               }`}
             >
               Preview
             </button>
           </div>
 
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setDrawerOpen(true)}
-            className="h-8 gap-1.5 rounded-[6px] border-[#E5E7EB] px-3 text-xs font-medium text-[#111827] shadow-none hover:bg-[#F3F4F6]"
-          >
-            <HistoryIcon className="h-3.5 w-3.5 text-[#6B7280]" /> Versions
-          </Button>
+          {!brandLayer && (
+            <button
+              type="button"
+              onClick={() => setDrawerOpen(true)}
+              className="flex items-center gap-1.5 rounded-[6px] border border-white/30 bg-transparent px-3 py-1.5 text-xs font-medium text-white hover:bg-white/10 transition-colors"
+            >
+              <HistoryIcon className="h-3.5 w-3.5" /> Versions
+            </button>
+          )}
 
-          <Button
+          <button
             type="button"
-            size="sm"
             onClick={save}
             disabled={saving}
-            className="h-8 gap-1.5 rounded-[6px] bg-[#2563EB] px-3.5 text-xs font-medium text-white shadow-none hover:bg-[#1D4ED8] disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-[6px] bg-white px-4 py-1.5 text-xs font-semibold text-[#2563EB] shadow-xs hover:bg-blue-50 disabled:opacity-60 transition-colors"
           >
             {saving ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1195,57 +2341,35 @@ export default function TemplateEdit() {
               <Save className="h-3.5 w-3.5" />
             )}
             Save
-          </Button>
+          </button>
         </div>
       </header>
 
-      {/* --------------------------------------------- type and note row */}
-      <div className="flex h-10 shrink-0 items-center justify-between border-b border-[#E5E7EB] bg-white px-3">
-        <div className="flex flex-1 items-center gap-4 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-[#6B7280] shrink-0">Type</span>
-            <Select value={category} onValueChange={(val) => setCategory(val)}>
-              <SelectTrigger className="h-7 w-32 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] shadow-none focus:ring-1 focus:ring-[#2563EB]">
-                <SelectValue placeholder="Type" />
-              </SelectTrigger>
-              <SelectContent className="rounded-[6px] border-[#E5E7EB]">
-                {TEMPLATE_CATEGORIES.map((option) => (
-                  <SelectItem key={option} value={option} className="text-xs">
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+      {/* Warning bar for items outside content area */}
+      {contentItemsOutside.length > 0 ? (
+        <div
+          role="alert"
+          className="flex shrink-0 items-center justify-between gap-3 border-b border-[#FDE68A] bg-[#FFFBEB] px-3 py-2 text-xs text-[#D97706]"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>
+              {contentItemsOutside.length === 1
+                ? "1 item in the content area is outside the new bounds."
+                : `${contentItemsOutside.length} items in the content area are outside the new bounds.`}
+            </span>
           </div>
-
-          <div className="flex flex-1 items-center gap-2 min-w-[200px] max-w-md">
-            <span className="text-xs text-[#6B7280] shrink-0">Note</span>
-            <Input
-              type="text"
-              value={note}
-              maxLength={NOTE_LIMIT}
-              onChange={(event) => setNote(event.target.value)}
-              placeholder="What did you change? (optional)"
-              className="h-7 rounded-[6px] border-[#E5E7EB] bg-white text-xs text-[#111827] shadow-none focus-visible:ring-1 focus-visible:ring-[#2563EB]"
-            />
-          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={moveContentItemsInside}
+            className="h-7 rounded-[4px] border-[#F59E0B] bg-white px-2.5 text-xs font-semibold text-[#B45309] hover:bg-[#FEF3C7]"
+          >
+            Move them inside
+          </Button>
         </div>
-
-        <div className="flex items-center gap-3 shrink-0 ml-3">
-          {dirty ? (
-            <button
-              type="button"
-              onClick={resetToSaved}
-              className="text-xs text-[#6B7280] hover:text-[#111827] underline"
-            >
-              Undo everything
-            </button>
-          ) : null}
-          <p className="text-xs text-[#6B7280]">
-            {size.width} × {size.height} pixels
-          </p>
-        </div>
-      </div>
+      ) : null}
 
       {banner ? (
         <div
@@ -1294,12 +2418,14 @@ export default function TemplateEdit() {
               <Monitor className="h-5 w-5 shrink-0 text-primary" />
               <div>
                 <p className="text-sm font-semibold text-heading">
-                  Use a larger screen to edit templates
+                  {brandLayer
+                    ? "Use a larger screen to place your header and footer"
+                    : "Use a larger screen to edit templates"}
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Placing items needs room for the poster and its tools side by
-                  side. Below is a look at this template as it stands, so you
-                  can still check it here.
+                  {brandLayer
+                    ? "Moving things around needs room for the poster and its tools side by side. Below is a look at your brand as it stands, so you can still check it here."
+                    : "Moving things around needs room for the poster and its tools side by side. Below is a look at this template as it stands, so you can still check it here."}
                 </p>
               </div>
             </div>
@@ -1337,28 +2463,51 @@ export default function TemplateEdit() {
         </div>
       ) : (
         <div className="flex min-h-0 flex-1">
-          <EditorRail tab={tab} onTab={setTab} />
+          <EditorRail tab={tab} onTab={setTab} activeSection={activeSection} />
 
-          <div className="relative min-h-0 min-w-0 flex-1">
+          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+            {contextualToolbarElement ? (
+              <div
+                data-editor-ui="true"
+                className="shrink-0 z-30 border-b border-[#E5E7EB] bg-white px-4 py-1.5 flex items-center justify-center shadow-xs overflow-x-auto"
+              >
+                {contextualToolbarElement}
+              </div>
+            ) : null}
             <EditorStage
               size={size}
-              area={area}
+              area={activeArea}
               brandKit={brandKit}
               template={draftTemplate}
               content={TEMPLATE_SAMPLE_CONTENT}
-              items={items}
+              items={activeItems}
               selectedId={selectedId}
+              selectedIds={selectedIds}
               editingId={editingId}
+              hiddenIds={hiddenIds}
+              activeSection={activeSection}
+              sections={sections}
+              sectionTabs={brandLayer ? ["header", "footer"] : null}
+              showFullPoster={showFullPoster}
+              onSwitchSection={switchSection}
+              onToggleShowFullPoster={() => {
+                setShowFullPoster(true);
+                setZoom("fit");
+              }}
               zoom={zoom}
               guidesOn={guidesOn}
               gridOn={gridOn}
-              hiddenIds={hiddenIds}
-              onSelect={setSelectedId}
+              rulersOn={rulersOn}
+              onSelect={handleItemSelect}
+              onSelectMultiple={handleSelectMultiple}
               onStartEdit={setEditingId}
               onStopEdit={() => setEditingId("")}
               onCommitText={commitText}
               onCanvasClick={clearSelection}
               onCommitRect={commitRect}
+              onCommitMultiMove={commitMultiMove}
+              onCommitRotation={commitRotation}
+              onFitHeight={fitHeight}
               onToggleLock={toggleLock}
               onDuplicate={duplicate}
               onDelete={remove}
@@ -1366,33 +2515,23 @@ export default function TemplateEdit() {
               onZoom={setZoom}
               onToggleGuides={() => setGuidesOn((on) => !on)}
               onToggleGrid={() => setGridOn((on) => !on)}
+              onOverflow={setItemsOverflow}
+              onComment={handleComment}
+              isNormalUser={user?.role === "user"}
+              onScaleChange={handleScaleChange}
+              onDropImage={insertImage}
+              onEditCard={handleEditCard}
+              onOpenBrandKit={() => navigate("/brand-kit")}
             />
-
-            {selected ? (
-              <div className="pointer-events-none absolute inset-x-0 top-2 z-[52] flex justify-center px-2">
-                <div className="pointer-events-auto max-w-full">
-                  <ItemToolbar
-                    item={selected}
-                    items={items}
-                    brandKit={brandKit}
-                    page={page}
-                    onStyle={patchStyle}
-                    onStyleLive={liveStyle}
-                    onMode={changeMode}
-                    onMeta={changeMeta}
-                    onResetToBrand={resetItemToBrand}
-                  />
-                </div>
-              </div>
-            ) : null}
 
             <EditorPanel
               tab={tab}
-              items={items}
+              items={activeItems}
               selectedId={selectedId}
               hiddenIds={hiddenIds}
               brandKit={brandKit}
               page={page}
+              activeSection={activeSection}
               onPageChange={editPage}
               onResetPageSection={resetPageSection}
               onApplyColorToken={applyColorToken}
@@ -1401,17 +2540,195 @@ export default function TemplateEdit() {
               onClose={() => setTab("")}
             />
           </div>
+
+          <SectionSettingsPanel
+            isOpen={settingsDrawerOpen}
+            onClose={() => setSettingsDrawerOpen(false)}
+            section={activeSection}
+            sections={sections}
+            brandKit={brandKit}
+            size={size}
+            brandLayer={brandLayer}
+            onEditBrandBand={brandLayer ? null : editBrandBand}
+            onSectionChange={editSection}
+            onPageChange={editPage}
+            onResetPageSection={resetPageSection}
+          />
         </div>
       )}
 
       {wide && !previewOn ? (
-        <p className="flex shrink-0 items-center gap-1.5 border-t border-[#E5E7EB] bg-white px-3 py-1.5 text-[11px] text-[#6B7280]">
-          <Keyboard className="h-3.5 w-3.5 text-[#9CA3AF]" />
-          Arrow keys move the picked item 1 pixel, Shift for 10 · Delete removes
-          it · Ctrl or Command with D makes a copy, with C copies it for another
-          template and with V puts it back, with Z goes back, with Y comes
-          forward · Esc lets go
-        </p>
+        <footer
+          aria-label="Editor status and zoom"
+          className="flex h-10 shrink-0 items-center justify-between border-t border-[#E5E7EB] bg-white px-3 text-xs text-[#6B7280] z-20"
+        >
+          {/* Left: autosave status, poster size, warning chip */}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="flex items-center gap-1.5 font-medium text-[#4B5563]">
+              <Cloud className={`h-3.5 w-3.5 ${dirty ? "text-[#9CA3AF]" : "text-[#16A34A]"}`} />
+              <span>{dirty ? "Unsaved changes" : "Saved"}</span>
+            </div>
+
+            <span className="text-[#D1D5DB]">·</span>
+
+            <span className="tabular-nums font-mono text-[11px] text-[#6B7280]">
+              {size.width} × {size.height} px
+            </span>
+
+            {itemsOverflow ? (
+              <span
+                role="status"
+                className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800"
+                title="Some text in the poster exceeds its container bounds"
+              >
+                <AlertTriangle className="h-3 w-3 text-amber-600 shrink-0" />
+                Words do not fit
+              </span>
+            ) : null}
+          </div>
+
+          {/* Right: jump to a part, zoom out, slider, zoom in, percentage field, Fit, 100%, full screen */}
+          <div className="flex items-center gap-2 shrink-0">
+            <div
+              role="group"
+              aria-label="Jump to a part of the poster"
+              className="mr-1 flex items-center rounded-[6px] border border-[#E5E7EB] bg-white p-0.5"
+            >
+              {(brandLayer ? ["header", "footer"] : ["header", "content", "footer"]).map((key) => {
+                const active = !showFullPoster && activeSection === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => switchSection(key)}
+                    aria-pressed={active}
+                    className={`rounded-[4px] px-2 py-0.5 text-[11px] font-medium capitalize transition-colors ${
+                      active
+                        ? "bg-[#2563EB] text-white"
+                        : "text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827]"
+                    }`}
+                  >
+                    {key}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              title="Zoom out"
+              aria-label="Zoom out"
+              onClick={() => {
+                const current = Math.round(editorScale * 100);
+                setZoom(Math.max(25, current - 10));
+              }}
+              className="rounded p-1 text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827]"
+            >
+              <Minus className="h-3.5 w-3.5" />
+            </button>
+
+            <input
+              type="range"
+              min={25}
+              max={400}
+              step={1}
+              value={Math.round(editorScale * 100)}
+              onChange={(e) => setZoom(Number(e.target.value))}
+              className="w-20 accent-[#2563EB] cursor-pointer"
+              aria-label="Zoom slider"
+            />
+
+            <button
+              type="button"
+              title="Zoom in"
+              aria-label="Zoom in"
+              onClick={() => {
+                const current = Math.round(editorScale * 100);
+                setZoom(Math.min(400, current + 10));
+              }}
+              className="rounded p-1 text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827]"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+
+            <div className="flex items-center">
+              <input
+                type="text"
+                value={percentInput}
+                onChange={(e) => setPercentInput(e.target.value)}
+                onBlur={() => {
+                  const val = parseInt(percentInput.replace(/[^0-9]/g, ""), 10);
+                  if (!isNaN(val)) {
+                    const clamped = Math.max(25, Math.min(400, val));
+                    setZoom(clamped);
+                    setPercentInput(`${clamped}%`);
+                  } else {
+                    setPercentInput(`${Math.round(editorScale * 100)}%`);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.currentTarget.blur();
+                  }
+                }}
+                className="w-14 text-center text-xs font-mono tabular-nums rounded-[4px] border border-[#E5E7EB] py-0.5 bg-white text-[#111827] focus:border-[#2563EB] focus:outline-none"
+                aria-label="Zoom percentage"
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setZoom("fit")}
+              className={`px-2 py-0.5 rounded-[4px] text-xs font-medium transition-colors ${
+                zoom === "fit"
+                  ? "bg-[#EFF6FF] text-[#2563EB] font-semibold border border-blue-200"
+                  : "text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827] border border-[#E5E7EB]"
+              }`}
+            >
+              Fit
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setZoom(100)}
+              className={`px-2 py-0.5 rounded-[4px] text-xs font-medium transition-colors ${
+                zoom === 100
+                  ? "bg-[#EFF6FF] text-[#2563EB] font-semibold border border-blue-200"
+                  : "text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827] border border-[#E5E7EB]"
+              }`}
+            >
+              100%
+            </button>
+
+            <button
+              type="button"
+              title={rulersOn || gridOn ? "Hide rulers and grid" : "Show rulers and grid"}
+              aria-label={rulersOn || gridOn ? "Hide rulers and grid" : "Show rulers and grid"}
+              onClick={() => {
+                const next = !(rulersOn || gridOn);
+                setRulersOn(next);
+                setGridOn(next);
+              }}
+              className={`rounded p-1 transition-colors ${
+                rulersOn || gridOn
+                  ? "bg-blue-50 text-[#2563EB]"
+                  : "text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827]"
+              }`}
+            >
+              <Grid className="h-3.5 w-3.5" />
+            </button>
+
+            <button
+              type="button"
+              title={isFullscreen ? "Exit full screen" : "Full screen"}
+              aria-label={isFullscreen ? "Exit full screen" : "Full screen"}
+              onClick={toggleFullscreen}
+              className="rounded p-1 text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827]"
+            >
+              {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+            </button>
+          </div>
+        </footer>
       ) : null}
 
       {drawerOpen ? (
@@ -1425,6 +2742,237 @@ export default function TemplateEdit() {
           onClose={() => setDrawerOpen(false)}
           onRestore={restore}
         />
+      ) : null}
+
+      {/* Unsaved Changes Confirmation Modal */}
+      <Dialog open={backModalOpen} onOpenChange={setBackModalOpen}>
+        <DialogContent className="sm:max-w-[420px] rounded-[8px] border border-[#E5E7EB] bg-white p-6 shadow-xl">
+          <DialogHeader className="space-y-1">
+            <DialogTitle className="text-base font-semibold text-[#111827]">
+              Unsaved changes
+            </DialogTitle>
+            <DialogDescription className="text-xs text-[#6B7280]">
+              {brandLayer
+                ? "You have unsaved changes to your organization header and footer. Save them before you leave?"
+                : "You have unsaved changes in this template. Do you want to save before leaving?"}
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              className="text-xs h-9 rounded-[6px] text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+              onClick={() => {
+                setBackModalOpen(false);
+                navigate(nextRoute);
+              }}
+            >
+              Discard changes
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="text-xs h-9 rounded-[6px] border-[#E5E7EB] text-[#374151]"
+              onClick={() => setBackModalOpen(false)}
+            >
+              Keep editing
+            </Button>
+            <Button
+              type="button"
+              className="bg-[#2563EB] hover:bg-blue-700 text-white text-xs h-9 rounded-[6px]"
+              onClick={async () => {
+                const ok = await save();
+                if (ok) {
+                  setBackModalOpen(false);
+                  navigate(nextRoute);
+                }
+              }}
+            >
+              Save and leave
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Template Details Modal */}
+      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <DialogContent className="sm:max-w-[440px] rounded-[8px] border border-[#E5E7EB] bg-white p-6 shadow-xl">
+          <DialogHeader className="space-y-1">
+            <DialogTitle className="text-base font-semibold text-[#111827]">
+              Template details
+            </DialogTitle>
+            <DialogDescription className="text-xs text-[#6B7280]">
+              Update the template name, category, and version note.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-[#374151]">
+                Template name
+              </Label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value.slice(0, NAME_LIMIT))}
+                placeholder="Give this template a name"
+                maxLength={NAME_LIMIT}
+                className="h-9 rounded-[6px] text-xs border-[#E5E7EB]"
+              />
+              <p className="text-[11px] text-[#9CA3AF] text-right tabular-nums">
+                {name.length}/{NAME_LIMIT}
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-[#374151]">
+                Category
+              </Label>
+              <Select value={category} onValueChange={setCategory}>
+                <SelectTrigger className="h-9 rounded-[6px] text-xs border-[#E5E7EB]">
+                  <SelectValue placeholder="Pick a category" />
+                </SelectTrigger>
+                <SelectContent className="text-xs">
+                  {TEMPLATE_CATEGORIES.map((cat) => (
+                    <SelectItem key={cat} value={cat}>
+                      {cat}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-[#374151]">
+                Version note <span className="text-[#9CA3AF] font-normal">(optional)</span>
+              </Label>
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value.slice(0, NOTE_LIMIT))}
+                placeholder="What changed in this version?"
+                rows={3}
+                maxLength={NOTE_LIMIT}
+                className="w-full rounded-[6px] border border-[#E5E7EB] p-2 text-xs text-[#111827] focus:border-[#2563EB] focus:outline-none focus:ring-1 focus:ring-[#2563EB]"
+              />
+              <p className="text-[11px] text-[#9CA3AF] text-right tabular-nums">
+                {note.length}/{NOTE_LIMIT}
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="flex justify-end gap-2 pt-2 border-t border-[#F3F4F6]">
+            <Button
+              type="button"
+              className="bg-[#2563EB] hover:bg-blue-700 text-white text-xs h-9 px-4 rounded-[6px]"
+              onClick={() => setDetailsOpen(false)}
+            >
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Keyboard Shortcuts Modal */}
+      <Dialog open={keyboardOpen} onOpenChange={setKeyboardOpen}>
+        <DialogContent className="sm:max-w-[460px] rounded-[8px] border border-[#E5E7EB] bg-white p-6 shadow-xl">
+          <DialogHeader className="space-y-1">
+            <DialogTitle className="text-base font-semibold text-[#111827]">
+              Keyboard shortcuts
+            </DialogTitle>
+            <DialogDescription className="text-xs text-[#6B7280]">
+              Shortcuts to help you edit faster.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-2 gap-2 text-xs py-3 max-h-[60vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-2 rounded-[6px] bg-[#F9FAFB] border border-[#E5E7EB]">
+              <span className="text-[#4B5563]">Undo</span>
+              <kbd className="px-1.5 py-0.5 rounded bg-white border border-[#D1D5DB] font-mono text-[11px] font-semibold text-[#111827]">Ctrl + Z</kbd>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded-[6px] bg-[#F9FAFB] border border-[#E5E7EB]">
+              <span className="text-[#4B5563]">Redo</span>
+              <kbd className="px-1.5 py-0.5 rounded bg-white border border-[#D1D5DB] font-mono text-[11px] font-semibold text-[#111827]">Ctrl + Y</kbd>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded-[6px] bg-[#F9FAFB] border border-[#E5E7EB]">
+              <span className="text-[#4B5563]">Copy</span>
+              <kbd className="px-1.5 py-0.5 rounded bg-white border border-[#D1D5DB] font-mono text-[11px] font-semibold text-[#111827]">Ctrl + C</kbd>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded-[6px] bg-[#F9FAFB] border border-[#E5E7EB]">
+              <span className="text-[#4B5563]">Paste</span>
+              <kbd className="px-1.5 py-0.5 rounded bg-white border border-[#D1D5DB] font-mono text-[11px] font-semibold text-[#111827]">Ctrl + V</kbd>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded-[6px] bg-[#F9FAFB] border border-[#E5E7EB]">
+              <span className="text-[#4B5563]">Cut</span>
+              <kbd className="px-1.5 py-0.5 rounded bg-white border border-[#D1D5DB] font-mono text-[11px] font-semibold text-[#111827]">Ctrl + X</kbd>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded-[6px] bg-[#F9FAFB] border border-[#E5E7EB]">
+              <span className="text-[#4B5563]">Duplicate</span>
+              <kbd className="px-1.5 py-0.5 rounded bg-white border border-[#D1D5DB] font-mono text-[11px] font-semibold text-[#111827]">Ctrl + D</kbd>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded-[6px] bg-[#F9FAFB] border border-[#E5E7EB]">
+              <span className="text-[#4B5563]">Group</span>
+              <kbd className="px-1.5 py-0.5 rounded bg-white border border-[#D1D5DB] font-mono text-[11px] font-semibold text-[#111827]">Ctrl + G</kbd>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded-[6px] bg-[#F9FAFB] border border-[#E5E7EB]">
+              <span className="text-[#4B5563]">Ungroup</span>
+              <kbd className="px-1.5 py-0.5 rounded bg-white border border-[#D1D5DB] font-mono text-[11px] font-semibold text-[#111827]">Ctrl + Shift + G</kbd>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded-[6px] bg-[#F9FAFB] border border-[#E5E7EB]">
+              <span className="text-[#4B5563]">Delete</span>
+              <kbd className="px-1.5 py-0.5 rounded bg-white border border-[#D1D5DB] font-mono text-[11px] font-semibold text-[#111827]">Del / Backspace</kbd>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded-[6px] bg-[#F9FAFB] border border-[#E5E7EB]">
+              <span className="text-[#4B5563]">Nudge 1px</span>
+              <kbd className="px-1.5 py-0.5 rounded bg-white border border-[#D1D5DB] font-mono text-[11px] font-semibold text-[#111827]">Arrow keys</kbd>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded-[6px] bg-[#F9FAFB] border border-[#E5E7EB]">
+              <span className="text-[#4B5563]">Nudge 10px</span>
+              <kbd className="px-1.5 py-0.5 rounded bg-white border border-[#D1D5DB] font-mono text-[11px] font-semibold text-[#111827]">Shift + Arrows</kbd>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded-[6px] bg-[#F9FAFB] border border-[#E5E7EB]">
+              <span className="text-[#4B5563]">Multi-select</span>
+              <kbd className="px-1.5 py-0.5 rounded bg-white border border-[#D1D5DB] font-mono text-[11px] font-semibold text-[#111827]">Shift + Click / Drag</kbd>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded-[6px] bg-[#F9FAFB] border border-[#E5E7EB]">
+              <span className="text-[#4B5563]">Switch section</span>
+              <kbd className="px-1.5 py-0.5 rounded bg-white border border-[#D1D5DB] font-mono text-[11px] font-semibold text-[#111827]">Alt + 1 / 2 / 3</kbd>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded-[6px] bg-[#F9FAFB] border border-[#E5E7EB]">
+              <span className="text-[#4B5563]">Clear / Fit</span>
+              <kbd className="px-1.5 py-0.5 rounded bg-white border border-[#D1D5DB] font-mono text-[11px] font-semibold text-[#111827]">Esc</kbd>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded-[6px] bg-[#F9FAFB] border border-[#E5E7EB]">
+              <span className="text-[#4B5563]">Zoom canvas</span>
+              <kbd className="px-1.5 py-0.5 rounded bg-white border border-[#D1D5DB] font-mono text-[11px] font-semibold text-[#111827]">Ctrl + Wheel / + -</kbd>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded-[6px] bg-[#F9FAFB] border border-[#E5E7EB]">
+              <span className="text-[#4B5563]">Pan canvas</span>
+              <kbd className="px-1.5 py-0.5 rounded bg-white border border-[#D1D5DB] font-mono text-[11px] font-semibold text-[#111827]">Space + Drag</kbd>
+            </div>
+          </div>
+
+          <DialogFooter className="pt-2 border-t border-[#F3F4F6]">
+            <Button
+              type="button"
+              className="bg-[#2563EB] hover:bg-blue-700 text-white text-xs h-9 px-4 rounded-[6px]"
+              onClick={() => setKeyboardOpen(false)}
+            >
+              Got it
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {editingCardId && cardListItem ? (
+        <React.Suspense fallback={null}>
+          <CardEditorModal
+            isOpen={Boolean(editingCardId)}
+            item={cardListItem}
+            brandKit={brandKit}
+            onClose={() => setEditingCardId("")}
+            onCommit={handleCommitCard}
+          />
+        </React.Suspense>
       ) : null}
     </div>
   );

@@ -1,16 +1,19 @@
 import { badRequest, normalizeLayout, normalizeZones } from '../template/zones.js';
 import { withBrandKitDefaults } from '../brand/style.js';
 import {
+  BRAND_BAND_KINDS,
   EDITOR_VERSION,
   ELEMENT_LIMITS,
   LEGACY_EDITOR_VERSION,
   VARIABLE_LIMITS,
+  normalizeBrandBand,
   normalizeElements,
+  resolveBands,
 } from '../../../shared/templateElements.js';
 
 /* A poster keeps the look it was made with: a small, self-contained copy of the brand kit
    and template is stored on the poster (and on every version) when it is saved. */
-export const DESIGN_MAX_BYTES = 60 * 1024;
+export const DESIGN_MAX_BYTES = 200 * 1024;
 
 const BRAND_KEYS = [
   'orgName',
@@ -92,7 +95,16 @@ export function brandKitSnapshot(brandKit) {
   for (const key of BRAND_KEYS) {
     if (filled[key] !== undefined) source[key] = filled[key];
   }
-  return prune(source) || {};
+  const snapshot = prune(source) || {};
+  /* The two bands are the kit's own, kept whole: the generic prune would cut the item list
+     short and strip the settings each item carries. */
+  for (const kind of BRAND_BAND_KINDS) {
+    if (!snapshot[kind]) continue;
+    const band = normalizeBrandBand(undefined, kind, filled);
+    snapshot[kind].mode = band.mode;
+    snapshot[kind].elements = elementSnapshot(band.elements);
+  }
+  return snapshot;
 }
 
 /* Editor items are kept whole (a poster can hold up to thirty of them, more than the
@@ -109,13 +121,67 @@ function elementSnapshot(elements) {
         text: cleanString(element.text || '', ELEMENT_LIMITS.textChars),
         imageUrl: cleanString(element.imageUrl || '', 600),
       };
-      if (snapshot.variable) {
+      if (snapshot.variable || snapshot.kind === 'cardlist') {
         snapshot.key = cleanString(snapshot.key || '', VARIABLE_LIMITS.key.max);
         snapshot.label = cleanString(snapshot.label || '', VARIABLE_LIMITS.labelChars);
         snapshot.hint = cleanString(snapshot.hint || '', VARIABLE_LIMITS.hintChars);
       }
+      delete snapshot.sample;
+      delete snapshot.sampleImage;
+      if (snapshot.kind === 'cardlist' && snapshot.card) {
+        snapshot.card = {
+          w: Math.round(Number(snapshot.card.w) || 300),
+          h: Math.round(Number(snapshot.card.h) || 150),
+          fields: (snapshot.card.fields || []).slice(0, 6).map((f) => ({
+            key: cleanString(f.key || '', 24),
+            type: f.type === 'image' ? 'image' : 'text',
+            label: cleanString(f.label || '', 30),
+            ...(f.maxLength ? { maxLength: Math.round(Number(f.maxLength)) } : {}),
+          })),
+          items: (snapshot.card.items || []).slice(0, 20).map((it) => ({
+            ...it,
+            id: cleanString(it.id || '', ELEMENT_LIMITS.idChars),
+            text: cleanString(it.text || '', ELEMENT_LIMITS.textChars),
+            imageUrl: cleanString(it.imageUrl || '', 600),
+            fieldKey: cleanString(it.fieldKey || '', 24),
+          })),
+        };
+      }
       return snapshot;
     });
+}
+
+function sectionHeaderFooterSnapshot(section, defaultHeight = 80) {
+  if (!section) return { mode: 'brand', height: defaultHeight, elements: [] };
+  const raw = plain(section) || {};
+  return {
+    mode: raw.mode === 'custom' ? 'custom' : 'brand',
+    height: Math.round(Number(raw.height) || defaultHeight),
+    background: raw.background ? prune(raw.background) : undefined,
+    elements: elementSnapshot(raw.elements || []),
+  };
+}
+
+function sectionContentSnapshot(section, fallbackElements = [], fallbackPage = undefined) {
+  const raw = plain(section) || {};
+  const page = raw.page ? prune(raw.page) : (fallbackPage ? prune(fallbackPage) : undefined);
+  const elements = elementSnapshot(raw.elements && raw.elements.length > 0 ? raw.elements : fallbackElements);
+  return {
+    page,
+    elements,
+  };
+}
+
+function templateSectionsSnapshot(raw) {
+  const rawSec = plain(raw.sections) || {};
+  const header = sectionHeaderFooterSnapshot(rawSec.header || raw.header, 80);
+  const footer = sectionHeaderFooterSnapshot(rawSec.footer || raw.footer, 70);
+  const content = sectionContentSnapshot(rawSec.content || raw.content, raw.elements || [], raw.page);
+  return {
+    header,
+    content,
+    footer,
+  };
 }
 
 export function templateSnapshot(template) {
@@ -133,6 +199,7 @@ export function templateSnapshot(template) {
     maxFont: Math.round(zone.maxFont),
   }));
   const elements = elementSnapshot(raw.elements);
+  const sections = templateSectionsSnapshot(raw);
   const snapshot = prune({
     templateId: String(raw._id || raw.templateId || ''),
     name: cleanString(raw.name, 120),
@@ -157,7 +224,32 @@ export function templateSnapshot(template) {
       : undefined,
     icon: typeof raw.icon === 'string' ? cleanString(raw.icon, 40) : undefined,
   });
-  if (elements.length > 0) snapshot.elements = elements;
+  snapshot.sections = sections;
+  snapshot.header = sections.header;
+  snapshot.content = sections.content;
+  snapshot.footer = sections.footer;
+  if (sections.content.elements.length > 0) {
+    snapshot.elements = sections.content.elements;
+  } else if (elements.length > 0) {
+    snapshot.elements = elements;
+  }
+  return snapshot;
+}
+
+function bandsSnapshot(brandKit, template) {
+  const bands = resolveBands(brandKit, template);
+  const snapshot = {};
+  for (const kind of BRAND_BAND_KINDS) {
+    const band = bands[kind];
+    snapshot[kind] = {
+      source: band.source,
+      mode: band.mode,
+      height: Math.round(band.height),
+      y: Math.round(band.y),
+      background: band.background ? prune(band.background) : undefined,
+      elements: band.mode === 'elements' ? elementSnapshot(band.elements) : [],
+    };
+  }
   return snapshot;
 }
 
@@ -178,6 +270,10 @@ export function captureDesign({ brandKit, template }) {
   const design = {
     brandKit: brandKitSnapshot(brandKit),
     template: templateSnapshot(template),
+    /* The two strips this poster draws at the top and the bottom, settled once and for all:
+       whose band won, how tall it is, where it sits and what is painted on it. A later change
+       to the brand kit or the template cannot move a saved poster's header or footer. */
+    bands: bandsSnapshot(brandKit, template),
     capturedAt: new Date(),
   };
   assertDesignSize(design);

@@ -7,23 +7,27 @@
  * Throws a friendly Error string on hard failure.
  */
 
+import { loadedFontRequests } from '../hooks/useGoogleFonts';
+
 // Google CSS per family and font bytes per file url, so repeat exports are cheap
 const familyCssCache = new Map();
 const fontFileCache = new Map();
-const FONT_WEIGHTS = 'wght@300;400;500;600;700;800';
 
-async function fetchFamilyCSS(family) {
-  if (familyCssCache.has(family)) return familyCssCache.get(family);
+/** The one link a poster is drawn with: this family at exactly these weights. */
+async function fetchFamilyCSS(family, weights) {
+  const sorted = [...new Set(weights)].sort((a, b) => a - b);
+  const key = `${family}@${sorted.join(',')}`;
+  if (familyCssCache.has(key)) return familyCssCache.get(key);
   let css = null;
   try {
     const res = await fetch(
-      `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}:${FONT_WEIGHTS}&display=swap`
+      `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}:wght@${sorted.join(';')}&display=swap`
     );
     if (res.ok) css = await res.text();
   } catch {
     css = null;
   }
-  familyCssCache.set(family, css);
+  familyCssCache.set(key, css);
   return css;
 }
 
@@ -82,10 +86,12 @@ async function inlineFontFile(url) {
  * Build the @font-face CSS for the families in use with every font file inlined.
  * Returns the CSS string, or null on failure (caller should warn + skip).
  */
-async function inlineGoogleFontCSS(families, text) {
+async function inlineGoogleFontCSS(requests, text) {
   try {
     const points = usedCodePoints(text);
-    const raws = await Promise.all(families.map((f) => fetchFamilyCSS(f)));
+    const raws = await Promise.all(
+      requests.map((request) => fetchFamilyCSS(request.family, request.weights))
+    );
     let css = raws
       .map((raw) => (raw ? keepUsedSubsets(raw, points) : ''))
       .join('\n')
@@ -104,41 +110,174 @@ async function inlineGoogleFontCSS(families, text) {
 }
 
 /**
- * Wait for all <img> elements inside `node` to fully load.
- * Times out after 8 s per image. Never throws — returns list of failed src strings.
+ * Loads every font face used in the poster DOM tree via document.fonts.load().
+ * Extracts font-family, font-weight, font-style from all elements within the node.
  */
-async function waitForImages(node) {
-  const imgs = Array.from(node.querySelectorAll('img'));
-  const failed = [];
-  await Promise.all(
-    imgs.map(
-      (img) =>
-        new Promise((resolve) => {
-          if (img.complete && img.naturalWidth > 0) return resolve();
-          const timer = setTimeout(() => {
-            failed.push(img.src);
-            resolve();
-          }, 8000);
-          img.onload = () => { clearTimeout(timer); resolve(); };
-          img.onerror = () => { clearTimeout(timer); failed.push(img.src); resolve(); };
-          // Trigger re-load in case browser gave up
-          if (img.complete) { img.src = img.src; } // eslint-disable-line no-self-assign
-        })
-    )
+async function loadUsedFontFaces(node) {
+  if (typeof document === 'undefined' || !document.fonts?.load) return;
+
+  const fontSpecs = new Set();
+
+  try {
+    const requests = loadedFontRequests();
+    for (const req of requests) {
+      for (const w of req.weights || [400, 700]) {
+        fontSpecs.add(`normal ${w} 16px "${req.family}"`);
+        fontSpecs.add(`italic ${w} 16px "${req.family}"`);
+      }
+    }
+  } catch {
+    /* fallback to inspecting node */
+  }
+
+  if (node) {
+    const elements = [node, ...node.querySelectorAll('*')];
+    for (const el of elements) {
+      const style = el.style;
+      const computed = typeof window !== 'undefined' && window.getComputedStyle ? window.getComputedStyle(el) : null;
+      const fontFamily = style?.fontFamily || computed?.fontFamily;
+      if (!fontFamily) continue;
+
+      const fontWeight = style?.fontWeight || computed?.fontWeight || '400';
+      const fontStyle = style?.fontStyle || computed?.fontStyle || 'normal';
+
+      const cleanFamilies = fontFamily
+        .split(',')
+        .map((f) => f.trim().replace(/^['"]|['"]$/g, ''))
+        .filter((f) => {
+          const lower = f.toLowerCase();
+          return f && !['sans-serif', 'serif', 'monospace', 'cursive', 'fantasy', 'system-ui', 'inherit', 'initial'].includes(lower);
+        });
+
+      for (const fam of cleanFamilies) {
+        fontSpecs.add(`${fontStyle} ${fontWeight} 16px "${fam}"`);
+        fontSpecs.add(`normal 400 16px "${fam}"`);
+        fontSpecs.add(`normal 700 16px "${fam}"`);
+      }
+    }
+  }
+
+  const loads = Array.from(fontSpecs).map((spec) =>
+    document.fonts.load(spec).catch(() => {})
   );
-  return failed;
+
+  await Promise.allSettled(loads);
+  if (document.fonts?.ready) {
+    await document.fonts.ready;
+  }
 }
 
 /**
- * Compute a safe pixel ratio: cap at 1 on mobile or when canvas would exceed
- * the ~16.7M pixel browser limit (some browsers allow more, but this is safe).
+ * Preload and decode an image with crossOrigin="anonymous".
+ * Retries a failed image once.
  */
-function safePixelRatio(width, height, desired = 2) {
-  const isMobile = /Mobi|Android/i.test(navigator.userAgent);
-  if (isMobile) return 1;
-  const totalPixels = width * height * desired * desired;
-  if (totalPixels > 16_000_000) return 1;
-  return desired;
+async function preloadAndDecodeImage(src, timeoutMs = 8000) {
+  if (!src) return { ok: false, src, reason: 'Empty image source' };
+  if (src.startsWith('data:')) {
+    try {
+      const img = new Image();
+      img.src = src;
+      if (typeof img.decode === 'function') await img.decode();
+      return { ok: true, src, img };
+    } catch {
+      return { ok: true, src };
+    }
+  }
+
+  const attempt = (url) =>
+    new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      const timer = setTimeout(() => {
+        img.src = '';
+        reject(new Error('Image timed out'));
+      }, timeoutMs);
+
+      img.onload = async () => {
+        clearTimeout(timer);
+        try {
+          if (typeof img.decode === 'function') {
+            await img.decode();
+          }
+          resolve(img);
+        } catch {
+          if (img.naturalWidth > 0) resolve(img);
+          else reject(new Error('Image decode failed'));
+        }
+      };
+
+      img.onerror = () => {
+        clearTimeout(timer);
+        reject(new Error('Image failed to load'));
+      };
+
+      img.src = url;
+    });
+
+  try {
+    const loaded = await attempt(src);
+    return { ok: true, src, img: loaded };
+  } catch {
+    // Retry once
+    try {
+      const retryUrl = src.includes('?') ? `${src}&retry=1` : `${src}?retry=1`;
+      const loaded = await attempt(retryUrl);
+      return { ok: true, src, img: loaded, retried: true };
+    } catch (retryErr) {
+      return { ok: false, src, reason: retryErr.message };
+    }
+  }
+}
+
+/**
+ * Preload, decode, and set crossOrigin="anonymous" on all images in the poster node.
+ */
+async function preloadAllPosterImages(node, perImageTimeout = 8000) {
+  const imgEls = Array.from(node.querySelectorAll('img'));
+  imgEls.forEach((img) => {
+    if (!img.crossOrigin) img.crossOrigin = 'anonymous';
+  });
+
+  const srcs = new Set();
+  imgEls.forEach((img) => {
+    if (img.src) srcs.add(img.src);
+    else if (img.getAttribute('src')) srcs.add(img.getAttribute('src'));
+  });
+
+  const allEls = [node, ...node.querySelectorAll('*')];
+  allEls.forEach((el) => {
+    const bg = el.style?.backgroundImage || (typeof window !== 'undefined' && window.getComputedStyle ? window.getComputedStyle(el)?.backgroundImage : '');
+    if (bg && bg.includes('url(')) {
+      const match = bg.match(/url\(['"]?([^'")]+)['"]?\)/);
+      if (match && match[1]) srcs.add(match[1]);
+    }
+  });
+
+  const results = await Promise.all(
+    Array.from(srcs).map((src) => preloadAndDecodeImage(src, perImageTimeout))
+  );
+
+  const missing = results.filter((r) => !r.ok);
+  return {
+    total: srcs.size,
+    missing: missing.map((m) => m.src),
+  };
+}
+
+/**
+ * Compute safe pixel ratio: 2 when canvas pixel count is under the browser limit,
+ * else 1 with a friendly notice added to warnings.
+ */
+function resolveExportPixelRatio(width, height, warnings) {
+  const BROWSER_PIXEL_LIMIT = 16_000_000;
+  const desiredPixels = width * height * 2 * 2;
+  const isMobile = typeof navigator !== 'undefined' && /Mobi|Android/i.test(navigator.userAgent);
+
+  if (isMobile || desiredPixels > BROWSER_PIXEL_LIMIT) {
+    warnings.push('High-resolution export was reduced to standard quality to stay within browser memory limits.');
+    return 1;
+  }
+  return 2;
 }
 
 /**
@@ -167,20 +306,102 @@ function downloadBlob(blob, filename) {
 }
 
 /**
- * Collect Google Font CSS used by the page and inline it as base64.
+ * Verify that the exported canvas is not blank by sampling the header, content, and footer bands.
+ */
+export function verifyCanvasNotBlank(canvas) {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return { ok: true };
+
+  const w = canvas.width;
+  const h = canvas.height;
+  if (w <= 0 || h <= 0) {
+    return { ok: false, reason: 'Canvas has zero dimensions.' };
+  }
+
+  // Header band: top 0% - 15%
+  // Content band: middle 20% - 80%
+  // Footer band: bottom 85% - 100%
+  const bands = [
+    { name: 'header', top: 0, bottom: Math.max(1, Math.floor(h * 0.15)) },
+    { name: 'content', top: Math.floor(h * 0.20), bottom: Math.floor(h * 0.80) },
+    { name: 'footer', top: Math.max(0, Math.floor(h * 0.85)), bottom: h },
+  ];
+
+  let totalAlpha = 0;
+  const allSampledColors = [];
+
+  for (const band of bands) {
+    const bandHeight = band.bottom - band.top;
+    if (bandHeight <= 0) continue;
+    const stepX = Math.max(1, Math.floor(w / 7));
+    const stepY = Math.max(1, Math.floor(bandHeight / 5));
+    let bandAlpha = 0;
+
+    for (let x = stepX; x < w; x += stepX) {
+      for (let y = band.top + stepY; y < band.bottom; y += stepY) {
+        const pixel = ctx.getImageData(x, y, 1, 1).data;
+        const [r, g, b, a] = pixel;
+        if (a > 0) {
+          bandAlpha++;
+          totalAlpha++;
+        }
+        allSampledColors.push(`${r},${g},${b},${a}`);
+      }
+    }
+
+    if (bandAlpha === 0) {
+      return { ok: false, reason: `The ${band.name} band appears blank.` };
+    }
+  }
+
+  const uniqueColors = new Set(allSampledColors);
+  if (totalAlpha === 0 || uniqueColors.size <= 1) {
+    return { ok: false, reason: 'The exported poster appears blank.' };
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Report export failures to error monitoring without poster text or sensitive user data.
+ */
+export function reportExportError(error, metadata = {}) {
+  const sanitized = {
+    message: error?.message || 'Export failed',
+    name: error?.name || 'ExportError',
+    stack: error?.stack,
+    format: metadata.format,
+    width: metadata.width,
+    height: metadata.height,
+    imageCount: metadata.imageCount,
+    missingImageCount: metadata.missingImageCount,
+    pixelRatio: metadata.pixelRatio,
+    reason: metadata.reason,
+  };
+
+  console.error('[exportPoster:monitoring]', sanitized);
+
+  if (typeof window !== 'undefined' && import.meta.env?.VITE_SENTRY_DSN) {
+    import('@sentry/react')
+      .then((Sentry) => {
+        Sentry.captureException(new Error(sanitized.message), {
+          tags: { feature: 'export' },
+          extra: sanitized,
+        });
+      })
+      .catch(() => {});
+  }
+}
+
+/**
+ * Inline the font files the poster is actually drawn with, as base64.
  * Returns { css: string|null, hadFamilies: boolean }.
  */
 async function collectFontEmbedCSS(node) {
   try {
-    const linkEls = Array.from(document.querySelectorAll('link[href*="fonts.googleapis.com"]'));
-    const families = [];
-    linkEls.forEach((el) => {
-      const m = el.href.match(/family=([^&]+)/g);
-      if (m) m.forEach((fam) => families.push(decodeURIComponent(fam.replace('family=', '').split(':')[0])));
-    });
-    const unique = [...new Set(families)];
-    if (unique.length === 0) return { css: null, hadFamilies: false };
-    const css = await inlineGoogleFontCSS(unique, node?.textContent);
+    const requests = loadedFontRequests();
+    if (requests.length === 0) return { css: null, hadFamilies: false };
+    const css = await inlineGoogleFontCSS(requests, node?.textContent);
     return { css: css || null, hadFamilies: true };
   } catch {
     return { css: null, hadFamilies: true };
@@ -227,57 +448,89 @@ export async function renderPosterJpeg(node, templateSize, { targetWidth = 400, 
  * @param {string} filename         - Base name without extension (will be sanitized)
  * @param {{ width: number, height: number }} templateSize
  * @param {string} [backgroundColor] - Brand background color (needed for JPG/PDF)
- * @returns {Promise<{ ok: boolean, warnings: string[] }>}
+ * @returns {Promise<{ ok: boolean, warnings: string[], canvas?: HTMLCanvasElement }>}
  */
 export async function exportPoster(node, format, filename, templateSize, backgroundColor) {
   if (!node) throw new Error("We couldn't create the file. Please try again.");
 
   const warnings = [];
   const { width = 1080, height = 1350 } = templateSize || {};
-  const pixelRatio = safePixelRatio(width, height, 2);
+  const pixelRatio = resolveExportPixelRatio(width, height, warnings);
   const safeName = sanitizeFilename(filename);
 
-  // 1. Wait for fonts
-  await document.fonts.ready;
+  const imgElements = Array.from(node.querySelectorAll('img')).filter((img) => img.src || img.getAttribute('src'));
+  const imageCount = imgElements.length;
+  const timeoutMs = imageCount > 10 ? 40_000 : 25_000;
 
-  // 2. Wait for images (never fail export on broken images)
-  const failedImages = await waitForImages(node);
-  if (failedImages.length > 0) {
-    warnings.push('The image could not be included in the export.');
-  }
+  let imagePrep = { total: 0, missing: [] };
 
-  // 3. Inline Google Fonts CSS (collect font families from loaded stylesheets)
-  let fontEmbedCSS;
-  const fontResult = await collectFontEmbedCSS(node);
-  fontEmbedCSS = fontResult.css;
-  if (!fontEmbedCSS && fontResult.hadFamilies) {
-    warnings.push('Custom fonts could not be embedded; system fonts used instead.');
-  }
+  const exportExecution = async () => {
+    // 1. Load every font face used
+    await loadUsedFontFaces(node);
 
-  // 4. Dynamic import — keeps libraries out of main bundle
-  const { toPng, toJpeg } = await import('html-to-image');
+    // 2. Preload and decode every image with crossOrigin="anonymous", retry failed images once
+    imagePrep = await preloadAllPosterImages(node, 8000);
+    if (imagePrep.missing.length > 0) {
+      const count = imagePrep.missing.length;
+      warnings.push(
+        count === 1
+          ? '1 image could not be loaded and was left out of the export.'
+          : `${count} images could not be loaded and were left out of the export.`
+      );
+    }
 
-  const bgColor = backgroundColor || '#0b0f17';
+    // 3. Inline Google Fonts CSS
+    let fontEmbedCSS;
+    const fontResult = await collectFontEmbedCSS(node);
+    fontEmbedCSS = fontResult.css;
+    if (!fontEmbedCSS && fontResult.hadFamilies) {
+      warnings.push('Custom fonts could not be embedded; system fonts used instead.');
+    }
 
-  const sharedOpts = {
-    pixelRatio,
-    cacheBust: true,
-    filter: exportFilter,
-    ...(fontEmbedCSS ? { fontEmbedCSS } : {}),
-  };
+    // 4. Dynamic import html-to-image
+    const { toCanvas } = await import('html-to-image');
 
-  /**
-   * Safari renders cross-origin images blank on the first call.
-   * Warm up by calling once and discarding, then capture for real.
-   */
-  const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    const bgColor = backgroundColor || '#0b0f17';
 
-  try {
+    const sharedOpts = {
+      pixelRatio,
+      cacheBust: true,
+      filter: exportFilter,
+      ...(fontEmbedCSS ? { fontEmbedCSS } : {}),
+      backgroundColor: format === 'png' && !backgroundColor ? undefined : bgColor,
+    };
+
+    /**
+     * Safari renders cross-origin images blank on the first call.
+     * Warm up by calling once and discarding, then capture for real.
+     */
+    const isSafari = typeof navigator !== 'undefined' && /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    if (isSafari) {
+      await toCanvas(node, { ...sharedOpts, pixelRatio: 1 }).catch(() => {});
+    }
+
+    // 5. Render to canvas
+    const canvas = await toCanvas(node, sharedOpts);
+
+    // 6. Verify result is not blank by sampling header, content, and footer bands
+    const blankCheck = verifyCanvasNotBlank(canvas);
+    if (!blankCheck.ok) {
+      const blankErr = new Error('The exported file was blank. Please try again.');
+      reportExportError(blankErr, {
+        format,
+        width,
+        height,
+        imageCount,
+        missingImageCount: imagePrep.missing.length,
+        pixelRatio,
+        reason: blankCheck.reason,
+      });
+      throw blankErr;
+    }
+
+    // 7. Output according to requested format
     if (format === 'pdf') {
-      // PDF: capture as JPEG to keep file small
-      if (isSafari) await toJpeg(node, { ...sharedOpts, backgroundColor: bgColor, quality: 0.5 }).catch(() => {});
-      const dataUrl = await toJpeg(node, { ...sharedOpts, backgroundColor: bgColor, quality: 0.92 });
-
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
       const { jsPDF } = await import('jspdf');
       const orientation = width >= height ? 'landscape' : 'portrait';
       const pdf = new jsPDF({ orientation, unit: 'px', format: [width, height], hotfixes: ['px_scaling'] });
@@ -285,26 +538,46 @@ export async function exportPoster(node, format, filename, templateSize, backgro
 
       const blob = pdf.output('blob');
       downloadBlob(blob, `${safeName}.pdf`);
-
     } else if (format === 'jpg') {
-      if (isSafari) await toJpeg(node, { ...sharedOpts, backgroundColor: bgColor, quality: 0.5 }).catch(() => {});
-      const dataUrl = await toJpeg(node, { ...sharedOpts, backgroundColor: bgColor, quality: 0.92 });
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
       const res = await fetch(dataUrl);
       const blob = await res.blob();
       downloadBlob(blob, `${safeName}.jpg`);
-
     } else {
       // PNG
-      if (isSafari) await toPng(node, sharedOpts).catch(() => {});
-      const dataUrl = await toPng(node, sharedOpts);
+      const dataUrl = canvas.toDataURL('image/png');
       const res = await fetch(dataUrl);
       const blob = await res.blob();
       downloadBlob(blob, `${safeName}.png`);
     }
-  } catch (err) {
-    console.error('[exportPoster]', err);
-    throw new Error("We couldn't create the file. Please try again.");
-  }
 
-  return { ok: true, warnings };
+    return { ok: true, warnings, canvas };
+  };
+
+  let timer;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error('Creating the file took too long. Please try again.'));
+    }, timeoutMs);
+  });
+
+  try {
+    const result = await Promise.race([exportExecution(), timeoutPromise]);
+    return result;
+  } catch (err) {
+    reportExportError(err, {
+      format,
+      width,
+      height,
+      imageCount,
+      missingImageCount: imagePrep.missing?.length || 0,
+      pixelRatio,
+    });
+    console.error('[exportPoster]', err);
+    throw (err.message && (err.message.startsWith('The exported') || err.message.startsWith('Creating the file')))
+      ? err
+      : new Error("We couldn't create the file. Please try again.");
+  } finally {
+    clearTimeout(timer);
+  }
 }

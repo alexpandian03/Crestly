@@ -49,7 +49,7 @@ Multi-client SaaS. Non-technical users describe a poster in plain language. Each
 - AI Design Recipe JSON:
   `{ recipeId, variant, icon, title: { main, sub }, tagline, slogan: { line1, line2 }, bullets: string[], info: { date, time, venue }, cta: { line, button }, imageQuery }`
 - Poster Model:
-  `{ clientId, title, content: { title, tagline, date, time, venue, details, imageUrl, extras, images }, templateId, templateVersion, design: { brandKit, template, capturedAt }, versions: [...], status, isDeleted }`
+  `{ clientId, title, content: { title, tagline, date, time, venue, details, imageUrl, extras, images }, templateId, templateVersion, design: { brandKit, template, bands, capturedAt }, versions: [...], status, isDeleted }`
 - Template Model:
   `{ clientId, name, category, size: { width, height }, elements: [...], page: { background, decoration, watermark, infoCard }, editorVersion: 2, versions: [...], isActive, isDefault }`
 
@@ -94,3 +94,6 @@ Multi-client SaaS. Non-technical users describe a poster in plain language. Each
 - Style Link (1-4): Brand tokens (`brand:primary`, etc.), template page overrides, editor token tabs, tokenized canvas.
 - Preview Unification: Unified `<TemplatePreview>` component across all views, dynamic font loading.
 - Image Resolution: Unified keyword-to-image pipeline for template and AI recipe generation modes.
+- Shared Languages (Tamil): Six Tamil-capable families in every allowed font list, per-family published weights (`FONT_WEIGHTS`/`weightsFor`), Tamil script rules (`shared/textScripts.js`: 1.4 leading, no letter spacing, no capitals, Tamil fallback) applied at measure and paint time, Tamil-subset font loading, Tamil + mixed samples in geometry/element tests and exports.
+- Brand Layer 1 (server + /shared): Brand Kit header/footer bands carry the template section shape (`mode: 'legacy' | 'elements'`, height, background, always-locked non-variable items). Shared `resolveBands`/`effectiveBand` decide whose band a poster draws (template custom band, else the kit's items or settings); `defaultBrandBands` seeds items on a new kit and offers them on a legacy kit without rewriting it; PUT /api/brand-kit accepts and validates bands for clientadmin/superadmin; saved posters pin the resolved `design.bands` so later kit edits cannot move them.
+- Brand Layer 2 (client only): Brand Kit page keeps only brand facts - tabs 'Identity and contact', 'Colours and fonts' (preset button inside) and 'Header and footer' (live band strip from `resolveBands`, Default/Customized status, Edit header/footer, reset with confirm). Header/footer look and page look are authored in the template editor: `TemplateEdit({ brandLayer })` reuses it at route /brand-layer/edit?section=header|footer with only the two tabs, always-locked items, a sample template behind them, and Save that PUTs only `changedBrandBands` after an `updatedAt` stale check. Template header/footer tabs offer 'Use organization header' vs 'Customize for this template' plus an edit link. Rule-type switches moved to a clientadmin /settings page (DesignModesCard). `client/src/utils/brandBands.js` + Vitest cover promotion, dirty diffing and reset.

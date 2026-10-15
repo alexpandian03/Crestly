@@ -20,6 +20,7 @@
     "migrate:brandkit": "node server/scripts/migrate-brandkit.js",
     "migrate:poster-designs": "node server/scripts/migrate-poster-designs.js",
     "test:auth": "node server/scripts/test-auth.js",
+    "test:autosave": "node server/scripts/test-autosave.js",
     "test:stage8": "node server/scripts/test-stage8.js",
     "test:stage9": "node server/scripts/test-stage9.js",
     "test:brandkit": "node server/scripts/test-brandkit.js",
@@ -30,6 +31,11 @@
     "test:aidesign": "node server/scripts/test-poster-ai-design.js",
     "test:image": "node server/scripts/test-poster-image.js",
     "test:e2e-generate": "node server/scripts/test-e2e-generate.js",
+    "test:acceptance": "node server/scripts/test-acceptance.js",
+    "test:acceptance:e2e": "playwright test e2e/acceptance.spec.js",
+    "test:eventtypes": "node server/scripts/test-event-types.js",
+    "test:chain": "node server/scripts/test-ai-chain.js",
+    "eval:ai": "node server/scripts/eval-ai.js",
     "start": "node server/dev.js",
     "test": "npm run test:server && npm run test:client",
     "test:server": "vitest run",
@@ -50,6 +56,7 @@
     ]
   },
   "dependencies": {
+    "@google/genai": "^2.29.1",
     "@sentry/node": "11.6.0",
     "ajv": "^8.20.0",
     "bcryptjs": "^3.0.3",

@@ -6,7 +6,8 @@ import { variableSlotsOf } from '../../shared/templateElements.js';
 import { designById } from '../../shared/designRecipes.js';
 import { TEMPLATE_SIZE_DEFAULT } from '../services/template/zones.js';
 import { scopedFilter } from '../middleware/auth.middleware.js';
-import { generateContent, generateDesign } from '../services/ai/index.js';
+import { generateContent, generateDesign, generateVariants } from '../services/ai/index.js';
+import { createCacheKey, getFromCache, setInCache } from '../services/ai/chain.js';
 import { resolveImage, resolveImageDetails, resolvePosterImage, searchPhotos, triggerDownload } from '../services/images.js';
 import { sanitizeString, designToContent, sanitizeAndTruncateDesign } from '../services/ai/schema.js';
 import { generateWithMock } from '../services/ai/providers/mock.js';
@@ -22,12 +23,15 @@ import storageService from '../services/storage.js';
 import { consumeImageQuota } from '../services/image/limits.js';
 import { generatePosterPicture, imageProviderName } from '../services/image/index.js';
 import { screenSubject } from '../services/image/prompt.js';
+import { consumeRateLimit } from '../services/rateLimit.js';
+import { parseCardListEntries } from '../services/ai/listParser.js';
+import { guessEventType, isValidEventType } from '../../shared/eventTypes.js';
 
 /**
  * POST /api/posters/generate with mode "ai": one whole design taken from a recipe, plus the
  * words that go on it. Whether this mode is open is the organization's setting, not the user's.
  */
-async function generateFromRecipe(req, res, { templateId, prompt, instruction, avoidRecipeIds, variant, imageUrl: userImageUrl }) {
+async function generateFromRecipe(req, res, { templateId, prompt, instruction, avoidRecipeIds, variant, imageUrl: userImageUrl, cacheKey }) {
   try {
     const client = await Client.findById(req.clientId).select('designModes').lean();
     if (!(client?.designModes?.ai ?? true)) {
@@ -157,7 +161,15 @@ async function generateFromRecipe(req, res, { templateId, prompt, instruction, a
       content.imageUrl = userImageUrl ? userImageUrl.trim() : '';
     }
 
-    return res.status(200).json({ success: true, data: { design: recipePayload(built), content } });
+    const responseData = {
+      design: recipePayload(built),
+      content,
+      provider: answer?.provider || (isAiGenerated ? (process.env.LLM_PROVIDER || 'mock') : 'mock'),
+    };
+    if (cacheKey) {
+      setInCache(cacheKey, responseData);
+    }
+    return res.status(200).json({ success: true, data: responseData });
   } catch (outerErr) {
     console.error(`[AI Design] Unexpected error: ${outerErr.message || 'unknown error'}`);
     return res.status(500).json({
@@ -182,11 +194,93 @@ export async function generatePosterContentController(req, res, next) {
       });
     }
 
-    const { templateId, prompt, instruction, mode = 'template', avoidRecipeIds, variant, imageUrl: userImageUrl } = req.body;
+    const {
+      templateId,
+      prompt,
+      instruction,
+      mode = 'template',
+      avoidRecipeIds,
+      variant,
+      imageUrl: userImageUrl,
+      eventType: requestedEventType,
+      variants = 1,
+    } = req.body;
+
+    const cacheKey = createCacheKey(prompt, {
+      instruction,
+      mode,
+      variants,
+      eventType: requestedEventType,
+      avoidRecipeIds,
+      variant,
+    });
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      return res.status(200).json({ success: true, data: cached });
+    }
+
+    const userId = req.user?._id;
+    if (userId) {
+      const quota = await consumeRateLimit({
+        key: `ai-generate:user:${userId}`,
+        limit: 50,
+        windowMs: 24 * 60 * 60 * 1000,
+      });
+      if (!quota.allowed) {
+        return res.status(429).json({
+          success: false,
+          error: {
+            message: 'You have reached your daily generation limit. Please try again tomorrow.',
+            status: 429,
+          },
+        });
+      }
+    }
+
+    if (Number(variants) === 3) {
+      try {
+        let brandKit = await BrandKit.findOne(scopedFilter(req)).lean();
+        if (!brandKit) {
+          brandKit = { orgName: 'Our Organization', colors: {}, fonts: {}, header: {}, footer: {} };
+        }
+        const template = templateId
+          ? await Template.findOne(scopedFilter(req, { _id: templateId, isActive: true })).lean()
+          : await Template.findOne(scopedFilter(req, { isActive: true })).sort({ createdAt: 1 }).lean();
+        const size = template?.size || brandKit.defaultPosterSize || TEMPLATE_SIZE_DEFAULT;
+
+        const eventType = isValidEventType(requestedEventType) ? requestedEventType : guessEventType(prompt);
+        const variantsResult = await generateVariants({
+          prompt,
+          brandKit,
+          instruction,
+          eventType,
+          size,
+          userImageUrl,
+        });
+
+        const responseData = {
+          posters: variantsResult.posters,
+          variants: variantsResult.posters,
+          design: variantsResult.posters[0]?.design,
+          content: variantsResult.posters[0]?.content,
+          suggestedEventType: eventType,
+          provider: variantsResult.provider,
+        };
+
+        setInCache(cacheKey, responseData);
+        return res.status(200).json({ success: true, data: responseData });
+      } catch (err) {
+        console.error(`[AI Variants Controller] Failed: ${err.message || 'unknown error'}`);
+        return res.status(err.status || 500).json({
+          success: false,
+          error: { message: err.message || 'We could not generate poster variants. Please try again.', status: err.status || 500 },
+        });
+      }
+    }
 
     if (mode === 'ai') {
       try {
-        return await generateFromRecipe(req, res, { templateId, prompt, instruction, avoidRecipeIds, variant, imageUrl: userImageUrl });
+        return await generateFromRecipe(req, res, { templateId, prompt, instruction, avoidRecipeIds, variant, imageUrl: userImageUrl, cacheKey });
       } catch (err) {
         console.error(`[AI Design Controller] Failed: ${err.message || 'unknown error'}`);
         return res.status(500).json({
@@ -195,6 +289,15 @@ export async function generatePosterContentController(req, res, next) {
         });
       }
     }
+
+
+
+    // Determine the event type: use the one the user chose (if valid), else guess from the description.
+    const eventType = isValidEventType(requestedEventType)
+      ? requestedEventType
+      : guessEventType(prompt);
+    // Always return a suggestion so the client can show the picker pre-selected.
+    const suggestedEventType = eventType;
 
     // Load template scoped strictly to the authenticated tenant.
     // If templateId is omitted, fall back to the first active template.
@@ -237,6 +340,7 @@ export async function generatePosterContentController(req, res, next) {
       template,
       instruction,
       variables,
+      eventType,
     });
 
     let imageUrl = '';
@@ -255,19 +359,25 @@ export async function generatePosterContentController(req, res, next) {
       images[imageSlots[0].key] = imageUrl;
     }
 
+    const responseData = {
+      content: {
+        ...content,
+        imageUrl,
+        ...(Object.keys(images).length > 0 ? { images } : {}),
+        ...(photo?.photographer ? { photographer: photo.photographer, photographerUrl: photo.photographerUrl } : {}),
+        ...(photo?.downloadLocation ? { downloadLocation: photo.downloadLocation } : {}),
+      },
+      /* Photo blanks are never generated: the person making the poster replaces them. */
+      imageSlots: imageSlots.map((slot) => ({ key: slot.key, label: slot.label })),
+      /** The event type the server chose or confirmed from the user's description. */
+      suggestedEventType,
+      provider: content.provider || 'mock',
+    };
+    setInCache(cacheKey, responseData);
+
     return res.status(200).json({
       success: true,
-      data: {
-        content: {
-          ...content,
-          imageUrl,
-          ...(Object.keys(images).length > 0 ? { images } : {}),
-          ...(photo?.photographer ? { photographer: photo.photographer, photographerUrl: photo.photographerUrl } : {}),
-          ...(photo?.downloadLocation ? { downloadLocation: photo.downloadLocation } : {}),
-        },
-        /* Photo blanks are never generated: the person making the poster replaces them. */
-        imageSlots: imageSlots.map((slot) => ({ key: slot.key, label: slot.label })),
-      },
+      data: responseData,
     });
   } catch (err) {
     next(err);
@@ -457,6 +567,8 @@ export async function createPosterController(req, res, next) {
       title: content.title,
       prompt,
       content,
+      /** Event type chosen when this poster was created; validated by schema. */
+      eventType: isValidEventType(req.body.eventType) ? req.body.eventType : 'general',
       versions: [
         {
           content,
@@ -579,6 +691,17 @@ export async function getPosterController(req, res, next) {
       const canonical = designById(template.archetype || template.recipeId)?.id || (template.archetype || template.recipeId);
       template = { ...template, archetype: canonical, recipeId: canonical };
     }
+
+    if (rawPoster.draft && String(rawPoster.draft.userId) === String(req.user._id)) {
+      poster.draft = {
+        data: rawPoster.draft.data,
+        savedAt: rawPoster.draft.savedAt,
+        basedOnVersion: rawPoster.draft.basedOnVersion,
+      };
+    } else {
+      delete poster.draft;
+    }
+
     /* One poster, one tenant, one response: never let a proxy or the browser replay it. */
     res.setHeader('Cache-Control', 'no-store');
     return res.status(200).json({ success: true, data: { poster, template } });
@@ -648,6 +771,7 @@ async function appendVersion(req, poster, content, note, options = {}) {
         versions: { $each: [versionDoc], $slice: -POSTER_MAX_VERSIONS },
       },
       $set: setFields,
+      $unset: { draft: 1 },
     },
     { new: true }
   ).select('-__v');
@@ -772,7 +896,7 @@ export async function duplicatePosterController(req, res, next) {
     const template = await Template.findOne(
       scopedFilter(req, { _id: poster.templateId })
     ).lean();
-    const design = await designForPoster(req, poster, template);
+    const design = plainDesign(poster.design) || (await designForPoster(req, poster, template));
     const versionDoc = { content, note: 'Created', versionNumber: 1, createdBy: req.user._id, createdAt: new Date() };
     if (poster.templateVersion) versionDoc.templateVersion = poster.templateVersion;
     versionDoc.design = design;
@@ -935,6 +1059,158 @@ export async function trackPhotoDownloadController(req, res, next) {
     }
     return res.status(200).json({
       success: true,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function autosavePosterDraftController(req, res, next) {
+  try {
+    const rate = await consumeRateLimit({
+      key: `autosave:user:${req.user._id}`,
+      limit: 30,
+      windowMs: 60 * 1000,
+    });
+    if (!rate.allowed) {
+      return res.status(429).json({
+        success: false,
+        error: {
+          message: 'Too many autosaves. Please wait a moment before saving again.',
+          status: 429,
+        },
+      });
+    }
+
+    const poster = await loadPoster(req);
+    if (!poster) return posterNotFound(res);
+
+    const basedOnVersion = Number(req.body.basedOnVersion);
+    if (basedOnVersion !== poster.currentVersion) {
+      return conflictResponse(res);
+    }
+
+    const rawContent = req.body.data?.content || req.body.content || req.body.data;
+    const content = normalizePosterContent(
+      rawContent,
+      contentValuesContext(poster.design, req.clientId)
+    );
+
+    const draftData = {
+      ...(req.body.data || {}),
+      content,
+      title: content.title,
+    };
+    const savedAt = new Date();
+    const draftObj = {
+      data: draftData,
+      savedAt,
+      basedOnVersion,
+      userId: req.user._id,
+    };
+
+    await Poster.updateOne(
+      posterScope(req, { _id: poster._id }),
+      { $set: { draft: draftObj } }
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        draft: {
+          data: draftData,
+          savedAt,
+          basedOnVersion,
+        },
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getPosterDraftController(req, res, next) {
+  try {
+    const poster = await Poster.findOne(posterScope(req, { _id: req.params.id })).select('draft userId clientId');
+    if (!poster) return posterNotFound(res);
+    if (!poster.draft) {
+      return res.status(404).json({
+        success: false,
+        error: { message: 'No draft found for this poster', status: 404 },
+      });
+    }
+    if (String(poster.draft.userId) !== String(req.user._id)) {
+      return res.status(403).json({
+        success: false,
+        error: { message: "You cannot view another user's draft.", status: 403 },
+      });
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(200).json({
+      success: true,
+      data: {
+        draft: {
+          data: poster.draft.data,
+          savedAt: poster.draft.savedAt,
+          basedOnVersion: poster.draft.basedOnVersion,
+        },
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function discardPosterDraftController(req, res, next) {
+  try {
+    const poster = await Poster.findOne(posterScope(req, { _id: req.params.id })).select('draft userId clientId');
+    if (!poster) return posterNotFound(res);
+    if (poster.draft && String(poster.draft.userId) !== String(req.user._id)) {
+      return res.status(403).json({
+        success: false,
+        error: { message: "You cannot discard another user's draft.", status: 403 },
+      });
+    }
+    await Poster.updateOne(posterScope(req, { _id: poster._id }), { $unset: { draft: 1 } });
+    return res.status(200).json({ success: true, data: { discarded: true } });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/posters/parse-list
+ * "Tidy my list": takes pasted text and a card list definition,
+ * returning structured entries by field, only from text that is in the paste.
+ * Authenticated and rate-limited in MongoDB (30 per minute per user).
+ */
+export async function parseCardListController(req, res, next) {
+  try {
+    const rate = await consumeRateLimit({
+      key: `parse-list:user:${req.user._id}`,
+      limit: 30,
+      windowMs: 60 * 1000,
+    });
+    if (!rate.allowed) {
+      return res.status(429).json({
+        success: false,
+        error: {
+          message: 'Too many list tidy requests. Please wait a moment and try again.',
+          status: 429,
+        },
+      });
+    }
+
+    const { text, listDefinition, cardList } = req.body;
+    const definition = listDefinition || cardList || {};
+    const entries = await parseCardListEntries({ text, listDefinition: definition });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        entries,
+        count: entries.length,
+      },
     });
   } catch (err) {
     next(err);

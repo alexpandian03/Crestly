@@ -1,4 +1,10 @@
 import { sanitizeString } from '../ai/schema.js';
+import {
+  BRAND_BAND_KINDS,
+  brandBandForEditing,
+  brandBandProblems,
+  normalizeBrandBand,
+} from '../../../shared/templateElements.js';
 
 export const BRAND_FONTS = [
   'Outfit',
@@ -13,6 +19,12 @@ export const BRAND_FONTS = [
   'Lato',
   'DM Sans',
   'Nunito',
+  'Noto Sans Tamil',
+  'Noto Serif Tamil',
+  'Hind Madurai',
+  'Mukta Malar',
+  'Catamaran',
+  'Baloo Thambi 2',
 ];
 
 export const TEXT_WEIGHTS = [400, 500, 600, 700];
@@ -271,6 +283,44 @@ function syncDerivedFields(kit) {
 }
 
 /**
+ * Both bands of a kit, put through the shared item rules: every item on them comes back locked,
+ * none of them can be filled in per poster, and the band keeps the height it is allowed to have.
+ * The kit's own settings beside the items are left exactly as they are.
+ */
+function normalizeKitBands(kit) {
+  const next = { ...kit };
+  for (const kind of BRAND_BAND_KINDS) {
+    if (!isPlainObject(next[kind])) continue;
+    next[kind] = { ...next[kind], ...normalizeBrandBand(next[kind], kind, next) };
+  }
+  return next;
+}
+
+/** Everything wrong with the two bands of a merged kit, in the words the editor shows. */
+export function brandBandIssues(kit, context = {}) {
+  const problems = [];
+  for (const kind of BRAND_BAND_KINDS) {
+    problems.push(...brandBandProblems(kit?.[kind], kind, { ...context, brandKit: kit }));
+  }
+  return [...new Set(problems)];
+}
+
+/**
+ * The kit the brand-layer editor opens on: its stored bands, or the items its own settings
+ * convert into when the kit has never been laid out. Deriving them here leaves the stored kit
+ * untouched - nothing is written until an admin saves the band.
+ */
+export function withEditableBands(kit, options = {}) {
+  const next = { ...kit };
+  for (const kind of BRAND_BAND_KINDS) {
+    const band = brandBandForEditing(next, kind, options);
+    if (!band) continue;
+    next[kind] = { ...next[kind], ...band };
+  }
+  return next;
+}
+
+/**
  * Partial update over a stored kit: section objects merge key by key so a builder
  * can save one block at a time, arrays are replaced whole.
  */
@@ -289,7 +339,7 @@ export function mergeBrandKitUpdate(stored, incoming) {
   if (typeof cleaned?.header?.showOrgName === 'boolean') {
     merged.header.orgName = { ...merged.header.orgName, show: cleaned.header.showOrgName };
   }
-  return syncDerivedFields(merged);
+  return normalizeKitBands(syncDerivedFields(merged));
 }
 
 /** Paths a stored kit is missing, as dotted keys with their default values. */

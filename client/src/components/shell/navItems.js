@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   LayoutTemplate,
   Palette,
+  Settings as SettingsIcon,
   Sparkles,
   Users,
 } from 'lucide-react';
@@ -31,7 +32,7 @@ export const memberNavItems = [
   { to: '/posters', label: 'Posters' },
 ];
 
-/** Standard items requested: Dashboard, Create, Posters, Brand kit, Templates, Team */
+/** Standard items requested: Dashboard, Create, Posters, Brand kit, Templates, Team, Settings */
 export const defaultNavItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/create', label: 'Create', icon: Sparkles },
@@ -39,6 +40,7 @@ export const defaultNavItems = [
   { to: '/brand-kit', label: 'Brand kit', icon: Palette },
   { to: '/templates', label: 'Templates', icon: LayoutTemplate },
   { to: '/team', label: 'Team', icon: Users },
+  { to: '/settings', label: 'Settings', icon: SettingsIcon },
 ];
 
 export function navGroups(user) {
@@ -96,6 +98,7 @@ export function titleForPath(pathname) {
   if (pathname === '/brand-kit') return 'Brand kit';
   if (pathname === '/templates') return 'Templates';
   if (pathname === '/team') return 'Team';
+  if (pathname === '/settings') return 'Settings';
   if (pathname === '/clients') return 'Organizations';
   if (pathname === '/users') return 'Users';
   if (pathname.startsWith('/templates/') && pathname.endsWith('/edit')) return 'Edit template';

@@ -4,6 +4,8 @@ import {
   BRAND_KIT_DEFAULTS,
   IMAGE_FITS,
 } from '../services/brand/style.js';
+import { BAND_HEIGHTS, SECTION_LIMITS, defaultBrandBand } from '../../shared/templateElements.js';
+import { elementSchema } from './Template.model.js';
 
 const { header: headerDefaults, content: contentDefaults, footer: footerDefaults } = BRAND_KIT_DEFAULTS;
 
@@ -42,6 +44,27 @@ const socialSchema = new mongoose.Schema(
   { _id: false }
 );
 
+/**
+ * A band an admin can place items on: drawn from the kit's own settings ("legacy") or from
+ * those items ("elements"). The items are the same shape a template section stores, and they
+ * are always locked and never filled in per poster - the shared rules say so on every read.
+ */
+const bandSchemaPaths = (kind) => ({
+  mode: {
+    type: String,
+    enum: ['legacy', 'elements'],
+    default: 'legacy',
+  },
+  elements: {
+    type: [elementSchema],
+    default: [],
+    validate: [
+      (list) => list.length <= SECTION_LIMITS[kind].maxItems,
+      `A ${kind} band holds at most ${SECTION_LIMITS[kind].maxItems} items`,
+    ],
+  },
+});
+
 const brandKitSchema = new mongoose.Schema(
   {
     clientId: {
@@ -78,7 +101,13 @@ const brandKitSchema = new mongoose.Schema(
     preset: { type: String, default: BRAND_KIT_DEFAULTS.preset },
     textStyle: textStylePaths(BRAND_KIT_DEFAULTS.textStyle),
     header: {
-      height: { type: Number, default: headerDefaults.height },
+      height: {
+        type: Number,
+        default: headerDefaults.height,
+        min: BAND_HEIGHTS.header.min,
+        max: BAND_HEIGHTS.header.max,
+      },
+      ...bandSchemaPaths('header'),
       background: backgroundPaths(headerDefaults.background),
       alignment: {
         type: String,
@@ -130,7 +159,13 @@ const brandKitSchema = new mongoose.Schema(
       defaultImageUrl: { type: String, default: contentDefaults.defaultImageUrl },
     },
     footer: {
-      height: { type: Number, default: footerDefaults.height },
+      height: {
+        type: Number,
+        default: footerDefaults.height,
+        min: BAND_HEIGHTS.footer.min,
+        max: BAND_HEIGHTS.footer.max,
+      },
+      ...bandSchemaPaths('footer'),
       background: backgroundPaths(footerDefaults.background),
       layout: { type: Number, default: footerDefaults.layout },
       address: { type: String, default: '', maxlength: 120 },
@@ -158,6 +193,21 @@ const brandKitSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+/**
+ * A new brand kit is born with its header and footer already laid out as items, so the band
+ * editor opens on something to move instead of an empty strip. They are stored under mode
+ * "legacy", which means the kit keeps drawing its own settings until an admin places items.
+ */
+brandKitSchema.pre('save', function seedBrandBands(next) {
+  if (!this.isNew) return next();
+  const kit = this.toObject();
+  for (const kind of ['header', 'footer']) {
+    if ((kit[kind]?.elements || []).length > 0) continue;
+    this[kind].elements = defaultBrandBand(kit, kind, { size: kit.defaultPosterSize }).elements;
+  }
+  return next();
+});
 
 brandKitSchema.set('toJSON', {
   transform: (doc, ret) => {

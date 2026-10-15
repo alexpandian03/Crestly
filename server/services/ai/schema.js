@@ -29,7 +29,16 @@ export const posterContentJsonSchema = {
     },
     imageQuery: { type: 'string', maxLength: 60 },
     imageUrl: { type: 'string' },
-    images: { type: 'object', additionalProperties: { type: 'string' } },
+    images: {
+      type: 'object',
+      description: 'Images are user data: never create or invent photos.',
+      additionalProperties: { type: 'string' },
+    },
+    lists: {
+      type: 'object',
+      description: 'Lists are user data: format, tidy or translate text the user pasted, but never create names, titles or photos.',
+      additionalProperties: { type: 'array' },
+    },
     photographer: { type: 'string', maxLength: 100 },
     photographerUrl: { type: 'string' },
     downloadLocation: { type: 'string' },
@@ -85,6 +94,7 @@ function slotsOf(variables) {
     .slice(0, VARIABLE_LIMITS.maxText)
     .map((slot) => ({
       key: slot.key,
+      label: slot.label,
       maxLength: Math.min(
         Math.max(Number(slot.maxLength) || VARIABLE_LIMITS.maxLength.default, VARIABLE_LIMITS.maxLength.min),
         VARIABLE_LIMITS.maxLength.max
@@ -147,13 +157,34 @@ export function sanitizeAndTruncateContent(raw, variables = []) {
     .map((item) => truncateAtWordBoundary(sanitizeString(item), 90))
     .filter((d) => d.length > 0);
 
+  const norm = (s) => (typeof s === 'string' ? s.trim().toLowerCase() : '');
+  const seen = new Set();
+  if (title) {
+    seen.add(norm(title));
+  }
+
+  let cleanTagline = tagline;
+  if (norm(cleanTagline) && seen.has(norm(cleanTagline))) {
+    cleanTagline = '';
+  } else if (norm(cleanTagline)) {
+    seen.add(norm(cleanTagline));
+  }
+
+  const cleanDetails = [];
+  for (const item of details) {
+    const n = norm(item);
+    if (!n || seen.has(n)) continue;
+    seen.add(n);
+    cleanDetails.push(item);
+  }
+
   const content = {
     title,
-    tagline,
+    tagline: cleanTagline,
     date,
     time,
     venue,
-    details,
+    details: cleanDetails,
     imageQuery,
   };
 
@@ -162,8 +193,15 @@ export function sanitizeAndTruncateContent(raw, variables = []) {
     const source = raw.extras && typeof raw.extras === 'object' ? raw.extras : {};
     const extras = {};
     for (const slot of slots) {
-      /* A blank the user's text did not answer stays empty. */
-      extras[slot.key] = truncateAtWordBoundary(sanitizeString(source[slot.key]), slot.maxLength);
+      const val = truncateAtWordBoundary(sanitizeString(source[slot.key]), slot.maxLength);
+      const n = norm(val);
+      const labelNorm = norm(slot.label);
+      if (!n || seen.has(n) || (labelNorm && n === labelNorm)) {
+        extras[slot.key] = '';
+      } else {
+        seen.add(n);
+        extras[slot.key] = val;
+      }
     }
     content.extras = extras;
   }
@@ -572,4 +610,106 @@ export function designToContent(design) {
     imageQuery: truncateAtWordBoundary(sanitizeString(source.imageQuery), 60),
     extras,
   };
+}
+
+/**
+ * Validates and sanitizes the output of AI Fill.
+ * Strictly enforces:
+ * - Return JSON only for requested keys
+ * - Truncate to each slot's maxLength
+ * - Empty string "" when missing
+ * - No invented facts or hallucinated details
+ * - Ignores prompt injection keys/instructions
+ */
+export function validateAndSanitizeVariableFill(rawOutput, variables = [], description = '') {
+  if (!rawOutput || typeof rawOutput !== 'object' || Array.isArray(rawOutput)) {
+    return { valid: false, errors: ['Output must be a JSON object with requested keys'], data: null };
+  }
+
+  const slots = Array.isArray(variables) ? variables.filter((s) => s?.key) : [];
+  const allowedKeys = new Set(slots.map((s) => s.key));
+  const result = {};
+  const errors = [];
+
+  const seen = new Set();
+  for (const slot of slots) {
+    const key = slot.key;
+    const rawVal = rawOutput[key];
+    const max = Number(slot.maxLength) || 80;
+
+    if (rawVal === undefined || rawVal === null) {
+      result[key] = '';
+      continue;
+    }
+
+    if (typeof rawVal !== 'string' && typeof rawVal !== 'number') {
+      errors.push(`Field "${key}" must be a string or empty string.`);
+      result[key] = '';
+      continue;
+    }
+
+    let val = sanitizeString(String(rawVal));
+    if (val.length > max) {
+      val = truncateAtWordBoundary(val, max);
+    }
+    const n = val.trim().toLowerCase();
+    const labelNorm = (slot.label || '').trim().toLowerCase();
+    if (!n || seen.has(n) || (labelNorm && n === labelNorm)) {
+      result[key] = '';
+    } else {
+      seen.add(n);
+      result[key] = val;
+    }
+  }
+
+  // Ensure prompt injection keys or disallowed keys are NOT carried
+  for (const k of Object.keys(rawOutput)) {
+    if (!allowedKeys.has(k)) {
+      // Ignored / dropped silently
+    }
+  }
+
+  return { valid: errors.length === 0, errors, data: result };
+}
+
+/**
+ * Fallback deterministic extractor for variable slots directly from text.
+ * Never invents facts: extracts only substrings / facts present in description.
+ */
+export function extractVariablesFromText(description = '', variables = []) {
+  const text = String(description || '').trim();
+  const slots = Array.isArray(variables) ? variables.filter((s) => s?.key) : [];
+  const result = {};
+
+  const firstClause = text.split(/[,.\n]|(?:\s+(?:on|at|in|from)\s+)/i)[0]?.trim() || '';
+
+  for (const slot of slots) {
+    const key = slot.key.toLowerCase();
+    const lbl = (slot.label || '').toLowerCase();
+    const max = Number(slot.maxLength) || 80;
+
+    let extracted = '';
+    if (key.includes('title') || key.includes('headline') || lbl.includes('headline') || lbl.includes('title')) {
+      if (key.includes('sub') || lbl.includes('sub')) {
+        extracted = '';
+      } else {
+        extracted = firstClause.length > 3 ? firstClause : text.slice(0, 50);
+      }
+    } else if (key.includes('date') || lbl.includes('date')) {
+      const dm = text.match(/\b(?:\d{1,2}(?:st|nd|rd|th)?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)[,\s]+\d{1,2}\s+[A-Za-z]+)\b/i);
+      extracted = dm ? dm[0] : '';
+    } else if (key.includes('time') || lbl.includes('time') || lbl.includes('hour')) {
+      const tm = text.match(/\b(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)|\d{1,2}\s*(?:am|pm)\s*(?:to|-)\s*\d{1,2}\s*(?:am|pm))\b/i);
+      extracted = tm ? tm[0] : '';
+    } else if (key.includes('venue') || key.includes('location') || lbl.includes('venue') || lbl.includes('location')) {
+      const vm = text.match(/\b(?:at|in|venue:?)\s+([A-Za-z0-9][A-Za-z0-9\s,'-]{1,45}?)(?:,\s*|\.\s*|\s+(?:on|from|with|for)\b|$)/i);
+      extracted = vm ? vm[1].replace(/^(?:the)\s+/i, '').trim() : '';
+    } else {
+      extracted = '';
+    }
+
+    result[slot.key] = sanitizeString(extracted).slice(0, max);
+  }
+
+  return result;
 }

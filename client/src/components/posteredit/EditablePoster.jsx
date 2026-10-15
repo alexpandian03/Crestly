@@ -82,6 +82,10 @@ export default function EditablePoster({
   onImageFail = null,
   photoOptions = [],
   className = '',
+  showPlaceholders = true,
+  highlightSlotKey = null,
+  onSlotClick = null,
+  isThumbnail = false,
 }) {
   const wrapRef = useRef(null);
   const posterRef = useRef(null);
@@ -91,6 +95,9 @@ export default function EditablePoster({
   const [notice, setNotice] = useState('');
   const [settled, setSettled] = useState(0);
   const [upload, setUpload] = useState({ busy: false, progress: null, error: '' });
+  /* The picture just taken out of each space, kept by the space's own name so Undo puts it
+     back where it came from and nowhere else. */
+  const [takenOut, setTakenOut] = useState({});
 
   const canvasSize = useMemo(() => resolveTemplateSize(template), [template]);
   const cleanView = view || emptyView();
@@ -111,7 +118,6 @@ export default function EditablePoster({
                 label: item.label || item.key,
                 hint: item.hint || '',
                 maxLength: blankLimitOf(item),
-                placeholder: item.kind === 'text' ? (item.text || '').trim() : (item.imageUrl || '').trim(),
               }
             : null;
         const editable = blank ? true : Boolean(field) && !item.locked;
@@ -271,11 +277,11 @@ export default function EditablePoster({
     });
   };
 
-  /* The words one box shows right now: the answer, or what the designer left there until
-   * somebody answers it. */
+  /* The words one box shows right now: only what this poster holds. What the designer left in
+   * the box is their layout note, not an answer, so it never fills this one in. */
   const textOf = (entry) =>
     entry.blank?.kind === 'text'
-      ? wordsOfBlank(content, entry.blank.key) || entry.blank.placeholder
+      ? wordsOfBlank(content, entry.blank.key)
       : wordsOf(content, entry.field);
 
   const commitWords = (entry, text) => {
@@ -350,9 +356,7 @@ export default function EditablePoster({
    * poster's picture, but the answer is stored under the space's own name, and a new file
    * can only come in through a signed upload, which a plain account cannot ask for. */
   const blankPhotoKey = selectedBlank?.kind === 'image' ? selectedBlank.key : '';
-  const blankPhotoNow = blankPhotoKey
-    ? imageOfBlank(content, blankPhotoKey) || selectedBlank.placeholder
-    : '';
+  const blankPhotoNow = blankPhotoKey ? imageOfBlank(content, blankPhotoKey) : '';
 
   const sendBlankImage = (url) => {
     if (!blankPhotoKey) return;
@@ -361,6 +365,13 @@ export default function EditablePoster({
       setNotice(problem);
       return;
     }
+    const before = imageOfBlank(content, blankPhotoKey);
+    setTakenOut((prev) => {
+      const next = { ...prev };
+      if (!url && before) next[blankPhotoKey] = before;
+      else delete next[blankPhotoKey];
+      return next;
+    });
     onContentChange?.(withBlankImage(content, blankPhotoKey, url));
   };
 
@@ -406,7 +417,6 @@ export default function EditablePoster({
       if (blankPhotoChoices.some((option) => option.url === value)) return;
       blankPhotoChoices.push({ url: value, label });
     };
-    add(selectedBlank.placeholder, 'The picture left for this space');
     add(brandDefaultPhoto, 'Your organization’s picture');
     add(currentPhoto, 'This poster’s own picture');
     Object.entries(content?.images || {}).forEach(([key, url]) => {
@@ -439,6 +449,10 @@ export default function EditablePoster({
         onOverflow={onOverflow}
         onImageFail={onImageFail}
         onLayoutSettled={() => setSettled((n) => n + 1)}
+        showPlaceholders={showPlaceholders}
+        highlightSlotKey={highlightSlotKey}
+        onSlotClick={onSlotClick}
+        isThumbnail={isThumbnail}
       />
 
       <div className="pointer-events-none absolute inset-0" style={{ zIndex: 40 }}>
@@ -459,6 +473,11 @@ export default function EditablePoster({
               onClick={(event) => {
                 event.stopPropagation();
                 choose(entry);
+                if (entry.blank) {
+                  onSlotClick?.(entry.blank.key);
+                } else if (entry.field) {
+                  onSlotClick?.(entry.field);
+                }
               }}
               onDoubleClick={(event) => {
                 event.stopPropagation();
@@ -498,13 +517,19 @@ export default function EditablePoster({
                   ? photoBox.box.left + 8
                   : toolbarLeft(selectedBox.box))
             }px`,
-            top: `${(selectedBlank ? selectedBox : photoBox || selectedBox).box.top + 8}px`,
+            top: `${(() => {
+              const b = (selectedBlank ? selectedBox : photoBox || selectedBox)?.box;
+              if (!b) return 8;
+              return b.top - 42 < 0 ? b.top + b.height + 6 : b.top - 42;
+            })()}px`,
             zIndex: 50,
           }}
         >
           <PhotoBar
             label={selectedBlank ? `${selectedBlank.label} picture` : 'Poster photo'}
             currentUrl={selectedBlank ? blankPhotoNow : currentPhoto}
+            undoUrl={selectedBlank ? takenOut[blankPhotoKey] || '' : ''}
+            onUndo={(url) => sendBlankImage(url)}
             alternatives={
               selectedBlank
                 ? blankPhotoChoices

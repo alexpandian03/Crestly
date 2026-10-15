@@ -1,15 +1,19 @@
 /**
  * Google Gemini LLM Provider (plain fetch, no heavy SDKs)
  */
-export async function generateWithGemini({ prompt, systemPrompt, signal }) {
+export async function generateWithGemini({ prompt, systemPrompt, signal, maxTokens = 1000 }) {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
     const err = new Error('Gemini API key is not configured.');
-    err.status = 500;
+    err.status = 401;
+    err.noKey = true;
     throw err;
   }
 
-  const model = process.env.GEMINI_MODEL?.trim() || 'gemini-2.0-flash';
+  let model = process.env.GEMINI_MODEL?.trim() || 'gemini-2.0-flash';
+  if (model.includes('2.5')) {
+    model = 'gemini-2.0-flash';
+  }
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
 
   const payload = {
@@ -26,13 +30,13 @@ export async function generateWithGemini({ prompt, systemPrompt, signal }) {
     generationConfig: {
       responseMimeType: 'application/json',
       temperature: 0.3,
-      maxOutputTokens: 1000,
+      maxOutputTokens: maxTokens,
     },
   };
 
   const fetchSignal = signal
-    ? AbortSignal.any([signal, AbortSignal.timeout(7000)])
-    : AbortSignal.timeout(7000);
+    ? AbortSignal.any([signal, AbortSignal.timeout(25000)])
+    : AbortSignal.timeout(25000);
 
   let res;
   try {
@@ -47,7 +51,7 @@ export async function generateWithGemini({ prompt, systemPrompt, signal }) {
     });
   } catch (fetchErr) {
     if (signal?.aborted) throw fetchErr;
-    const timeoutErr = new Error(`Gemini request failed or timed out: ${fetchErr.message}`);
+    const timeoutErr = new Error(`Gemini request timed out or failed: ${fetchErr.message}`);
     timeoutErr.status = 504;
     throw timeoutErr;
   }
@@ -62,7 +66,7 @@ export async function generateWithGemini({ prompt, systemPrompt, signal }) {
       // Ignore
     }
     const err = new Error(errMsg);
-    err.status = 502;
+    err.status = res.status;
     throw err;
   }
 
@@ -81,7 +85,19 @@ export async function generateWithGemini({ prompt, systemPrompt, signal }) {
     cleanText = cleanText.slice(3).replace(/```$/, '').trim();
   }
 
-  return JSON.parse(cleanText);
+  try {
+    return JSON.parse(cleanText);
+  } catch {
+    const err = new Error('Gemini content is not valid JSON');
+    err.status = 502;
+    err.invalidJson = true;
+    throw err;
+  }
 }
 
-export default { generateWithGemini };
+export function hasApiKey() {
+  return Boolean(process.env.GEMINI_API_KEY?.trim());
+}
+
+export default { generateWithGemini, hasApiKey };
+

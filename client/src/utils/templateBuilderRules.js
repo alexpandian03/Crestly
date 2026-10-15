@@ -292,7 +292,7 @@ export function draftOfTemplate(template) {
       y: toIntOr(zone?.y, 0),
       w: Math.max(1, toIntOr(zone?.w, size.width)),
       h: Math.max(1, toIntOr(zone?.h, size.height)),
-      locked: type === 'header' || type === 'footer' ? true : Boolean(zone?.locked),
+      locked: Boolean(zone?.locked),
       minFont: toIntOr(zone?.minFont, FONT_DEFAULTS.minFont),
       maxFont: toIntOr(zone?.maxFont, FONT_DEFAULTS.maxFont),
     };
