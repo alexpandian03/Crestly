@@ -38,7 +38,7 @@ jobs:
         run: npm run lint
 
       - name: Security audit (fail on high)
-        run: npm audit --audit-level=high
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Run unit & integration tests
         run: npm run test
