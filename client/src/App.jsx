@@ -28,6 +28,9 @@ const PosterStudioTest = import.meta.env.DEV
 const ExportTestPage = import.meta.env.DEV
   ? React.lazy(() => import('./pages/ExportTestPage'))
   : null;
+const CatalogDevPage = import.meta.env.DEV
+  ? React.lazy(() => import('./pages/CatalogDevPage'))
+  : null;
 
 function PageFallback() {
   return (
@@ -116,7 +119,6 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/how-it-works" element={<HowItWorks />} />
-              <Route path="/pricing" element={<Navigate to="/#pricing" replace />} />
               <Route path="/login" element={<Login />} />
               <Route path="/access-denied" element={<ProtectedRoute><AccessDenied /></ProtectedRoute>} />
 
@@ -192,6 +194,14 @@ export default function App() {
                 element={
                   <React.Suspense fallback={<PageFallback />}>
                     <ExportTestPage />
+                  </React.Suspense>
+                }
+              />
+              <Route
+                path="/catalog-dev"
+                element={
+                  <React.Suspense fallback={<PageFallback />}>
+                    <CatalogDevPage />
                   </React.Suspense>
                 }
               />

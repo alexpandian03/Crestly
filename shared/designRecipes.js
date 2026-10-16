@@ -635,8 +635,11 @@ function typeOf(name) {
  * wide poster still leaves room for the rest of it.
  */
 function sizesOf(type, width, height, scale = 1) {
+  const widthRatio = Math.max(0.5, (Number(width) || 1080) / 1080);
+  const targetHeading = Math.round(72 * widthRatio);
+
   const start = Math.min(
-    Math.max(MIN_RECIPE_FONT, Math.round(width * 0.085 * type.scale)),
+    Math.max(targetHeading, Math.round(width * 0.085 * type.scale)),
     Math.max(MIN_RECIPE_FONT * 2, Math.round(height * 0.2))
   );
   const heading = Math.max(MIN_RECIPE_FONT, Math.round(start * scale));
@@ -1477,21 +1480,38 @@ function wordsOf(value, max) {
 export function slotsOf(slots = {}) {
   const source = slots && typeof slots === 'object' ? slots : {};
   const extras = source.extras && typeof source.extras === 'object' ? source.extras : {};
+
+  const norm = (s) => (typeof s === 'string' ? s.trim().toLowerCase().replace(/[^\w\s]/g, '') : '');
+  const seenTexts = new Set();
+  const dedupe = (str) => {
+    const n = norm(str);
+    if (!n) return '';
+    if (seenTexts.has(n)) return '';
+    seenTexts.add(n);
+    return str;
+  };
+
+  const headline = dedupe(wordsOf(source.headline, 60));
+  const tagline = dedupe(wordsOf(source.tagline, 100));
+  const date = dedupe(wordsOf(source.date, 30));
+  const time = dedupe(wordsOf(source.time, 20));
+  const venue = dedupe(wordsOf(source.venue, 80));
   const details = (Array.isArray(source.details) ? source.details : [])
     .map((lineText) => wordsOf(lineText, 90))
-    .filter(Boolean)
+    .filter((lineText) => Boolean(lineText) && Boolean(dedupe(lineText)))
     .slice(0, 4);
 
   const words = {
-    headline: wordsOf(source.headline, 60),
-    tagline: wordsOf(source.tagline, 100),
-    date: wordsOf(source.date, 30),
-    time: wordsOf(source.time, 20),
-    venue: wordsOf(source.venue, 80),
+    headline,
+    tagline,
+    date,
+    time,
+    venue,
     details,
   };
   for (const key of Object.keys(DESIGN_BLANKS)) {
-    words[key] = wordsOf(extras[key], DESIGN_BLANKS[key].maxLength);
+    const raw = wordsOf(extras[key], DESIGN_BLANKS[key].maxLength);
+    words[key] = dedupe(raw);
   }
 
   return {
@@ -3435,7 +3455,8 @@ function collect(c, items) {
 export const DESIGN_RECIPES = [
   {
     id: 'bold-type',
-    name: 'Bold Type',
+    name: 'Executive Brief',
+    mood: 'High-contrast and authoritative, best for formal announcements and key statements.',
     suits: ['notice', 'education', 'corporate', 'meeting', 'general', 'awareness'],
     needsPhoto: false,
     recipeVersion: RECIPE_VERSION,
@@ -3443,7 +3464,8 @@ export const DESIGN_RECIPES = [
   },
   {
     id: 'photo-hero',
-    name: 'Photo Hero',
+    name: 'Celebration Poster',
+    mood: 'Vibrant and image-forward, ideal for energetic community gatherings and milestones.',
     suits: ['sports', 'festival', 'celebration', 'health', 'awareness', 'education', 'general'],
     needsPhoto: true,
     recipeVersion: RECIPE_VERSION,
@@ -3451,7 +3473,8 @@ export const DESIGN_RECIPES = [
   },
   {
     id: 'date-block',
-    name: 'Date Block',
+    name: 'Date Ribbon',
+    mood: 'Clean and timely, emphasizing schedule and venue details with clear hierarchy.',
     suits: ['sports', 'festival', 'celebration', 'meeting', 'general'],
     needsPhoto: false,
     recipeVersion: RECIPE_VERSION,
@@ -3459,7 +3482,8 @@ export const DESIGN_RECIPES = [
   },
   {
     id: 'ticket',
-    name: 'Ticket',
+    name: 'Golden Pass',
+    mood: 'Structured and celebratory, crafted for gala admissions and special occasions.',
     suits: ['festival', 'celebration', 'sports', 'corporate', 'general'],
     needsPhoto: false,
     recipeVersion: RECIPE_VERSION,
@@ -3467,7 +3491,8 @@ export const DESIGN_RECIPES = [
   },
   {
     id: 'centered-award',
-    name: 'Centered Award',
+    name: 'Honor Medallion',
+    mood: 'Prestigious and symmetrical, perfect for recognitions and ceremonial events.',
     suits: ['celebration', 'corporate', 'meeting', 'education', 'general'],
     needsPhoto: false,
     recipeVersion: RECIPE_VERSION,
@@ -3475,7 +3500,8 @@ export const DESIGN_RECIPES = [
   },
   {
     id: 'agenda',
-    name: 'Agenda',
+    name: 'Structured Agenda',
+    mood: 'Orderly and informative, designed for multi-point schedules and workshops.',
     suits: ['education', 'corporate', 'meeting', 'awareness', 'general'],
     needsPhoto: false,
     recipeVersion: RECIPE_VERSION,
@@ -3483,7 +3509,8 @@ export const DESIGN_RECIPES = [
   },
   {
     id: 'notice',
-    name: 'Official Notice',
+    name: 'Civic Banner',
+    mood: 'Official and balanced, suited for governance, notices, and public updates.',
     suits: ['notice', 'corporate', 'awareness', 'education', 'general'],
     needsPhoto: false,
     recipeVersion: RECIPE_VERSION,
@@ -3491,13 +3518,47 @@ export const DESIGN_RECIPES = [
   },
   {
     id: 'split-color',
-    name: 'Split Color',
+    name: 'Dynamic Split',
+    mood: 'Bold color-blocking with dual-tone energy, great for modern community campaigns.',
     suits: ['awareness', 'health', 'sports', 'festival', 'corporate', 'general'],
     needsPhoto: false,
     recipeVersion: RECIPE_VERSION,
     recipe: splitColorRecipe,
   },
 ];
+
+export function cleanVisualBlocks(elements, area, fallbackIcon = 'star') {
+  const list = Array.isArray(elements) ? [...elements] : [];
+  const maxArea = 0.35 * area.w * area.h;
+
+  const result = [];
+  for (const el of list) {
+    if (el.kind === 'field' && el.field === 'photo' && !el.imageUrl) {
+      result.push(el);
+      continue;
+    }
+    if (el.kind === 'shape' && el.shape?.fill && el.shape.fill !== 'transparent') {
+      const shapeArea = (el.w || 0) * (el.h || 0);
+      if (shapeArea > maxArea) {
+        const hasInner = list.some(
+          (other) =>
+            other !== el &&
+            (other.kind === 'text' || other.kind === 'icon' || other.kind === 'field') &&
+            other.x >= el.x &&
+            other.y >= el.y &&
+            other.x + other.w <= el.x + el.w + 10 &&
+            other.y + other.h <= el.y + el.h + 10
+        );
+        if (!hasInner) {
+          const clampedH = Math.max(10, Math.floor(maxArea / Math.max(1, el.w)));
+          el.h = clampedH;
+        }
+      }
+    }
+    result.push(el);
+  }
+  return result;
+}
 
 export function designById(id) {
   const wanted = typeof id === 'string' ? id.trim().toLowerCase() : '';
@@ -3507,7 +3568,7 @@ export function designById(id) {
   if (clean === 'splitphoto' || clean === 'boldband') return DESIGN_RECIPES.find((d) => d.id === 'split-color') || DESIGN_RECIPES[7];
   if (clean === 'typographic') return DESIGN_RECIPES.find((d) => d.id === 'bold-type') || DESIGN_RECIPES[0];
 
-  return DESIGN_RECIPES.find((design) => design.id.toLowerCase() === wanted || design.id.replace(/[-_ ]/g, '') === clean) || null;
+  return DESIGN_RECIPES.find((design) => design.id.toLowerCase() === wanted || design.id.replace(/[-_ ]/g, '') === clean || design.name.toLowerCase() === wanted) || null;
 }
 
 export function recipeIds() {
@@ -3538,5 +3599,6 @@ export function buildElements(id, { area, brandKit = null, template = null, size
   const opts = optionsOf(options);
   const values = slotsOf(slots);
   const elements = design.recipe(box, brandKit, values, opts, design);
-  return { elements: normalizeElements(elements), problems: [], design, options: opts };
+  const cleaned = cleanVisualBlocks(elements, box, values.icon || 'star');
+  return { elements: normalizeElements(cleaned), problems: [], design, options: opts };
 }

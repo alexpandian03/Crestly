@@ -38,9 +38,9 @@ export default function Navbar({ menuOpen, onToggleMenu, onPassword }) {
           <nav className="ml-2 hidden items-center gap-1 md:flex" aria-label="Primary">
             {items.map((item) =>
               item.href ? (
-                <a key={item.href} href={item.href} className={inlineLinkClass({ isActive: false })}>
+                <Link key={item.href} to={item.href} className={inlineLinkClass({ isActive: false })}>
                   {item.label}
-                </a>
+                </Link>
               ) : (
                 <NavLink key={item.to} to={item.to} className={inlineLinkClass}>
                   {item.label}

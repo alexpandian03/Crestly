@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { AlertCircle, Eye, EyeOff, Info, Loader2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import Logo from "../components/Logo";
@@ -13,8 +13,20 @@ function landingForRole(role) {
   return "/create";
 }
 
+/* A page that asked for an account keeps its own address, so signing in opens what was clicked. */
+function afterLogin(from, role) {
+  const path =
+    typeof from?.pathname === "string" &&
+    from.pathname.startsWith("/") &&
+    !from.pathname.startsWith("/login")
+      ? `${from.pathname}${from.search || ""}`
+      : "";
+  return path || landingForRole(role);
+}
+
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { login, isAuthenticated, user } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -29,8 +41,8 @@ export default function Login() {
 
   useEffect(() => {
     if (isAuthenticated && user)
-      navigate(landingForRole(user.role), { replace: true });
-  }, [isAuthenticated, navigate, user]);
+      navigate(afterLogin(location.state?.from, user.role), { replace: true });
+  }, [isAuthenticated, location, navigate, user]);
 
   const handleLogin = async (event) => {
     event.preventDefault();

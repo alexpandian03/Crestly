@@ -223,7 +223,7 @@ export async function generatePosterContentController(req, res, next) {
     if (userId) {
       const quota = await consumeRateLimit({
         key: `ai-generate:user:${userId}`,
-        limit: 50,
+        limit: process.env.NODE_ENV === 'production' ? 50 : 1000,
         windowMs: 24 * 60 * 60 * 1000,
       });
       if (!quota.allowed) {

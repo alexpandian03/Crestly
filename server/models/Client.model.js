@@ -29,6 +29,12 @@ const clientSchema = new mongoose.Schema(
         default: true,
       },
     },
+    /* Variety setting for AI palette generation: strict, balanced (default), expressive. */
+    designPalette: {
+      type: String,
+      enum: ['strict', 'balanced', 'expressive'],
+      default: 'balanced',
+    },
   },
   {
     timestamps: true,

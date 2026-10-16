@@ -23,8 +23,7 @@ export function homeForRole(role) {
 
 export const guestNavItems = [
   { href: '/#templates', label: 'Templates' },
-  { href: '/#how-it-works', label: 'How it works' },
-  { href: '/#pricing', label: 'Pricing' },
+  { href: '/how-it-works', label: 'How it works' },
 ];
 
 export const memberNavItems = [

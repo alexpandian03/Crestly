@@ -8,8 +8,7 @@ const cols = [
     title: "Product",
     links: [
       { href: "/#templates", label: "Templates" },
-      { href: "/#how-it-works", label: "How it works" },
-      { href: "/#pricing", label: "Pricing" },
+      { href: "/how-it-works", label: "How it works" },
       { href: "/create", label: "Create a poster" },
     ],
   },
@@ -18,7 +17,7 @@ const cols = [
     links: [
       { href: "/dashboard", label: "Dashboard" },
       { href: "/brand-kit", label: "Brand kit" },
-      { href: "/users", label: "Team" },
+      { href: "/team", label: "Team" },
       { href: "/posters", label: "My posters" },
     ],
   },
@@ -35,8 +34,6 @@ const cols = [
     links: [
       { href: "/#made-for", label: "Who it is for" },
       { href: "/#brand-lock", label: "Brand lock" },
-      { href: "mailto:hello@brandframe.example", label: "Contact" },
-      { href: "/#pricing", label: "Plans" },
     ],
   },
 ];
@@ -60,28 +57,12 @@ export default function Footer() {
               <ul className="space-y-2">
                 {col.links.map((l) => (
                   <li key={l.label}>
-                    {l.href.startsWith("mailto:") ? (
-                      <a
-                        className="text-sm text-body hover:text-heading"
-                        href={l.href}
-                      >
-                        {l.label}
-                      </a>
-                    ) : l.href.startsWith("/#") || l.href.startsWith("/") ? (
-                      <Link
-                        className="text-sm text-body hover:text-heading"
-                        to={l.href}
-                      >
-                        {l.label}
-                      </Link>
-                    ) : (
-                      <a
-                        className="text-sm text-body hover:text-heading"
-                        href={l.href}
-                      >
-                        {l.label}
-                      </a>
-                    )}
+                    <Link
+                      className="text-sm text-body hover:text-heading"
+                      to={l.href}
+                    >
+                      {l.label}
+                    </Link>
                   </li>
                 ))}
               </ul>

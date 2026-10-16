@@ -35,6 +35,7 @@
     "test:acceptance:e2e": "playwright test e2e/acceptance.spec.js",
     "test:eventtypes": "node server/scripts/test-event-types.js",
     "test:chain": "node server/scripts/test-ai-chain.js",
+    "catalog:report": "node server/scripts/catalog-report.js",
     "eval:ai": "node server/scripts/eval-ai.js",
     "start": "node server/dev.js",
     "test": "npm run test:server && npm run test:client",

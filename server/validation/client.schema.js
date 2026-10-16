@@ -21,6 +21,7 @@ export const updateClientSchema = z
         templates: z.boolean().optional(),
       })
       .optional(),
+    designPalette: z.enum(['strict', 'balanced', 'expressive']).optional(),
   })
   .refine((value) => Object.keys(value).length > 0, 'Provide at least one change')
   .refine(

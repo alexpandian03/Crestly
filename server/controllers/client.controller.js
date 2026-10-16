@@ -81,7 +81,8 @@ export async function updateClient(req, res, next) {
         });
       }
       const keys = Object.keys(req.body).filter((key) => req.body[key] !== undefined);
-      if (keys.length !== 1 || keys[0] !== 'designModes') return designModesOnlyDenied(res);
+      const allowedKeys = ['designModes', 'designPalette'];
+      if (keys.some((k) => !allowedKeys.includes(k))) return designModesOnlyDenied(res);
     }
 
     const stored = await Client.findById(req.params.id).select('designModes').lean();

@@ -8,6 +8,7 @@ import { buildSystemPrompt, buildDesignSystemPrompt, buildFillSystemPrompt, buil
 import { aiSlotsOf, contentArea } from '../../../shared/templateElements.js';
 import { isValidEventType, guessEventType } from '../../../shared/eventTypes.js';
 import { buildRecipeDesign, recipePayload, recipeNeedsPhoto } from '../poster/recipe.js';
+import { scoreDesign } from '../../../shared/visualScore.js';
 import {
   validatePosterContent,
   sanitizeAndTruncateContent,
@@ -650,15 +651,20 @@ export async function generateVariants({
       });
 
       const design = recipePayload(built);
+      const evalResult = scoreDesign(built.elements, posterContent, brandKit);
       posters.push({
         design,
         content: posterContent,
+        score: evalResult.score,
       });
     }
 
+    const filtered = posters.filter((p) => (p.score ?? 100) >= 60);
+    const sorted = (filtered.length > 0 ? filtered : posters).sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+
     return {
-      posters,
-      variants: posters,
+      posters: sorted,
+      variants: sorted,
       provider: provider || 'mock',
     };
   } finally {
