@@ -152,7 +152,7 @@ app.use('/api/audit', auditRoutes);
 app.use('/audit', auditRoutes);
 
 // 404 handler for unmatched API routes
-app.use((req, res, next) => {
+app.use((req, res, _next) => {
   res.status(404).json({
     success: false,
     error: {
@@ -163,7 +163,7 @@ app.use((req, res, next) => {
 });
 
 // Global error handler
-app.use((err, req, res, next) => {
+app.use((err, req, res, _next) => {
   const duplicateEmail = err?.code === 11000 && err?.keyPattern?.email;
   const status = duplicateEmail ? 409 : err.status || err.statusCode || 500;
   if (status >= 500) {

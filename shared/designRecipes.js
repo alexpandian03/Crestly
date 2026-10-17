@@ -117,16 +117,16 @@ const ICON_SIZE = 1.15;
 const ICON_GAP = 0.4;
 const FACT_FIELDS = ['date', 'venue', 'time'];
 /** A fact column narrower than this reads better on its own line than squeezed next to two others. */
-const MIN_CELL_WIDTH = 190;
+const _MIN_CELL_WIDTH = 190;
 /** A fact may take at most this many lines in its own column before the three of them go one
  *  under another instead. Three columns on one row is the shape a pill has, so a fact is allowed
  *  to wrap a little before that shape is given up. */
-const FACT_CELL_MAX_LINES = 3;
+const _FACT_CELL_MAX_LINES = 3;
 /** The narrowest strip a line of words can be measured in. */
 const MIN_TEXT_WIDTH = 8;
 
 const MARGIN_RATIO = 0.062;
-const COL_GAP_RATIO = 0.028;
+const _COL_GAP_RATIO = 0.028;
 
 /** The brand kit's own shipped defaults, so a kit with missing colours still gets a real one. */
 const BRAND_DEFAULTS = {
@@ -774,7 +774,7 @@ function rowsIn(box, weights, gap) {
   });
 }
 
-function colsIn(box, weights, gap) {
+function _colsIn(box, weights, gap) {
   const room = Math.max(weights.length, box.w - gap * (weights.length - 1));
   const sizes = splitSizes(room, weights);
   let cursor = box.x;
@@ -785,7 +785,7 @@ function colsIn(box, weights, gap) {
   });
 }
 
-function inset(rect, dx, dy = dx) {
+function _inset(rect, dx, dy = dx) {
   return boxOf({
     x: rect.x + dx,
     y: rect.y + dy,
@@ -1047,11 +1047,11 @@ function titleEntries(c, { includeTagline = true } = {}) {
   return entries;
 }
 
-function titleHeight(c, width, options) {
+function _titleHeight(c, width, options) {
   return groupHeight(c, titleEntries(c, options), width, 16);
 }
 
-function titleBlock(c, rect, options = {}) {
+function _titleBlock(c, rect, options = {}) {
   return groupLines(c, titleEntries(c, options), rect, { innerGap: 16 });
 }
 
@@ -1075,12 +1075,12 @@ function wordsEntries(c) {
   return list;
 }
 
-function wordsHeight(c, width, entries) {
+function _wordsHeight(c, width, entries) {
   const list = (entries || wordsEntries(c)).filter((entry) => hasEntryText(c, entry));
   return groupHeight(c, list, width);
 }
 
-function wordsBlock(c, rect, entries) {
+function _wordsBlock(c, rect, entries) {
   const list = (entries || wordsEntries(c)).filter((entry) => hasEntryText(c, entry));
   return groupLines(c, list, rect);
 }
@@ -1095,7 +1095,7 @@ function ruleItem(c, id, rect) {
 /**
  * Date, time, venue as three separate equal cards.
  */
-function factPlan(c, width, options) {
+function factPlan(c, width, _options) {
   const keys = ['date', 'time', 'venue'];
   const gap = 16;
   const cellWidth = Math.floor((width - (keys.length - 1) * gap) / keys.length);
@@ -1301,11 +1301,11 @@ function plateItem(c, id, rect, { fill, radius, opacity = 1, z = 2 } = {}) {
   });
 }
 
-function ctaEntries() {
+function _ctaEntries() {
   return [blankLine('cta_line', 'strong')];
 }
 
-function buttonStyle(c) {
+function _buttonStyle(c) {
   return textStyle(c, 'button', { fill: c.palette.primary, align: 'center' });
 }
 
@@ -1380,7 +1380,7 @@ function ctaBlock(c, rect, { centre = false, fillOverride = null } = {}) {
 }
 
 /** The round mark a design puts its icon or picture in. */
-function artBlock(c, rect, { centre = false } = {}) {
+function _artBlock(c, rect, { centre = false } = {}) {
   if (c.options.artwork === 'none' || isDropped(c, 'artwork')) return [];
   const items = [];
   const square = centre ? squareIn(rect) : boxOf(rect);
@@ -1748,7 +1748,7 @@ function holdsColumns(c, spec, width) {
 /**
  * Lay the blocks out, giving up words in order until they fit.
  */
-function stack(c, box, specs, gapOverride = 0) {
+function stack(c, box, specs, _gapOverride = 0) {
   let iter = 0;
   const startTime = Date.now();
   let bestPlan = null;
@@ -3381,8 +3381,6 @@ export function splitColorRecipe(area, brandKit, slots, options = {}, design = n
     h: rightBox.h - rightPad * 2,
   };
 
-  const headlineSize = isTitleScale ? 88 : 96;
-
   const leftSpecs = [
     {
       key: 'artwork',
@@ -3670,7 +3668,7 @@ export const DESIGN_RECIPES = [
   },
 ];
 
-export function cleanVisualBlocks(elements, area, fallbackIcon = 'star') {
+export function cleanVisualBlocks(elements, area, _fallbackIcon = 'star') {
   const list = Array.isArray(elements) ? [...elements] : [];
   const maxArea = 0.35 * area.w * area.h;
 
@@ -3703,41 +3701,6 @@ export function cleanVisualBlocks(elements, area, fallbackIcon = 'star') {
   return result;
 }
 
-export function designById(id) {
-  const wanted = typeof id === 'string' ? id.trim().toLowerCase() : '';
-  const clean = wanted.replace(/[-_ ]/g, '');
-  if (clean === 'hero') return DESIGN_RECIPES.find((d) => d.id === 'ticket') || DESIGN_RECIPES[3];
-  if (clean === 'phototop') return DESIGN_RECIPES.find((d) => d.id === 'photo-hero') || DESIGN_RECIPES[1];
-  if (clean === 'splitphoto' || clean === 'boldband') return DESIGN_RECIPES.find((d) => d.id === 'split-color') || DESIGN_RECIPES[7];
-  if (clean === 'typographic') return DESIGN_RECIPES.find((d) => d.id === 'bold-type') || DESIGN_RECIPES[0];
-
-  const found = DESIGN_RECIPES.find((design) => design.id.toLowerCase() === wanted || design.id.replace(/[-_ ]/g, '') === clean || design.name.toLowerCase() === wanted);
-  if (found) return found;
-
-  const ARCHETYPE_IDS_LIST = [
-    'hero-photo-top',
-    'split',
-    'big-type',
-    'fullbleed-card',
-    'ribbon-date',
-    'card-grid',
-    'medallion-hero',
-    'timeline-program',
-    'quote-center',
-    'banner-stack',
-  ];
-  if (ARCHETYPE_IDS_LIST.includes(wanted)) {
-    return {
-      id: wanted,
-      name: wanted,
-      suits: ['general', 'health', 'festival', 'sports', 'education', 'corporate'],
-      needsPhoto: ['hero-photo-top', 'split', 'fullbleed-card', 'medallion-hero'].includes(wanted),
-      recipeVersion: 2,
-    };
-  }
-  return null;
-}
-
 const ARCHETYPE_IDS_LIST = [
   'hero-photo-top',
   'split',
@@ -3750,6 +3713,29 @@ const ARCHETYPE_IDS_LIST = [
   'quote-center',
   'banner-stack',
 ];
+
+export function designById(id) {
+  const wanted = typeof id === 'string' ? id.trim().toLowerCase() : '';
+  const clean = wanted.replace(/[-_ ]/g, '');
+  if (clean === 'hero') return DESIGN_RECIPES.find((d) => d.id === 'ticket') || DESIGN_RECIPES[3];
+  if (clean === 'phototop') return DESIGN_RECIPES.find((d) => d.id === 'photo-hero') || DESIGN_RECIPES[1];
+  if (clean === 'splitphoto' || clean === 'boldband') return DESIGN_RECIPES.find((d) => d.id === 'split-color') || DESIGN_RECIPES[7];
+  if (clean === 'typographic') return DESIGN_RECIPES.find((d) => d.id === 'bold-type') || DESIGN_RECIPES[0];
+
+  const found = DESIGN_RECIPES.find((design) => design.id.toLowerCase() === wanted || design.id.replace(/[-_ ]/g, '') === clean || design.name.toLowerCase() === wanted);
+  if (found) return found;
+
+  if (ARCHETYPE_IDS_LIST.includes(wanted)) {
+    return {
+      id: wanted,
+      name: wanted,
+      suits: ['general', 'health', 'festival', 'sports', 'education', 'corporate'],
+      needsPhoto: ['hero-photo-top', 'split', 'fullbleed-card', 'medallion-hero'].includes(wanted),
+      recipeVersion: 2,
+    };
+  }
+  return null;
+}
 
 export function recipeIds() {
   return DESIGN_RECIPES.map((design) => design.id);

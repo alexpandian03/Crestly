@@ -32,7 +32,6 @@ import {
   stack,
   row,
   grid,
-  overlay,
   text,
   image,
   shape,
@@ -43,8 +42,6 @@ import {
 } from './layoutEngine.js';
 import { hasTamil } from './textScripts.js';
 import { FIELD_PRIORITY } from './textFit.js';
-import { contrastRatio } from './designRecipes.js';
-import { resolveColorToken, resolveStyleTokens } from './templateElements.js';
 
 export const RECIPE_VERSION = 2;
 
@@ -546,7 +543,7 @@ export const INFO_BLOCKS = [
       { name: 'time', priority: FIELD_PRIORITY.time, required: true },
       { name: 'venue', priority: FIELD_PRIORITY.venue, required: true },
     ],
-    tree: (rawContent, options = {}) => {
+    tree: (rawContent, _options = {}) => {
       const c = extractBlockContent(rawContent);
       return row({
         padding: { top: 16, bottom: 16, x: 20 },
@@ -609,7 +606,7 @@ export const INFO_BLOCKS = [
       { name: 'time', priority: FIELD_PRIORITY.time, required: true },
       { name: 'venue', priority: FIELD_PRIORITY.venue, required: true },
     ],
-    tree: (rawContent, options = {}) => {
+    tree: (rawContent, _options = {}) => {
       const c = extractBlockContent(rawContent);
       return grid({
         columns: 2,
@@ -673,7 +670,7 @@ export const INFO_BLOCKS = [
       { name: 'time', priority: FIELD_PRIORITY.time, required: true },
       { name: 'venue', priority: FIELD_PRIORITY.venue, required: true },
     ],
-    tree: (rawContent, options = {}) => {
+    tree: (rawContent, _options = {}) => {
       const c = extractBlockContent(rawContent);
       return row({
         padding: 16,
@@ -722,7 +719,7 @@ export const INFO_BLOCKS = [
       { name: 'time', priority: FIELD_PRIORITY.time, required: true },
       { name: 'venue', priority: FIELD_PRIORITY.venue, required: true },
     ],
-    tree: (rawContent, options = {}) => {
+    tree: (rawContent, _options = {}) => {
       const c = extractBlockContent(rawContent);
       return stack({
         padding: { top: 16, bottom: 16, x: 20 },
@@ -775,7 +772,7 @@ export const INFO_BLOCKS = [
       { name: 'time', priority: FIELD_PRIORITY.time, required: true },
       { name: 'venue', priority: FIELD_PRIORITY.venue, required: true },
     ],
-    tree: (rawContent, options = {}) => {
+    tree: (rawContent, _options = {}) => {
       const c = extractBlockContent(rawContent);
       return row({
         padding: 16,
@@ -822,7 +819,7 @@ export const INFO_BLOCKS = [
       { name: 'time', priority: FIELD_PRIORITY.time, required: true },
       { name: 'venue', priority: FIELD_PRIORITY.venue, required: true },
     ],
-    tree: (rawContent, options = {}) => {
+    tree: (rawContent, _options = {}) => {
       const c = extractBlockContent(rawContent);
       return stack({
         padding: 16,
@@ -859,7 +856,7 @@ export const INFO_BLOCKS = [
       { name: 'time', priority: FIELD_PRIORITY.time, required: true },
       { name: 'venue', priority: FIELD_PRIORITY.venue, required: true },
     ],
-    tree: (rawContent, options = {}) => {
+    tree: (rawContent, _options = {}) => {
       const c = extractBlockContent(rawContent);
       return row({
         padding: { top: 12, bottom: 12, x: 20 },
@@ -912,7 +909,7 @@ export const MESSAGE_BLOCKS = [
     slots: [
       { name: 'message', priority: FIELD_PRIORITY.bullets, required: true },
     ],
-    tree: (rawContent, options = {}) => {
+    tree: (rawContent, _options = {}) => {
       const c = extractBlockContent(rawContent);
       const textVal = c.message || 'Keynote presentations • Hands-on technical sessions • Networking opportunity';
       const items = textVal.includes('•') ? textVal.split('•').map((s) => s.trim()).filter(Boolean) : [textVal];
@@ -949,7 +946,7 @@ export const MESSAGE_BLOCKS = [
     slots: [
       { name: 'message', priority: FIELD_PRIORITY.subtitle, required: true },
     ],
-    tree: (rawContent, options = {}) => {
+    tree: (rawContent, _options = {}) => {
       const c = extractBlockContent(rawContent);
       const quote = c.message || c.subtitle || 'Recognizing outstanding dedication, perseverance, and remarkable leadership.';
       return row({
@@ -980,7 +977,7 @@ export const MESSAGE_BLOCKS = [
     slots: [
       { name: 'message', priority: FIELD_PRIORITY.details, required: true },
     ],
-    tree: (rawContent, options = {}) => {
+    tree: (rawContent, _options = {}) => {
       const c = extractBlockContent(rawContent);
       const body = c.message || 'We warmly invite all members, esteemed guests, and community partners to join us for this special occasion.';
       return stack({
@@ -1012,7 +1009,7 @@ export const MESSAGE_BLOCKS = [
     slots: [
       { name: 'message', priority: FIELD_PRIORITY.details, required: true },
     ],
-    tree: (rawContent, options = {}) => {
+    tree: (rawContent, _options = {}) => {
       const c = extractBlockContent(rawContent);
       const desc = c.message || '100% voluntary donation helps save up to three lives per unit.';
       return row({
@@ -1067,7 +1064,7 @@ export const CTA_BLOCKS = [
     slots: [
       { name: 'cta', priority: FIELD_PRIORITY['call to action'], required: true },
     ],
-    tree: (rawContent, options = {}) => {
+    tree: (rawContent, _options = {}) => {
       const c = extractBlockContent(rawContent);
       const label = c.cta || 'Register Now';
       return stack({
@@ -1105,7 +1102,7 @@ export const CTA_BLOCKS = [
     slots: [
       { name: 'cta', priority: FIELD_PRIORITY['call to action'], required: true },
     ],
-    tree: (rawContent, options = {}) => {
+    tree: (rawContent, _options = {}) => {
       const c = extractBlockContent(rawContent);
       const textStr = c.cta || 'Free Admission • Walk-Ins Welcome • Register Today';
       return stack({
@@ -1136,7 +1133,7 @@ export const CTA_BLOCKS = [
     slots: [
       { name: 'cta', priority: FIELD_PRIORITY['call to action'], required: true },
     ],
-    tree: (rawContent, options = {}) => {
+    tree: (rawContent, _options = {}) => {
       const c = extractBlockContent(rawContent);
       const label = c.cta || 'Confirm Attendance';
       const contactStr = c.contact || 'RSVP: contact@organization.org';

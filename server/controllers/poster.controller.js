@@ -8,7 +8,7 @@ import { TEMPLATE_SIZE_DEFAULT } from '../services/template/zones.js';
 import { scopedFilter } from '../middleware/auth.middleware.js';
 import { generateContent, generateDesign, generateVariants } from '../services/ai/index.js';
 import { createCacheKey, getFromCache, setInCache } from '../services/ai/chain.js';
-import { resolveImage, resolveImageDetails, resolvePosterImage, searchPhotos, triggerDownload } from '../services/images.js';
+import { resolveImage, resolvePosterImage, searchPhotos, triggerDownload } from '../services/images.js';
 import { sanitizeString, designToContent, sanitizeAndTruncateDesign } from '../services/ai/schema.js';
 import { generateWithMock } from '../services/ai/providers/mock.js';
 import { normalizePosterContent, normalizeImageUrl, contentValuesContext, remapContentToDesign } from '../services/poster/content.js';

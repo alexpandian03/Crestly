@@ -1,4 +1,4 @@
-import { can, ROLE_PERMISSIONS } from '../../shared/permissions.js';
+import { can } from '../../shared/permissions.js';
 
 /**
  * Authoritative map of API route policies.

@@ -22,7 +22,6 @@
  * 6. Never invent dates, numbers, names, venues, or contact details.
  */
 
-import { EVENT_TYPE_IDS } from './eventTypes.js';
 
 const MINOR_WORDS = new Set(['a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'in', 'of', 'on', 'or', 'the', 'to', 'up', 'with']);
 

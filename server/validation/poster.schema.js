@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { CONTENT_LIMITS } from '../services/poster/content.js';
 import { VARIABLE_KEY_PATTERN, VARIABLE_LIMITS, ICON_NAMES } from '../../shared/templateElements.js';
-import { RECIPE_VARIANTS, recipeIds, designById } from '../../shared/designRecipes.js';
+import { RECIPE_VARIANTS, designById } from '../../shared/designRecipes.js';
 import { ARCHETYPE_IDS } from '../../shared/archetypes.js';
 import { EVENT_TYPE_IDS } from '../../shared/eventTypes.js';
 

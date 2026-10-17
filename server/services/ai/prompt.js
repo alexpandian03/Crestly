@@ -1,4 +1,3 @@
-import { ICON_NAMES } from '../../../shared/templateElements.js';
 import { DESIGN_RECIPES } from '../../../shared/designRecipes.js';
 import { aiSectionsOf, eventTypeById } from '../../../shared/eventTypes.js';
 import { BLOCK_ENUMS, VALID_MOODS, VALID_ANGLES } from '../../../shared/aiChoices.js';

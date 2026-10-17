@@ -158,7 +158,6 @@ export async function parseCardListEntries({ text, listDefinition, signal }) {
     }
 
     if (Array.isArray(parsed) && parsed.length > 0) {
-      const allowedKeys = new Set(fields.map((f) => f.key));
       const textFields = fields.filter((f) => f.type !== 'image');
       const sanitized = parsed.slice(0, maxCount).map((item) => {
         const entry = {};

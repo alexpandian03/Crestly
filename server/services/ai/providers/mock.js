@@ -1,9 +1,7 @@
-import { designsFor, recipeIds, RECIPE_VARIANTS, relativeLuminance, contrastRatio } from '../../../../shared/designRecipes.js';
-import { iconForWords, isSamplePlaceholder, contentArea, resolveColorToken } from '../../../../shared/templateElements.js';
-import { eventTypeById, isValidEventType, guessEventType } from '../../../../shared/eventTypes.js';
+import { recipeIds } from '../../../../shared/designRecipes.js';
+import { iconForWords, isSamplePlaceholder } from '../../../../shared/templateElements.js';
 import {
   matchCategoryFromText,
-  preferredArchetypesFor,
   sanitizeAndTruncateDesign,
   sanitizeString,
   selectArchetypeAndVariant,
@@ -103,7 +101,7 @@ function sampleFor(lower) {
   return DESIGN_SAMPLES.find((sample) => sample.match.some((word) => lower.includes(word))) || null;
 }
 
-function avoidSet(avoidRecipeIds) {
+function _avoidSet(avoidRecipeIds) {
   const allowed = recipeIds();
   return new Set(
     (Array.isArray(avoidRecipeIds) ? avoidRecipeIds : [])
@@ -473,7 +471,7 @@ function designAnswer({ text, date, time, venue, avoidRecipeIds, variant, instru
  * Returns 3 different text versions (different kicker, subtitle, bullets, and CTA, same facts).
  * Strictly preserves Tamil language and never invents date, time, venue, or price.
  */
-export function generateMockVariants({ text = '', date = '', time = '', venue = '', instruction = '' } = {}) {
+export function generateMockVariants({ text = '', date = '', time = '', venue = '', _instruction = '' } = {}) {
   const isTamil = /[\u0B80-\u0BFF]/.test(text);
   const clauses = text
     .split(/[\n;.]|(?:\s*[-–—]\s*)/)
@@ -574,15 +572,15 @@ export function generateMockVariants({ text = '', date = '', time = '', venue = 
 
 export async function generateWithMock({
   prompt,
-  brandKit,
-  template,
+  _brandKit,
+  _template,
   instruction,
   variables = [],
   mode = 'content',
   avoidRecipeIds = [],
   variant = null,
-  eventType = null,
-  contentArea = null,
+  _eventType = null,
+  _contentArea = null,
   variants = 1,
   seed = null,
 }) {

@@ -7,26 +7,17 @@ import {
   AlignRight,
   ArrowDown,
   ArrowUp,
-  Bold,
   Check,
   ChevronDown,
   Copy,
-  Eye,
-  ImageIcon,
-  Italic,
   Layers,
   Lock,
   LockOpen,
-  Maximize2,
-  Minimize2,
   MoreHorizontal,
-  Palette,
-  RotateCcw,
   Sliders,
   Sparkles,
   Trash2,
   Type,
-  Underline,
   Upload,
   Crop,
   AlertTriangle,
@@ -40,20 +31,16 @@ import {
   IMAGE_MASKS,
   VARIABLE_LIMITS,
   isBrandColorToken,
-  isBrandFontToken,
   isGenericLabel,
   resolveColorToken,
   effectivePage,
 } from "../../../../shared/templateElements.js";
 import { directUploadAsset } from "../../utils/assetUpload.js";
-import { contrastRatio, pickReadableColor, toHex, wcagLevel } from "../../utils/contrast.js";
+import { contrastRatio, pickReadableColor, toHex } from "../../utils/contrast.js";
 import {
-  counterLine,
   hasWords,
   isHeadlineItem,
   isPicture,
-  modeOf,
-  ITEM_MODES,
   labelSuggestions,
 } from "../../utils/templateEditorItems";
 import {
@@ -372,7 +359,6 @@ function ItemColorPicker({ value, brandKit, surfaceBg, onCommit, label = "Colour
   const tokenLabel = tokenObj ? tokenObj.label : "Brand";
   const resolvedColor = isGrad ? value : resolveColorToken(value, brandKit);
   const resolvedHex = isGrad ? "#2563eb" : toHex(resolvedColor, "#0f172a");
-  const bgHex = toHex(surfaceBg, "#ffffff");
   const [draftHex, setDraftHex] = useState(resolvedHex);
   useEffect(() => setDraftHex(resolvedHex), [resolvedHex]);
 
@@ -561,7 +547,7 @@ function SpacingPopover({ letterSpacing = 0, lineHeight = 1.2, onCommit, onLive 
 
 function PositionPopover({
   item,
-  items,
+  items: _items,
   selectedIds,
   area,
   onRect,
@@ -569,7 +555,7 @@ function PositionPopover({
   onAlign,
   onDistribute,
   onMatchSize,
-  onGroup,
+  onGroup: _onGroup,
   onUngroup,
 }) {
   const { open, setOpen, rect, toggle } = useToolbarPanel();
@@ -2203,10 +2189,10 @@ export default function ContextualToolbar({
   sections,
   brandKit,
   page,
-  size,
+  size: _size,
   area,
-  showFullPoster,
-  isContentCustom,
+  showFullPoster: _showFullPoster,
+  isContentCustom: _isContentCustom,
   onStyle,
   onStyleLive,
   onRect,
@@ -2225,12 +2211,12 @@ export default function ContextualToolbar({
   onChangeMeta,
   onEditCard,
   onPatchItem,
-  onSwitchSection,
+  onSwitchSection: _onSwitchSection,
   onSectionChange,
   onPageChange,
   onToggleSettings,
-  isSettingsOpen,
-  onToggleShowFullPoster,
+  isSettingsOpen: _isSettingsOpen,
+  onToggleShowFullPoster: _onToggleShowFullPoster,
 }) {
   const isHeader = activeSection === "header";
   const isFooter = activeSection === "footer";

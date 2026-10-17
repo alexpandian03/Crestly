@@ -17,7 +17,6 @@
  */
 
 import { generateWithGemini } from './providers/gemini.js';
-import { generateWithMock } from './providers/mock.js';
 import { buildAiChoicesSystemPrompt } from './prompt.js';
 import { validateAiChoices, createRuleBasedChoices } from '../../../shared/aiChoices.js';
 import { logFallback } from './index.js';

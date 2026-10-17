@@ -1,5 +1,4 @@
 import React, { useMemo, useState } from "react";
-import { Layout, Sparkles } from "lucide-react";
 import TemplatePreview from "../TemplatePreview";
 import { MODE_CARDS, BRAND_LINE } from "../../utils/posterAiDesign";
 

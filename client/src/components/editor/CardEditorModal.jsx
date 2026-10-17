@@ -1,39 +1,20 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
-  X,
-  Check,
   Plus,
   Trash2,
   Copy,
   ArrowUp,
   ArrowDown,
-  Layers,
-  RotateCw,
   Type,
   Image as ImageIcon,
   Square,
   Sparkles,
-  Sliders,
-  AlignLeft,
-  AlignCenter,
-  AlignRight,
-  Bold,
-  Italic,
-  Underline,
-  Eye,
-  Maximize2,
   ZoomIn,
   ZoomOut,
-  ChevronDown,
 } from 'lucide-react';
 import {
-  CARD_LIST_LIMITS,
   ELEMENT_FONTS,
-  ELEMENT_LIMITS,
-  ICON_NAMES,
   IMAGE_MASKS,
-  VARIABLE_LIMITS,
-  isBrandColorToken,
   resolveColorToken,
 } from '../../../../shared/templateElements.js';
 import { TAMIL_FONT_FAMILIES } from '../../../../shared/textScripts.js';

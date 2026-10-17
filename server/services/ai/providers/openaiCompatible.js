@@ -177,7 +177,9 @@ export async function generateWithOpenAiCompatible(providerName, {
       if (errJson?.error?.message) {
         errMessage = `${cfg.name} error: ${errJson.error.message}`;
       }
-    } catch (_) {}
+    } catch {
+      // ignore
+    }
     if (apiKey && apiKey.length > 5) {
       errMessage = errMessage.split(apiKey).join('[REDACTED]');
     }
@@ -189,7 +191,7 @@ export async function generateWithOpenAiCompatible(providerName, {
   let data;
   try {
     data = await res.json();
-  } catch (parseErr) {
+  } catch {
     const err = new Error(`${cfg.name} returned invalid HTTP JSON body`);
     err.status = 502;
     err.invalidJson = true;
@@ -208,14 +210,14 @@ export async function generateWithOpenAiCompatible(providerName, {
   let parsed;
   try {
     parsed = JSON.parse(rawContent.trim());
-  } catch (jsonErr) {
+  } catch {
     const cleaned = rawContent
       .replace(/^```(?:json)?\s*/i, '')
       .replace(/\s*```$/i, '')
       .trim();
     try {
       parsed = JSON.parse(cleaned);
-    } catch (_) {
+    } catch {
       const err = new Error(`${cfg.name} content is not valid JSON`);
       err.status = 502;
       err.invalidJson = true;

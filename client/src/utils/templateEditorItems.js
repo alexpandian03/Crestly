@@ -22,7 +22,7 @@ import {
   resolveColorToken,
   validateElements,
 } from '../../../shared/templateElements.js';
-import { contrastRatio, pickReadableColor, toHex } from './contrast.js';
+import { contrastRatio, toHex } from './contrast.js';
 
 /** At least 100 steps of the item list are kept for undo/redo. */
 export const HISTORY_LIMIT = 100;
@@ -212,7 +212,7 @@ export function labelSuggestions(label = '') {
 }
 
 /** What the assistant is told to write when the admin did not say anything else. */
-export function defaultHint(label) {
+export function defaultHint(_label) {
   return 'What should go here?';
 }
 
@@ -564,7 +564,7 @@ export function pickDefaultTextColor(backdrop, brandKit = null) {
  * admin only has to write its name; when the template already holds the most fill-ins it
  * can, the caller asks for a locked one instead and says why.
  */
-export function newTextItem(variantKey, items, area, { variable = true, brandKit = null, section = 'content', sections = null, page = null } = {}) {
+export function newTextItem(variantKey, items, area, { variable = true, _brandKit = null, _section = 'content', _sections = null, _page = null } = {}) {
   const variant = TEXT_VARIANTS[variantKey] || TEXT_VARIANTS.body;
   const spot = openSpot(area, items.length);
   const rect = place(area, spot, boxIn(area, variant.box.w, variant.box.h));
@@ -632,7 +632,7 @@ export function commitItemText(item, items, words, area) {
   return { ...fixed, ...clampRectToArea({ x: fixed.x, y: fixed.y, w: fixed.w, h: fixed.h }, area) };
 }
 
-export function newShapeItem(variantKey, items, area, { brandKit = null } = {}) {
+export function newShapeItem(variantKey, items, area, { _brandKit = null } = {}) {
   const variant = SHAPE_VARIANTS[variantKey] || SHAPE_VARIANTS.rect;
   const spot = openSpot(area, items.length);
   const isLine = variantKey === 'line';

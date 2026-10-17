@@ -2,16 +2,9 @@ import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, 
 import { ImagePlus, Lock, RotateCw, Sparkles } from 'lucide-react';
 import PosterCanvas from '../PosterCanvas';
 import ItemTextEditor from './ItemTextEditor';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '../ui/dropdown-menu';
 import { ELEMENT_LIMITS, resolveBrandText } from '../../../../shared/templateElements.js';
 import {
   computeItemNumbers,
-  isHeadlineItem,
   isTypedText,
   isUserImage,
   itemLabel,
@@ -257,7 +250,7 @@ const ItemFrame = memo(function ItemFrame({
   item,
   scale,
   selected,
-  isPrimarySelected = false,
+  isPrimarySelected: _isPrimarySelected = false,
   editing,
   hidden,
   guidesOn,
@@ -266,11 +259,11 @@ const ItemFrame = memo(function ItemFrame({
   onStart,
   onEdit,
   onEditCard,
-  onToggleLock,
-  onDuplicate,
-  onDelete,
-  onReorder,
-  onComment,
+  onToggleLock: _onToggleLock,
+  onDuplicate: _onDuplicate,
+  onDelete: _onDelete,
+  onReorder: _onReorder,
+  onComment: _onComment,
   isNormalUser = false,
   onFitHeight = null,
   brandKit = null,
@@ -647,8 +640,8 @@ export default function EditorStage({
   onDelete,
   onReorder,
   onZoom,
-  onToggleGuides,
-  onToggleGrid,
+  onToggleGuides: _onToggleGuides,
+  onToggleGrid: _onToggleGrid,
   onOverflow,
   onComment = null,
   isNormalUser = false,

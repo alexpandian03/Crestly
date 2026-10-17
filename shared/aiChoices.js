@@ -20,7 +20,6 @@ import {
   CTA_BLOCKS,
   BACKGROUND_BLOCKS,
   DECORATION_BLOCKS,
-  blockById,
 } from './designBlocks.js';
 import { extractEventFacts, deduplicateFields } from './fallbackParser.js';
 import { textFit } from './textFit.js';
@@ -99,7 +98,7 @@ function cleanStr(val, max = 200) {
  * Validates a single copy variant.
  * Returns true if valid, false if invalid.
  */
-export function isValidCopyVariant(variant, facts = {}) {
+export function isValidCopyVariant(variant, _facts = {}) {
   if (!variant || typeof variant !== 'object') return false;
 
   // 1. Angle enum
@@ -113,7 +112,6 @@ export function isValidCopyVariant(variant, facts = {}) {
   const slogan = variant.slogan;
   if (!slogan || typeof slogan !== 'object') return false;
   const line1 = cleanStr(slogan.line1, 80);
-  const line2 = cleanStr(slogan.line2, 80);
 
   // 4. Bullets (max 3 items)
   if (variant.bullets !== undefined && !Array.isArray(variant.bullets)) return false;
@@ -126,8 +124,6 @@ export function isValidCopyVariant(variant, facts = {}) {
   // 5. CTA structure
   const cta = variant.cta;
   if (!cta || typeof cta !== 'object') return false;
-  const ctaLine = cleanStr(cta.line, 80);
-  const ctaButton = cleanStr(cta.button, 40);
 
   // 6. Text estimation check using textFit
   const subtitle = cleanStr(variant.subtitle, 120);
@@ -150,7 +146,6 @@ export function isValidCopyVariant(variant, facts = {}) {
  */
 export function createRuleBasedCopyVariants(facts = {}, count = 5) {
   const isTamil = Boolean(facts.isTamil || hasTamil(facts.title || '') || hasTamil(facts.subtitle || ''));
-  const title = cleanStr(facts.title || 'Event', 60);
   const userSub = cleanStr(facts.subtitle || '', 100);
   const details = Array.isArray(facts.details) ? facts.details.slice(0, 3) : [];
   const contact = cleanStr(facts.contact || '', 60);
@@ -459,7 +454,7 @@ export function createRuleBasedChoices({
   eventType = 'general',
   brandKit = null,
   seed = 42,
-  requestId = 'fallback',
+  _requestId = 'fallback',
 } = {}) {
   const extracted = extractEventFacts(prompt);
   const cleanFacts = {

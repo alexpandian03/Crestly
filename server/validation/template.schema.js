@@ -9,7 +9,6 @@ import {
   TEMPLATE_CATEGORIES,
 } from '../services/template/zones.js';
 import {
-  BRAND_STYLE_TOKENS,
   CARD_LIST_LIMITS,
   ELEMENT_FIELDS,
   ELEMENT_KINDS,
@@ -239,7 +238,7 @@ export function templateElementsSchema(context = {}) {
     });
 }
 
-const sectionHeaderFooterSchema = (context = {}, sectionName = 'header') =>
+const sectionHeaderFooterSchema = (_context = {}, sectionName = 'header') =>
   z.object({
     mode: z.enum(['brand', 'custom'], { error: `${sectionName} mode must be brand or custom` }).default('brand'),
     height: z

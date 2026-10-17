@@ -4,7 +4,6 @@ import {
   AlertCircle,
   ArrowLeft,
   Image as ImageIcon,
-  Loader2,
   MoveRight,
 } from "lucide-react";
 import api from "../services/api";

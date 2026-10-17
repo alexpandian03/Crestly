@@ -31,7 +31,6 @@ export function generateOpaqueToken() {
 
 import { canAssignRole, getPermissionsForRole } from '../../shared/permissions.js';
 import { audit } from './audit.service.js';
-import { createToken } from './token.service.js';
 
 export function publicUser(user) {
   const client = user.clientId && typeof user.clientId === 'object' ? user.clientId : null;
