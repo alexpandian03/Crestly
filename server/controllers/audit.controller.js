@@ -135,7 +135,7 @@ export async function exportAuditLogsCsv(req, res, next) {
       }
     }
 
-    // Limit export to 5000 rows for serverless safety
+    // Limit export to 5000 rows for memory and response size safety
     const events = await AuditEvent.find(filter)
       .sort({ createdAt: -1 })
       .limit(5000)

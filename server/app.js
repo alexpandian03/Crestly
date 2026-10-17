@@ -123,33 +123,16 @@ app.use('/api/health', healthRoutes);
 app.use('/health', healthRoutes);
 
 app.use('/api/auth', authRoutes);
-app.use('/auth', authRoutes);
 app.use('/api', authRoutes); // Direct routes: POST /api/login, POST /api/logout, GET /api/me
 
-
 app.use('/api/users', userRoutes);
-app.use('/users', userRoutes);
-
 app.use('/api/clients', clientRoutes);
-app.use('/clients', clientRoutes);
-
 app.use('/api/brand-kit', brandKitRoutes);
-app.use('/brand-kit', brandKitRoutes);
-
 app.use('/api/uploads', uploadRoutes);
-app.use('/uploads', uploadRoutes);
-
 app.use('/api/templates', templateRoutes);
-app.use('/templates', templateRoutes);
-
 app.use('/api/posters', posterRoutes);
-app.use('/posters', posterRoutes);
-
 app.use('/api/assets', assetRoutes);
-app.use('/assets', assetRoutes);
-
 app.use('/api/audit', auditRoutes);
-app.use('/audit', auditRoutes);
 
 // 404 handler for unmatched API routes
 app.use((req, res, _next) => {

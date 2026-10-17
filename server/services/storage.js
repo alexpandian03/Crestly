@@ -74,7 +74,7 @@ class StorageService {
   }
 
   /**
-   * Sign a browser-to-Cloudinary upload so no image bytes pass through Vercel.
+   * Sign a browser-to-Cloudinary upload so no image bytes pass through the backend server.
    * The folder and the accepted formats are inside the signature, so the browser
    * cannot aim the upload at another tenant or another file type.
    * @returns {Promise<{ cloudName: string, apiKey: string, timestamp: number, folder: string, allowedFormats: string, signature: string } | null>}

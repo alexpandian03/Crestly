@@ -1,6 +1,6 @@
 import multer from 'multer';
 
-// Memory storage ensures no file is ever saved to local disk (Vercel serverless rule)
+// Memory storage ensures no file is ever saved to local disk (ephemeral disk safety for Render and cloud hosting)
 const storage = multer.memoryStorage();
 
 const allowedMimetypes = [
