@@ -66,11 +66,23 @@ export function scoreDesign(elements = [], content = {}, palette = {}, options =
     const cy = (item.y || 0) + (item.h || 0) / 2;
     const weight = Math.max(1, (item.w || 0) * (item.h || 0));
 
-    if (cx <= midX) leftWeight += weight;
-    else rightWeight += weight;
+    if (Math.abs(cx - midX) <= 4) {
+      leftWeight += weight / 2;
+      rightWeight += weight / 2;
+    } else if (cx < midX) {
+      leftWeight += weight;
+    } else {
+      rightWeight += weight;
+    }
 
-    if (cy <= midY) topWeight += weight;
-    else bottomWeight += weight;
+    if (Math.abs(cy - midY) <= 4) {
+      topWeight += weight / 2;
+      bottomWeight += weight / 2;
+    } else if (cy < midY) {
+      topWeight += weight;
+    } else {
+      bottomWeight += weight;
+    }
   }
 
   const totalHoriz = leftWeight + rightWeight || 1;

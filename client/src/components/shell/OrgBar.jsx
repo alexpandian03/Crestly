@@ -133,7 +133,10 @@ export function OrgPicker({
                   <li key={id}>
                     <button
                       type="button"
-                      onClick={() => onPick(client)}
+                      onClick={() => {
+                        onPick(id);
+                        onClose();
+                      }}
                       className={`flex w-full items-center justify-between gap-3 rounded-[6px] px-3 py-2 text-left text-sm transition-colors ${
                         isSelected
                           ? "bg-[#EFF6FF] text-[#2563EB] font-medium"

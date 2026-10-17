@@ -12,32 +12,95 @@ import uploadRoutes from './routes/upload.routes.js';
 import templateRoutes from './routes/template.routes.js';
 import posterRoutes from './routes/poster.routes.js';
 import assetRoutes from './routes/asset.routes.js';
+import auditRoutes from './routes/audit.routes.js';
 
 import { initServerSentry, captureServerException } from './config/sentry.js';
 import { httpLogger } from './utils/logger.js';
 
+import { cookieParser } from './middleware/cookies.middleware.js';
+import { csrfProtection } from './middleware/csrf.middleware.js';
+
 initServerSentry();
 
 const app = express();
+app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
 // HTTP logging via pino-http (attaches request ID, strips secrets/tokens/bodies)
 app.use(httpLogger);
 app.use((req, res, next) => {
   if (req.id) res.setHeader('x-request-id', req.id);
+  res.removeHeader('X-Powered-By');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   next();
 });
 
 // Security headers
 app.use(
   helmet({
-    contentSecurityPolicy: false,
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+        imgSrc: [
+          "'self'",
+          'data:',
+          'blob:',
+          'https://res.cloudinary.com',
+          'https://images.unsplash.com',
+          'https://images.pexels.com',
+        ],
+        connectSrc: ["'self'"],
+      },
+    },
+    hsts: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+    },
     crossOriginEmbedderPolicy: false,
   })
 );
 
-// CORS configuration (enables local dev cross-origin if needed)
-app.use(cors());
+// Restricted CORS: same-origin and approved local dev origins with credentials (no open CORS wildcard)
+const allowedOrigins = new Set(
+  [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    process.env.CLIENT_URL,
+  ].filter(Boolean)
+);
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      try {
+        const parsed = new URL(origin);
+        if (
+          allowedOrigins.has(origin) ||
+          parsed.hostname === 'localhost' ||
+          parsed.hostname === '127.0.0.1'
+        ) {
+          return callback(null, true);
+        }
+      } catch {}
+      const corsErr = new Error('Not allowed by CORS');
+      corsErr.status = 403;
+      return callback(corsErr);
+    },
+    credentials: true,
+  })
+);
+
+// Cookie parser (pure zero-dependency)
+app.use(cookieParser);
+
+// CSRF Protection for state-changing requests
+app.use(csrfProtection);
 
 // Body parser with 4.5MB limit (respecting Vercel serverless request body constraints)
 app.use(express.json({ limit: '4.5mb' }));
@@ -46,7 +109,7 @@ app.use(express.urlencoded({ extended: true, limit: '4.5mb' }));
 // Middleware: Ensure cached Mongoose connection is ready before handling requests
 app.use(async (req, res, next) => {
   try {
-    if (process.env.MONGODB_URI) {
+    if (process.env.DATABASE_URL || process.env.MONGODB_URI) {
       await connectDB();
     }
   } catch (err) {
@@ -61,6 +124,8 @@ app.use('/health', healthRoutes);
 
 app.use('/api/auth', authRoutes);
 app.use('/auth', authRoutes);
+app.use('/api', authRoutes); // Direct routes: POST /api/login, POST /api/logout, GET /api/me
+
 
 app.use('/api/users', userRoutes);
 app.use('/users', userRoutes);
@@ -82,6 +147,9 @@ app.use('/posters', posterRoutes);
 
 app.use('/api/assets', assetRoutes);
 app.use('/assets', assetRoutes);
+
+app.use('/api/audit', auditRoutes);
+app.use('/audit', auditRoutes);
 
 // 404 handler for unmatched API routes
 app.use((req, res, next) => {

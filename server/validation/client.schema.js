@@ -22,6 +22,12 @@ export const updateClientSchema = z
       })
       .optional(),
     designPalette: z.enum(['strict', 'balanced', 'expressive']).optional(),
+    requireMfaForAdmins: z.boolean().optional(),
+    sessionLength: z.enum(['8h', '7d', '30d']).optional(),
+    allowedEmailDomains: z.union([z.array(z.string()), z.string()]).optional(),
+    minPasswordLength: z.number().int().min(10).max(16).optional(),
+    requireApprovalForPosters: z.boolean().optional(),
+    requireEmailVerification: z.boolean().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, 'Provide at least one change')
   .refine(

@@ -40,14 +40,53 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    isEmailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    pendingEmail: {
+      type: String,
+      default: null,
+      lowercase: true,
+      trim: true,
+    },
     lastLoginAt: {
       type: Date,
       default: null,
+    },
+    tokenVersion: {
+      type: Number,
+      default: 0,
     },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       default: null,
+    },
+    mfa: {
+      enabled: {
+        type: Boolean,
+        default: false,
+      },
+      secretEncrypted: {
+        type: String,
+        default: null,
+        select: false,
+      },
+      tempSecretEncrypted: {
+        type: String,
+        default: null,
+        select: false,
+      },
+      recoveryCodesHashed: {
+        type: [String],
+        default: [],
+        select: false,
+      },
+      lastUsedStep: {
+        type: Number,
+        default: 0,
+      },
     },
   },
   { timestamps: true }
@@ -78,6 +117,11 @@ userSchema.statics.hashPassword = async function hashPassword(plainPassword) {
 userSchema.set('toJSON', {
   transform: (doc, ret) => {
     delete ret.passwordHash;
+    if (ret.mfa) {
+      delete ret.mfa.secretEncrypted;
+      delete ret.mfa.tempSecretEncrypted;
+      delete ret.mfa.recoveryCodesHashed;
+    }
     delete ret.__v;
     return ret;
   },

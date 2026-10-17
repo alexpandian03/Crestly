@@ -10,12 +10,13 @@ const PORT = process.env.PORT || 5000;
 
 async function startLocalServer() {
   try {
-    if (process.env.MONGODB_URI) {
+    if (process.env.DATABASE_URL || process.env.MONGODB_URI) {
       console.log('🔄 Initializing database connection...');
       await connectDB();
     } else {
-      console.log('ℹ️ Running in local development mode without MONGODB_URI.');
+      console.log('ℹ️ Running in local development mode without DATABASE_URL / MONGODB_URI.');
     }
+
   } catch (err) {
     console.warn('⚠️ MongoDB connection could not be established at startup:', err.message);
   }

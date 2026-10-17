@@ -58,8 +58,8 @@ function formatLoginDate(value) {
 }
 
 export default function Users() {
-  const { user, activeClientId } = useAuth();
-  const isSuperadmin = user?.role === "superadmin";
+  const { user, activeClientId, can } = useAuth();
+  const isSuperadmin = can ? can("clients:manage") : user?.role === "superadmin";
   const [usersList, setUsersList] = useState([]);
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);

@@ -1,4 +1,5 @@
 import express from 'express';
+import { allowAnonymous } from '../middleware/auth.middleware.js';
 import { isDbConnected } from '../config/db.js';
 import { llmProviderName } from '../services/ai/index.js';
 import { imageSearchProviderName } from '../services/images.js';
@@ -6,12 +7,14 @@ import { imageProviderName } from '../services/image/index.js';
 
 const router = express.Router();
 
-router.get('/', (req, res) => {
-  const dbStatus = !process.env.MONGODB_URI
+router.get('/', allowAnonymous(), (req, res) => {
+  const uri = process.env.DATABASE_URL || process.env.MONGODB_URI;
+  const dbStatus = !uri
     ? 'unconfigured'
     : isDbConnected()
     ? 'connected'
     : 'connecting_or_disconnected';
+
 
   const llm = llmProviderName();
   const imageSearch = imageSearchProviderName();

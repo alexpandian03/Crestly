@@ -1,9 +1,11 @@
-import Template, { getDefaultTemplateData } from '../models/Template.model.js';
+import Template, { defaultTemplateZones, getDefaultTemplateData } from '../models/Template.model.js';
+import { createStandardTemplates } from '../../shared/defaultTemplates.js';
 import Client from '../models/Client.model.js';
 import BrandKit from '../models/BrandKit.model.js';
 import { scopedFilter } from '../middleware/auth.middleware.js';
 import { sanitizeString } from '../services/ai/schema.js';
 import { consumeRateLimit } from '../services/rateLimit.js';
+import { audit } from '../services/audit.service.js';
 import {
   TEMPLATE_MAX_VERSIONS,
   assertZoneLayout,
@@ -21,7 +23,13 @@ import {
   storedEditorVersion,
   versionsThatFit,
 } from '../services/template/elements.js';
-import { defaultPage, legacyToSections, normalizePage, normalizeSections } from '../../shared/templateElements.js';
+import {
+  EDITOR_VERSION,
+  defaultPage,
+  legacyToSections,
+  normalizePage,
+  normalizeSections,
+} from '../../shared/templateElements.js';
 
 /* The list also carries the placed items: every miniature a template is shown in draws the
    items it really stores, so a list can never disagree with the poster the editor saved. */
@@ -94,6 +102,20 @@ async function nameTaken(clientId, name, exceptId) {
   return Template.exists(filter);
 }
 
+/* The name the Templates page gives an empty layout. The app chooses it, nobody types it, so a
+   clash there means the browser is a click ahead of its own list rather than a real mistake. */
+const AUTO_BLANK_NAME = /^untitled template( \d+)?$/i;
+
+/** "Untitled template 1", then 2, 3… the first number this tenant does not already have. */
+async function nextBlankName(clientId, name) {
+  const base = name.replace(/\s+\d+$/, '').trim() || 'Untitled template';
+  for (let index = 1; index <= 50; index += 1) {
+    const candidate = `${base} ${index}`;
+    if (!(await nameTaken(clientId, candidate))) return candidate;
+  }
+  return null;
+}
+
 /** "<name> copy", then "<name> copy 2", "<name> copy 3"… so duplicates never clash. */
 async function copyNameFor(clientId, name) {
   const base = cleanName(name).slice(0, 110) || 'Template';
@@ -142,17 +164,40 @@ function cleanSectionsFor(req, sections, { brandKit, size }) {
   return cleanSections(sections, elementContext({ brandKit, clientId: req.clientId, size }));
 }
 
+/**
+ * A layout that a team builds from scratch: the brand header and footer draw themselves and the
+ * middle is a plain page with nothing placed on it. The editor opens on empty space instead of
+ * rebuilding a starter design from the areas.
+ */
+function blankSectionsFor(brandKit) {
+  return normalizeSections(
+    {
+      header: { elements: [] },
+      content: { page: defaultPage(), elements: [] },
+      footer: { elements: [] },
+    },
+    brandKit
+  );
+}
+
 export async function getTemplates(req, res, next) {
   try {
     const filter = readScope(req);
     let templates = await Template.find(filter).select(LIST_FIELDS).sort(LIST_SORT).lean();
 
     if (templates.length === 0 && canSeeInactive(req)) {
-      const client = await Client.findById(req.clientId);
       try {
-        await Template.create(getDefaultTemplateData(req.clientId, client?.name || 'Standard'));
+        const standards = createStandardTemplates(req.clientId);
+        await Template.insertMany(standards, { ordered: false });
       } catch (err) {
-        if (!isDuplicateKey(err)) throw err;
+        if (!isDuplicateKey(err)) {
+          const client = await Client.findById(req.clientId);
+          try {
+            await Template.create(getDefaultTemplateData(req.clientId, client?.name || 'Standard'));
+          } catch (inner) {
+            if (!isDuplicateKey(inner)) throw inner;
+          }
+        }
       }
       templates = await Template.find(filter).select(LIST_FIELDS).sort(LIST_SORT).lean();
     }
@@ -214,8 +259,11 @@ export async function createTemplate(req, res, next) {
     const name = cleanName(req.body.name);
     if (!name) return sendBadRequest('Give the template a name.', res);
 
-    const zones = normalizeZones(req.body.zones);
+    /* A new layout from the Templates page asks for nothing but a name. It gets the standard
+       areas at the standard poster size, which is what those areas are drawn for. */
+    const startsBlank = req.body.zones === undefined;
     const size = normalizeTemplateSize(req.body.size);
+    const zones = normalizeZones(req.body.zones ?? defaultTemplateZones());
     const layout = normalizeLayout(req.body.layout, zones);
     assertZoneLayout({ size, zones });
 
@@ -232,13 +280,22 @@ export async function createTemplate(req, res, next) {
         footer: req.body.footer,
       };
       sections = cleanSectionsFor(req, rawSections, { brandKit, size });
+    } else if (startsBlank) {
+      sections = blankSectionsFor(brandKit);
     }
 
-    if (await nameTaken(req.clientId, name)) return duplicateName(res);
+    /* Clicking New template again asks for one more empty layout, not for a complaint: when the
+       number the app chose is already used it takes the next free one. A name somebody typed
+       still clashes loudly, because only that person can choose another. */
+    let finalName = name;
+    if (startsBlank && AUTO_BLANK_NAME.test(name) && (await nameTaken(req.clientId, name))) {
+      finalName = (await nextBlankName(req.clientId, name)) || name;
+    }
+    if (await nameTaken(req.clientId, finalName)) return duplicateName(res);
 
     const doc = {
       clientId: req.clientId,
-      name,
+      name: finalName,
       category: req.body.category || 'Event',
       size,
       zones,
@@ -248,7 +305,8 @@ export async function createTemplate(req, res, next) {
       editorVersion: editorVersionFor(elements),
       version: 1,
       versions: [],
-      isActive: true,
+      /* An unfinished blank layout is not something the team should be offered yet. */
+      isActive: !startsBlank,
       isDefault: false,
       createdBy: req.user._id,
       /** Event types this template is designed for (empty = all types). */
@@ -263,11 +321,19 @@ export async function createTemplate(req, res, next) {
       doc.footer = sections.footer;
       doc.elements = sections.content.elements;
       doc.page = sections.content.page;
-      doc.editorVersion = editorVersionFor(doc.elements);
+      /* An empty layout is still a layout of placed items: without this its areas would be read
+         back as a design of their own the moment it opens. */
+      doc.editorVersion = startsBlank ? EDITOR_VERSION : editorVersionFor(doc.elements);
     }
     assertTemplateDocSize(doc);
 
     const template = await Template.create(doc);
+
+    await audit(req, 'template.create', {
+      targetType: 'template',
+      targetId: template._id,
+      meta: { name: template.name },
+    });
 
     return res.status(201).json({ success: true, data: { template } });
   } catch (err) {
@@ -355,6 +421,13 @@ export async function updateTemplate(req, res, next) {
     );
 
     if (!updated) return conflict(res);
+
+    await audit(req, 'template.update', {
+      targetType: 'template',
+      targetId: updated._id,
+      meta: { name: updated.name },
+    });
+
     return res.status(200).json({ success: true, data: { template: updated } });
   } catch (err) {
     if (isDuplicateKey(err)) return duplicateName(res);
@@ -374,11 +447,15 @@ export async function duplicateTemplate(req, res, next) {
 
     const zones = normalizeZones(template.zones);
     const size = normalizeTemplateSize(template.size);
-    const storedElements = plain(template.elements || []);
     const brandKit = await brandKitFor(req);
-    const elements = storedElements.length
-      ? cleanItemsFor(req, storedElements, { brandKit, size })
-      : [];
+    /* The three bands live in sections; the top level items mirror only the middle one. A copy
+       that carries just that mirror opens with an empty header, an empty footer and nothing in
+       between, so the whole design travels across. */
+    const storedSections = template.sections
+      ? plain(template.sections)
+      : legacyToSections(template, brandKit);
+    const sections = cleanSectionsFor(req, storedSections, { brandKit, size });
+    const elements = sections.content.elements;
 
     const copy = await Template.create({
       clientId: req.clientId,
@@ -387,9 +464,14 @@ export async function duplicateTemplate(req, res, next) {
       size,
       zones,
       layout: normalizeLayout(plain(template.layout), zones),
-      page: plain(template.page),
+      sections,
+      header: sections.header,
+      content: sections.content,
+      footer: sections.footer,
+      page: sections.content.page,
       elements,
-      editorVersion: editorVersionFor(elements),
+      editorVersion: editorVersionFor(elements, storedEditorVersion(template)),
+      eventTypes: plain(template.eventTypes || []),
       version: 1,
       versions: [],
       isActive: false,
@@ -453,6 +535,13 @@ export async function deleteTemplate(req, res, next) {
     }
 
     await template.deleteOne();
+
+    await audit(req, 'template.delete', {
+      targetType: 'template',
+      targetId: template._id,
+      meta: { name: template.name },
+    });
+
     return res.status(200).json({ success: true, data: { deleted: true, id: String(template._id) } });
   } catch (err) {
     return next(err);

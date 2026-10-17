@@ -668,6 +668,23 @@ export default function BrandKit() {
                     }
                     hint="A transparent PNG works best. It is used at the top of every poster and, if you switch it on, as a faint watermark."
                   />
+                  <BrandImageField
+                    label="Header background photo"
+                    kind="header"
+                    value={header.background?.imageUrl || ""}
+                    boxClass="h-32"
+                    onChange={(url) =>
+                      setSub("header", "background", {
+                        imageUrl: url,
+                        type: url
+                          ? "image"
+                          : header.background?.type === "image"
+                          ? "color"
+                          : header.background?.type || "color",
+                      })
+                    }
+                    hint="A background image that sits behind the logo and name at the top of every poster."
+                  />
                   <div className="space-y-3 pt-1">
                     <Toggle
                       label="Show the logo"
@@ -840,6 +857,23 @@ export default function BrandKit() {
                       setSection("footer", { legalText: next })
                     }
                   />
+                  <BrandImageField
+                    label="Footer background photo"
+                    kind="footer"
+                    value={footer.background?.imageUrl || ""}
+                    boxClass="h-28"
+                    onChange={(url) =>
+                      setSub("footer", "background", {
+                        imageUrl: url,
+                        type: url
+                          ? "image"
+                          : footer.background?.type === "image"
+                          ? "color"
+                          : footer.background?.type || "color",
+                      })
+                    }
+                    hint="A background image that sits behind your contact details at the bottom of every poster."
+                  />
                 </SectionCard>
 
                 <SectionCard
@@ -862,6 +896,23 @@ export default function BrandKit() {
                       setSection("content", { defaultImageUrl: url })
                     }
                     hint="Used whenever a poster is created without a photo."
+                  />
+                  <BrandImageField
+                    label="Content area background photo"
+                    kind="content"
+                    value={content.background?.imageUrl || ""}
+                    boxClass="h-40"
+                    onChange={(url) =>
+                      setSub("content", "background", {
+                        imageUrl: url,
+                        type: url
+                          ? "image"
+                          : content.background?.type === "image"
+                          ? "color"
+                          : content.background?.type || "color",
+                      })
+                    }
+                    hint="A background photo that sits behind the middle content area of every poster."
                   />
                   <div className="grid grid-cols-2 gap-4">
                     <Field label="Width (px)">
@@ -1033,6 +1084,25 @@ export default function BrandKit() {
                       value={colors.background}
                       onChange={(next) => setSection("colors", { background: next })}
                     />
+                    <div className="col-span-2 pt-2 border-t border-[#E5E7EB]">
+                      <BrandImageField
+                        label="Poster / content area background photo"
+                        kind="content"
+                        value={content.background?.imageUrl || ""}
+                        boxClass="h-32"
+                        onChange={(url) =>
+                          setSub("content", "background", {
+                            imageUrl: url,
+                            type: url
+                              ? "image"
+                              : content.background?.type === "image"
+                              ? "color"
+                              : content.background?.type || "color",
+                          })
+                        }
+                        hint="A background photo that sits behind the middle content of every poster."
+                      />
+                    </div>
                   </div>
                 </SectionCard>
 
@@ -1146,6 +1216,24 @@ export default function BrandKit() {
                         brandKit={kit}
                         posterSize={posterSize}
                         posterTemplate={template}
+                      />
+
+                      <BrandImageField
+                        label={`${card.title} background photo`}
+                        kind={card.kind}
+                        value={kit[card.kind]?.background?.imageUrl || ""}
+                        boxClass="h-28"
+                        onChange={(url) =>
+                          setSub(card.kind, "background", {
+                            imageUrl: url,
+                            type: url
+                              ? "image"
+                              : kit[card.kind]?.background?.type === "image"
+                              ? "color"
+                              : kit[card.kind]?.background?.type || "color",
+                          })
+                        }
+                        hint={`A background image that sits behind the ${card.kind} band on every poster.`}
                       />
 
                       <p className="text-xs text-[#6B7280] leading-snug">

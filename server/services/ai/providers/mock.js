@@ -399,7 +399,7 @@ export function extractKeywordsFromText(text, category, sampleKeywords) {
 }
 
 /** Deterministic by keyword: the same description always gives the same design and words. */
-function designAnswer({ text, date, time, venue, avoidRecipeIds, variant, instruction }) {
+function designAnswer({ text, date, time, venue, avoidRecipeIds, variant, instruction, seed = null }) {
   const lower = text.toLowerCase();
   const sample = sampleFor(lower);
   const category = sample ? sample.category : (matchCategoryFromText(text) || 'general');
@@ -409,18 +409,13 @@ function designAnswer({ text, date, time, venue, avoidRecipeIds, variant, instru
     avoidRecipeIds,
     variant,
     instruction,
+    seed,
   });
   let archetype = selection.archetype;
   const forcedVariant = selection.variant;
 
-  const wantsPhoto = lower.includes('sport') || lower.includes('fest') || lower.includes('pongal') || lower.includes('cultural') || lower.includes('blood') || lower.includes('diwali') || lower.includes('market') || lower.includes('food') || lower.includes('music') || lower.includes('concert') || lower.includes('bakes') || lower.includes('bakery') || lower.includes('party') || lower.includes('hackathon') || lower.includes('exhibition') || lower.includes('dance') || Boolean(sample?.imageQuery);
-  const avoids = (Array.isArray(avoidRecipeIds) ? avoidRecipeIds : []).map((id) => String(id).toLowerCase());
-  if (wantsPhoto && !avoids.includes('photo-hero') && !instruction) {
-    archetype = 'photo-hero';
-  }
-
   const words = [text, venue].filter(Boolean).join(' ');
-  const venueVal = venue || 'Venue to be announced';
+  const venueVal = venue || '';
   const cta = extractCta(text);
 
   let title = '';
@@ -496,7 +491,7 @@ export function generateMockVariants({ text = '', date = '', time = '', venue = 
 
   const commonDate = date || '';
   const commonTime = time || '';
-  const commonVenue = venue || 'Venue to be announced';
+  const commonVenue = venue || '';
 
   if (isTamil) {
     return {
@@ -589,6 +584,7 @@ export async function generateWithMock({
   eventType = null,
   contentArea = null,
   variants = 1,
+  seed = null,
 }) {
   const text = (prompt || '').trim();
 
@@ -616,10 +612,8 @@ export async function generateWithMock({
 
   // 3. Extract Venue
   let venue = extractVenue(text);
-  if (!venue && /no\s+venue/i.test(text)) {
+  if (!venue || /no\s+venue/i.test(text)) {
     venue = '';
-  } else if (!venue) {
-    venue = 'Venue to be announced';
   }
 
   // 3a. Mode "variants": 3 variants in ONE call
@@ -629,7 +623,7 @@ export async function generateWithMock({
 
   // 3b. Mode "ai": one ready design, written from the same extracted facts.
   if (mode === 'design') {
-    return designAnswer({ text, date, time, venue, avoidRecipeIds, variant, instruction });
+    return designAnswer({ text, date, time, venue, avoidRecipeIds, variant, instruction, seed });
   }
 
   // 3c. Mode "fill": AI Fill returns JSON ONLY for requested variable texts.

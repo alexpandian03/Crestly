@@ -35,6 +35,37 @@ const clientSchema = new mongoose.Schema(
       enum: ['strict', 'balanced', 'expressive'],
       default: 'balanced',
     },
+    requireEmailVerification: {
+      type: Boolean,
+      default: false,
+    },
+    requireMfaForAdmins: {
+      type: Boolean,
+      default: false,
+    },
+    sessionLength: {
+      type: String,
+      enum: ['8h', '7d', '30d'],
+      default: '30d',
+    },
+    allowedEmailDomains: {
+      type: [String],
+      default: [],
+    },
+    minPasswordLength: {
+      type: Number,
+      min: 10,
+      max: 16,
+      default: 10,
+    },
+    requireApprovalForPosters: {
+      type: Boolean,
+      default: false,
+    },
+    auditRetentionDays: {
+      type: Number,
+      default: 365,
+    },
   },
   {
     timestamps: true,

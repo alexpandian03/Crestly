@@ -13,7 +13,7 @@ import {
   restoreTemplateVersion,
   updateTemplate,
 } from '../controllers/template.controller.js';
-import { requireAuth, requireRole, tenantGuard } from '../middleware/auth.middleware.js';
+import { requireAuth, requirePermission, tenantGuard } from '../middleware/auth.middleware.js';
 import { validateBody, validateParams } from '../middleware/validate.middleware.js';
 import {
   createTemplateSchemaFor,
@@ -25,7 +25,7 @@ import {
 
 const router = express.Router();
 
-const adminOnly = [requireAuth, requireRole('superadmin', 'clientadmin'), tenantGuard];
+const adminOnly = [requireAuth, requirePermission('templates:write'), tenantGuard];
 
 /* The app accepts 4.5 MB overall; one template is far smaller than that, so its own writes
    are capped well below it and a too-big save is refused instead of reaching the database. */
@@ -42,8 +42,8 @@ function smallBody(req, res, next) {
   return next();
 }
 
-router.get('/', requireAuth, tenantGuard, getTemplates);
-router.get('/:id', requireAuth, tenantGuard, validateParams(templateParamsSchema), getTemplateById);
+router.get('/', requireAuth, requirePermission('templates:read'), tenantGuard, getTemplates);
+router.get('/:id', requireAuth, requirePermission('templates:read'), tenantGuard, validateParams(templateParamsSchema), getTemplateById);
 
 router.post('/', adminOnly, smallBody, validateBody(createTemplateSchemaFor), createTemplate);
 router.patch(

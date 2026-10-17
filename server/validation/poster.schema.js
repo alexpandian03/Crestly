@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { CONTENT_LIMITS } from '../services/poster/content.js';
 import { VARIABLE_KEY_PATTERN, VARIABLE_LIMITS, ICON_NAMES } from '../../shared/templateElements.js';
 import { RECIPE_VARIANTS, recipeIds, designById } from '../../shared/designRecipes.js';
+import { ARCHETYPE_IDS } from '../../shared/archetypes.js';
 import { EVENT_TYPE_IDS } from '../../shared/eventTypes.js';
 
 const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid ID');
@@ -10,8 +11,11 @@ const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid ID');
 const archetypeOrRecipeId = z
   .string()
   .trim()
-  .refine((value) => Boolean(designById(value)), 'Choose one of the designs this app offers')
-  .transform((value) => designById(value)?.id || value);
+  .refine(
+    (value) => Boolean(designById(value) || ARCHETYPE_IDS.includes(value.toLowerCase())),
+    'Choose one of the designs this app offers'
+  )
+  .transform((value) => designById(value)?.id || value.toLowerCase());
 
 /** Which of the four arrangements of a design, as a number or the text of one. */
 const variantValue = z
@@ -52,11 +56,11 @@ export const generatePosterRequestSchema = z.object({
   instruction: z
     .enum(['shorter', 'minimal', 'more professional', 'emphasize date', 'change image'])
     .optional(),
-  /* "ai" writes a whole design from a recipe; template fills blanks. */
-  mode: z.enum(['ai', 'template'], 'Choose either a design written for you or your own template').default('template'),
+  /* "ai" writes a whole design from a recipe; template fills blanks; "choices" generates AI choices; "paging" returns paged designs. */
+  mode: z.enum(['ai', 'template', 'choices', 'paging'], 'Choose either a design written for you, your own template, choices, or paging').default('template'),
   avoidRecipeIds: z
     .array(archetypeOrRecipeId)
-    .max(recipeIds().length, 'There are only this many designs to leave out')
+    .max(30, 'There are only this many designs to leave out')
     .optional(),
   archetype: archetypeOrRecipeId.optional(),
   recipeId: archetypeOrRecipeId.optional(),
@@ -66,6 +70,14 @@ export const generatePosterRequestSchema = z.object({
   eventType: z.enum(EVENT_TYPE_IDS, { error: 'Unknown event type' }).optional(),
   /** Request 1-3 variants in a single generation call. */
   variants: z.coerce.number().int().min(1).max(3).optional(),
+  seed: z.union([z.number(), z.string()]).optional(),
+  pageSize: z.coerce.number().int().min(1).max(12).optional().default(2),
+  seen: z.array(z.string()).optional().default([]),
+  copyVariants: z.array(z.any()).optional(),
+  facts: z.record(z.any()).optional(),
+  mood: z.string().optional(),
+  reason: z.string().optional(),
+  blockPreferences: z.record(z.string()).optional(),
 });
 
 const contentSchema = z.object({

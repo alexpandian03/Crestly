@@ -3,20 +3,30 @@ import { verifyToken } from '../services/auth.service.js';
 import User from '../models/User.model.js';
 import Client from '../models/Client.model.js';
 
+import Session from '../models/Session.model.js';
+
 function sendError(res, status, message) {
   return res.status(status).json({ success: false, error: { message, status } });
 }
 
 export async function requireAuth(req, res, next) {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
+    let token = req.cookies?.token || req.cookies?.accessToken;
+    if (!token) {
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith('Bearer ')) {
+        token = authHeader.slice(7);
+      }
+    }
+
+
+    if (!token) {
       return sendError(res, 401, 'Authentication required');
     }
 
     let decoded;
     try {
-      decoded = verifyToken(authHeader.slice(7));
+      decoded = verifyToken(token);
     } catch {
       return sendError(res, 401, 'Invalid or expired authentication token');
     }
@@ -28,12 +38,54 @@ export async function requireAuth(req, res, next) {
     if (user.role !== 'superadmin' && (!user.clientId || !user.clientId.isActive)) {
       return sendError(res, 401, 'Your organization is inactive. Please contact an administrator.');
     }
+    if (
+      decoded.tokenVersion !== undefined &&
+      user.tokenVersion !== undefined &&
+      decoded.tokenVersion !== user.tokenVersion
+    ) {
+      return sendError(res, 401, 'Your session is no longer active. Please log in again.');
+    }
+
+    if (decoded.sessionId) {
+      const session = await Session.findById(decoded.sessionId);
+      if (!session || session.revokedAt) {
+        return sendError(res, 401, 'Your session is no longer active. Please log in again.');
+      }
+      req.sessionId = session._id;
+    }
 
     req.user = user;
     return next();
   } catch (err) {
     return next(err);
   }
+}
+
+import { can } from '../../shared/permissions.js';
+import { recordPermissionDenial } from '../services/audit.service.js';
+
+export function requirePermission(permission) {
+  const middleware = async (req, res, next) => {
+    if (!req.user) return sendError(res, 401, 'Authentication required');
+    if (!can(req.user, permission)) {
+      try {
+        await recordPermissionDenial(req, permission);
+      } catch {}
+      return sendError(res, 403, "You don't have access to this action.");
+    }
+    req.requiredPermission = permission;
+    return next();
+  };
+  middleware._permission = permission;
+  middleware._isPolicy = true;
+  return middleware;
+}
+
+export function allowAnonymous() {
+  const middleware = (req, res, next) => next();
+  middleware._permission = 'public';
+  middleware._isPolicy = true;
+  return middleware;
 }
 
 export function requireRole(...roles) {

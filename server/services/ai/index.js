@@ -6,9 +6,15 @@ import { OPENAI_COMPATIBLE_PROVIDERS, generateWithOpenAiCompatible } from './pro
 import { executeWithChain } from './chain.js';
 import { buildSystemPrompt, buildDesignSystemPrompt, buildFillSystemPrompt, buildVariantsSystemPrompt } from './prompt.js';
 import { aiSlotsOf, contentArea } from '../../../shared/templateElements.js';
-import { isValidEventType, guessEventType } from '../../../shared/eventTypes.js';
+import { isValidEventType, guessEventType, eventTypeById } from '../../../shared/eventTypes.js';
 import { buildRecipeDesign, recipePayload, recipeNeedsPhoto } from '../poster/recipe.js';
 import { scoreDesign } from '../../../shared/visualScore.js';
+import { extractEventFacts, deduplicateFields } from '../../../shared/fallbackParser.js';
+
+export function logFallback(requestId, reason) {
+  const reqStr = requestId ? String(requestId) : 'unknown';
+  console.warn(`[AI Fallback] Request ${reqStr}: fallback triggered (${reason})`);
+}
 import {
   validatePosterContent,
   sanitizeAndTruncateContent,
@@ -124,7 +130,7 @@ export function llmProviderName() {
  * @param {string} [params.eventType] — event type id; constrains what the AI may output
  * @returns {Promise<object>} Validated, sanitized poster content
  */
-export async function generateContent({ prompt, brandKit, template, instruction, variables, eventType }) {
+export async function generateContent({ prompt, brandKit, template, instruction, variables, eventType, requestId = null }) {
   const provider = (process.env.LLM_PROVIDER || 'mock').toLowerCase().trim();
   const candidateElements = template?.sections?.content?.elements || template?.elements;
   const blanks = Array.isArray(variables) ? variables : aiSlotsOf(candidateElements);
@@ -156,6 +162,7 @@ export async function generateContent({ prompt, brandKit, template, instruction,
       rawOutput = await call(prompt);
     } catch (err) {
       if (err.name === 'AbortError' || controller.signal.aborted) {
+        logFallback(requestId, 'timeout');
         const timeoutErr = new Error('The AI took too long. Please try again.');
         timeoutErr.status = 504;
         throw timeoutErr;
@@ -183,6 +190,7 @@ export async function generateContent({ prompt, brandKit, template, instruction,
         validation = candidate ? validatePosterContent(candidate, blanks) : { valid: false };
       } catch (retryErr) {
         if (retryErr.name === 'AbortError' || controller.signal.aborted) {
+          logFallback(requestId, 'timeout');
           const timeoutErr = new Error('The AI took too long. Please try again.');
           timeoutErr.status = 504;
           throw timeoutErr;
@@ -192,6 +200,7 @@ export async function generateContent({ prompt, brandKit, template, instruction,
 
     // If still invalid after retry, fall back to mock provider if configured provider failed
     if (!validation.valid || !candidate) {
+      logFallback(requestId, !candidate ? 'invalid JSON' : 'validation failure');
       if (provider !== 'mock') {
         console.warn(`[AI] ${provider} generated invalid content after retry. Falling back to mock provider.`);
         const fallbackRaw = await generateWithMock({
@@ -222,6 +231,7 @@ export async function generateContent({ prompt, brandKit, template, instruction,
     return candidate;
   } catch (err) {
     if (err.name === 'AbortError' || controller.signal.aborted) {
+      logFallback(requestId, 'timeout');
       const timeoutErr = new Error('The AI took too long. Please try again.');
       timeoutErr.status = 504;
       throw timeoutErr;
@@ -243,9 +253,11 @@ function headlineFromPrompt(prompt) {
 }
 
 /** The design used when the model answer stayed unusable after the retry. */
-function fallbackDesign(prompt, options) {
+function fallbackDesign(prompt, options, requestId = null) {
+  logFallback(requestId, 'deterministic fallback parser');
   const selection = selectArchetypeAndVariant({ text: prompt, ...options });
-  const headline = headlineFromPrompt(prompt);
+  const parsed = extractEventFacts(prompt);
+  const headline = parsed.title || headlineFromPrompt(prompt);
   return sanitizeAndTruncateDesign(
     {
       archetype: selection.archetype,
@@ -253,11 +265,11 @@ function fallbackDesign(prompt, options) {
       fields: {
         kicker: 'Event',
         title: headline,
-        subtitle: '',
-        bullets: [],
-        date: '',
-        time: '',
-        venue: 'Venue to be announced',
+        subtitle: parsed.subtitle || '',
+        bullets: parsed.details || [],
+        date: parsed.date || '',
+        time: parsed.time || '',
+        venue: parsed.venue || '',
         cta: 'Open to all',
         photoKeywords: '',
       },
@@ -276,6 +288,7 @@ function fallbackDesign(prompt, options) {
  * @param {string} [params.instruction] - Optional modifier (shorter, minimal, etc.)
  * @param {string[]} [params.avoidRecipeIds] - Designs already shown; another one is picked
  * @param {number} [params.variant] - Arrangement to force, 0..3
+ * @param {string} [params.requestId] - Request ID for tracking/logging
  * @returns {Promise<object>} Validated design answer
  */
 export async function generateDesign({
@@ -284,9 +297,11 @@ export async function generateDesign({
   instruction,
   avoidRecipeIds = [],
   variant = null,
+  requestId = null,
+  seed = null,
 }) {
   const provider = (process.env.LLM_PROVIDER || 'mock').toLowerCase().trim();
-  const options = { avoidRecipeIds, variant, prompt, instruction };
+  const options = { avoidRecipeIds, variant, prompt, instruction, seed };
 
   // 20-second hard abort timeout (vercel maxDuration is 30s)
   const controller = new AbortController();
@@ -308,6 +323,8 @@ export async function generateDesign({
         mode: 'design',
         avoidRecipeIds,
         variant,
+        requestId,
+        seed,
         signal: controller.signal,
       });
 
@@ -339,9 +356,13 @@ export async function generateDesign({
       );
     }
 
-    if (controller.signal.aborted) throw new Error('The AI took too long. Please try again.');
+    if (controller.signal.aborted) {
+      logFallback(requestId, 'timeout');
+      throw new Error('The AI took too long. Please try again.');
+    }
 
     if (!candidate || !validateDesignAnswer(candidate).valid) {
+      logFallback(requestId, !candidate ? 'invalid JSON' : 'validation failure');
       try {
         const fb = await generateWithMock({
           prompt,
@@ -354,7 +375,7 @@ export async function generateDesign({
         fb.isAiGenerated = false;
         return fb;
       } catch {
-        const fb = fallbackDesign(prompt, options);
+        const fb = fallbackDesign(prompt, options, requestId);
         fb.isAiGenerated = false;
         return fb;
       }
@@ -363,10 +384,12 @@ export async function generateDesign({
     return candidate;
   } catch (err) {
     if (err.name === 'AbortError' || controller.signal.aborted) {
+      logFallback(requestId, 'timeout');
       const timeoutErr = new Error('The AI took too long. Please try again.');
       timeoutErr.status = 504;
       throw timeoutErr;
     }
+    logFallback(requestId, err.message || 'generation error');
     try {
       const fb = await generateWithMock({
         prompt,
@@ -379,7 +402,7 @@ export async function generateDesign({
       fb.isAiGenerated = false;
       return fb;
     } catch {
-      const fb = fallbackDesign(prompt, options);
+      const fb = fallbackDesign(prompt, options, requestId);
       fb.isAiGenerated = false;
       return fb;
     }
@@ -408,7 +431,7 @@ export async function generateDesign({
  *   durationMs: number
  * }>}
  */
-export async function fillVariableTexts({ description = '', variables = [], signal = null }) {
+export async function fillVariableTexts({ description = '', variables = [], signal = null, requestId = null }) {
   const provider = (process.env.LLM_PROVIDER || 'mock').toLowerCase().trim();
   const slots = Array.isArray(variables) ? variables.filter((v) => v?.key) : [];
   const text = String(description || '').trim();
@@ -443,12 +466,14 @@ export async function fillVariableTexts({ description = '', variables = [], sign
         variables: slots,
         mode: 'fill',
         signal: linkedSignal,
+        requestId,
       });
 
     try {
       rawOutput = await call(text);
     } catch (err) {
       if (linkedSignal.aborted) {
+        logFallback(requestId, 'timeout');
         const timeoutErr = new Error('The AI took too long. Please try again.');
         timeoutErr.status = 504;
         throw timeoutErr;
@@ -474,8 +499,9 @@ export async function fillVariableTexts({ description = '', variables = [], sign
 
         rawOutput = await call(retryPrompt);
         validation = validateAndSanitizeVariableFill(rawOutput, slots, text);
-      } catch (retryErr) {
+      } catch {
         if (linkedSignal.aborted) {
+          logFallback(requestId, 'timeout');
           const timeoutErr = new Error('The AI took too long. Please try again.');
           timeoutErr.status = 504;
           throw timeoutErr;
@@ -485,6 +511,7 @@ export async function fillVariableTexts({ description = '', variables = [], sign
 
     // If still invalid after retry, fall back to mock provider if configured provider was not mock
     if (!validation.valid || !validation.data) {
+      logFallback(requestId, !validation.data ? 'invalid JSON' : 'validation failure');
       if (provider !== 'mock') {
         fallbackUsed = true;
         try {
@@ -503,6 +530,7 @@ export async function fillVariableTexts({ description = '', variables = [], sign
     // If still invalid, deterministic extraction fallback
     if (!validation.valid || !validation.data) {
       fallbackUsed = true;
+      logFallback(requestId, 'deterministic fallback parser');
       const extracted = extractVariablesFromText(text, slots);
       validation = { valid: true, data: extracted };
     }
@@ -529,7 +557,6 @@ export async function fillVariableTexts({ description = '', variables = [], sign
   }
 }
 
-
 /**
  * Generates 3 different poster variants from ONE LLM call.
  * Uses 3 different layouts via archetype selection, preserves facts,
@@ -543,8 +570,10 @@ export async function generateVariants({
   size = { width: 1080, height: 1350 },
   userImageUrl = null,
   signal = null,
+  requestId = null,
 }) {
   const text = String(prompt || '').trim();
+  const provider = (process.env.LLM_PROVIDER || 'mock').toLowerCase().trim();
   const chosenType = isValidEventType(eventType) ? eventType : guessEventType(text);
 
   const controller = new AbortController();
@@ -557,24 +586,33 @@ export async function generateVariants({
   const MAX_VARIANTS_TOKENS = 1500;
 
   try {
-    const { result: rawOutput, provider } = await executeWithChain({
-      prompt: text,
-      systemPrompt,
-      brandKit,
-      instruction,
-      eventType: chosenType,
-      mode: 'variants',
-      variants: 3,
-      maxTokens: MAX_VARIANTS_TOKENS,
-      signal: linkedSignal,
-    });
-
     let variantsList = [];
-    if (rawOutput && Array.isArray(rawOutput.variants) && rawOutput.variants.length > 0) {
-      variantsList = rawOutput.variants.slice(0, 3);
+    try {
+      const { result: rawOutput } = await executeWithChain({
+        prompt: text,
+        systemPrompt,
+        brandKit,
+        instruction,
+        eventType: chosenType,
+        mode: 'variants',
+        variants: 3,
+        maxTokens: MAX_VARIANTS_TOKENS,
+        signal: linkedSignal,
+      });
+
+      if (rawOutput && Array.isArray(rawOutput.variants) && rawOutput.variants.length > 0) {
+        variantsList = rawOutput.variants.slice(0, 3);
+      }
+    } catch (chainErr) {
+      if (linkedSignal.aborted) {
+        logFallback(requestId, 'timeout');
+        throw chainErr;
+      }
+      logFallback(requestId, chainErr.message || 'provider failure');
     }
 
     if (variantsList.length < 3) {
+      logFallback(requestId, variantsList.length === 0 ? 'invalid JSON' : 'validation failure');
       const mockVariants = await generateWithMock({
         prompt: text,
         mode: 'variants',
@@ -621,7 +659,7 @@ export async function generateVariants({
           bullets: Array.isArray(v.bullets) ? v.bullets : [],
           date: v.date || '',
           time: v.time || '',
-          venue: v.venue || 'Venue to be announced',
+          venue: v.venue || '',
           cta: v.cta || 'Open to all',
           photoKeywords: v.photoKeywords || '',
         },
@@ -672,4 +710,7 @@ export async function generateVariants({
   }
 }
 
-export default { generateContent, generateDesign, fillVariableTexts, generateVariants };
+import { generateAiChoices } from './choices.js';
+export { generateAiChoices };
+
+export default { generateContent, generateDesign, fillVariableTexts, generateVariants, generateAiChoices };

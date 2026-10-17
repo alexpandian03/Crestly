@@ -60,6 +60,8 @@ export function firstAllowedMode(modes) {
   return allowedModes(modes)[0] || MODE_TEMPLATE;
 }
 
+export const BOTH_OFF_MESSAGE = 'Keep at least one way of making posters switched on.';
+
 export const DESIGN_PALETTE_DEFAULT = 'balanced';
 export const DESIGN_PALETTES = [
   {

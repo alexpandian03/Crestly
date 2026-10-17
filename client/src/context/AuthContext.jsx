@@ -1,19 +1,29 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import api from '../services/api';
+import { can as canCheck } from '../../../shared/permissions.js';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(() => localStorage.getItem('token'));
   const [user, setUser] = useState(null);
   const [activeClientId, setActiveClientId] = useState(() => localStorage.getItem('activeClientId') || '');
   const [loading, setLoading] = useState(true);
 
-  const logout = useCallback(() => {
-    setToken(null);
+  const logout = useCallback(async () => {
+    try {
+      await api.post('/auth/logout');
+    } catch {}
     setUser(null);
     setActiveClientId('');
-    localStorage.removeItem('token');
+    localStorage.removeItem('activeClientId');
+  }, []);
+
+  const logoutAll = useCallback(async () => {
+    try {
+      await api.post('/auth/logout-all');
+    } catch {}
+    setUser(null);
+    setActiveClientId('');
     localStorage.removeItem('activeClientId');
   }, []);
 
@@ -35,15 +45,10 @@ export function AuthProvider({ children }) {
     let active = true;
 
     async function loadSession() {
-      if (!localStorage.getItem('token')) {
-        if (active) setLoading(false);
-        return;
-      }
-
       try {
         await refreshUser();
       } catch {
-        if (active) logout();
+        if (active) setUser(null);
       } finally {
         if (active) setLoading(false);
       }
@@ -53,19 +58,17 @@ export function AuthProvider({ children }) {
     return () => {
       active = false;
     };
-  }, [logout, refreshUser]);
+  }, [refreshUser]);
 
   const login = async (email, password) => {
     localStorage.removeItem('activeClientId');
     setActiveClientId('');
     const response = await api.post('/auth/login', { email, password });
     const authData = response.data?.data;
-    if (!response.data?.success || !authData?.token || !authData?.user) {
+    if (!response.data?.success || !authData?.user) {
       throw new Error(response.data?.error?.message || 'Login failed');
     }
 
-    localStorage.setItem('token', authData.token);
-    setToken(authData.token);
     setUser(authData.user);
     return authData.user;
   };
@@ -77,16 +80,23 @@ export function AuthProvider({ children }) {
     else localStorage.removeItem('activeClientId');
   }, []);
 
+  const can = useCallback(
+    (permission, resource = null) => canCheck(user, permission, resource),
+    [user]
+  );
+
   const value = {
-    token,
     user,
     role: user?.role || null,
     clientId: user?.clientId || null,
     activeClientId,
-    isAuthenticated: Boolean(token && user),
+    permissions: user?.permissions || [],
+    can,
+    isAuthenticated: Boolean(user),
     loading,
     login,
     logout,
+    logoutAll,
     refreshUser,
     selectActiveClient,
   };
