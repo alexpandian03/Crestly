@@ -12,16 +12,8 @@ import { useAuth } from "../context/AuthContext";
 import TemplateCard, { TemplateCardSkeleton } from "../components/TemplateCard";
 import DeleteTemplateDialog from "../components/DeleteTemplateDialog";
 import { templateIdOf } from "../utils/templateRender";
+import { friendlyError } from "../utils/brandImage";
 import { Button } from "../components/ui/button";
-
-const CONFLICT_MESSAGE =
-  "This template was changed somewhere else. Reload to continue.";
-
-function friendlyError(err, fallback) {
-  const status = err?.response?.status;
-  if (status === 409) return CONFLICT_MESSAGE;
-  return err?.response?.data?.error?.message || fallback;
-}
 
 export default function Templates() {
   const { activeClientId } = useAuth();
@@ -81,14 +73,6 @@ export default function Templates() {
       document.removeEventListener("visibilitychange", refresh);
     };
   }, [load]);
-
-  const defaultTemplate = useMemo(
-    () =>
-      templates.find((t) => t.isDefault) ||
-      templates.find((t) => t.isActive !== false) ||
-      templates[0],
-    [templates],
-  );
 
   const patchItem = (id, next) => {
     setTemplates((list) =>
@@ -180,19 +164,34 @@ export default function Templates() {
     }
   };
 
+  /* A new template is empty on purpose: the brand header and footer are already on it and the
+     team places everything else. Copying a finished layout stays on each card. Names are compared
+     the way the API compares them - spellings and capital letters count the same - so a layout
+     already on the list is never asked for twice. */
   const newTemplate = async () => {
-    if (!defaultTemplate) {
-      setError("Create a template first, then you can copy it.");
-      return;
-    }
-    setCreating(true);
-    const created = await runOn(
-      defaultTemplate,
-      "duplicate",
-      "Template created. Open it to set it up.",
+    const taken = new Set(
+      templates.map((template) => String(template.name || "").trim().toLowerCase()),
     );
-    setCreating(false);
-    if (created) openEditor(created);
+    let name = "Untitled template 1";
+    for (let n = 2; taken.has(name.toLowerCase()); n += 1) {
+      name = `Untitled template ${n}`;
+    }
+
+    setCreating(true);
+    setError("");
+    try {
+      const response = await api.post("/templates", { name });
+      const created = response?.data?.data?.template;
+      if (created) {
+        setTemplates((list) => [created, ...list]);
+        toast.success("Blank layout ready. Your brand header and footer are on it.");
+        openEditor(created);
+      }
+    } catch (err) {
+      setError(friendlyError(err, "That did not work. Try again."));
+    } finally {
+      setCreating(false);
+    }
   };
 
   return (
@@ -211,7 +210,7 @@ export default function Templates() {
           </div>
           <Button
             onClick={newTemplate}
-            disabled={creating || loading || !templates.length}
+            disabled={creating || loading}
             className="h-9 px-3.5 rounded-[6px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-sm font-medium inline-flex items-center gap-1.5 transition-colors shadow-none disabled:opacity-50"
           >
             {creating ? (
@@ -260,7 +259,8 @@ export default function Templates() {
               No templates yet
             </h3>
             <p className="mt-1 text-xs text-[#6B7280]">
-              Choose New template to start from a layout that already works.
+              Choose New template for an empty layout with your brand header and
+              footer, or let the assistant design one for you.
             </p>
             <Button
               onClick={newTemplate}

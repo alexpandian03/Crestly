@@ -4,7 +4,6 @@ import {
   LayoutDashboard,
   LayoutTemplate,
   Palette,
-  Settings as SettingsIcon,
   Sparkles,
   Users,
 } from 'lucide-react';
@@ -23,8 +22,7 @@ export function homeForRole(role) {
 
 export const guestNavItems = [
   { href: '/#templates', label: 'Templates' },
-  { href: '/#how-it-works', label: 'How it works' },
-  { href: '/#pricing', label: 'Pricing' },
+  { href: '/how-it-works', label: 'How it works' },
 ];
 
 export const memberNavItems = [
@@ -32,7 +30,7 @@ export const memberNavItems = [
   { to: '/posters', label: 'Posters' },
 ];
 
-/** Standard items requested: Dashboard, Create, Posters, Brand kit, Templates, Team, Settings */
+/** Standard items: Dashboard, Create, Posters, Brand kit, Templates, Team */
 export const defaultNavItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/create', label: 'Create', icon: Sparkles },
@@ -40,51 +38,50 @@ export const defaultNavItems = [
   { to: '/brand-kit', label: 'Brand kit', icon: Palette },
   { to: '/templates', label: 'Templates', icon: LayoutTemplate },
   { to: '/team', label: 'Team', icon: Users },
-  { to: '/settings', label: 'Settings', icon: SettingsIcon },
 ];
 
+import { can } from '../../../../shared/permissions.js';
+
 export function navGroups(user) {
+  if (!user) return [];
+
   if (user?.role === 'superadmin') {
     return [
       {
         items: [
-          { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-          { to: '/clients', label: 'Organizations', icon: Building2 },
-          { to: '/users', label: 'Users', icon: Users },
-        ],
+          can(user, 'settings:read') ? { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard } : null,
+          can(user, 'clients:manage') ? { to: '/clients', label: 'Organizations', icon: Building2 } : null,
+          can(user, 'users:read') ? { to: '/users', label: 'Users', icon: Users } : null,
+        ].filter(Boolean),
       },
       {
         needsClient: true,
         items: [
-          { to: '/create', label: 'Create', icon: Sparkles },
-          { to: '/posters', label: 'Posters', icon: Images },
-          { to: '/brand-kit', label: 'Brand kit', icon: Palette },
-          { to: '/templates', label: 'Templates', icon: LayoutTemplate },
-        ],
+          can(user, 'posters:create') ? { to: '/create', label: 'Create', icon: Sparkles } : null,
+          can(user, 'posters:read:own') ? { to: '/posters', label: 'Posters', icon: Images } : null,
+          can(user, 'brandkit:read') ? { to: '/brand-kit', label: 'Brand kit', icon: Palette } : null,
+          can(user, 'templates:read') ? { to: '/templates', label: 'Templates', icon: LayoutTemplate } : null,
+        ].filter(Boolean),
       },
     ];
   }
 
-  if (user?.role === 'clientadmin') {
-    return [
-      {
-        items: defaultNavItems,
-      },
-    ];
-  }
+  // Filter default items based on permissions
+  const availableItems = defaultNavItems.filter((item) => {
+    if (item.to === '/dashboard') return can(user, 'settings:read');
+    if (item.to === '/create') return can(user, 'posters:create');
+    if (item.to === '/posters') return can(user, 'posters:read:own');
+    if (item.to === '/brand-kit') return can(user, 'brandkit:write');
+    if (item.to === '/templates') return can(user, 'templates:write');
+    if (item.to === '/team') return can(user, 'users:read');
+    return false;
+  });
 
-  if (user?.role === 'user') {
-    return [
-      {
-        items: [
-          { to: '/create', label: 'Create', icon: Sparkles },
-          { to: '/posters', label: 'Posters', icon: Images },
-        ],
-      },
-    ];
-  }
-
-  return [];
+  return [
+    {
+      items: availableItems,
+    },
+  ];
 }
 
 export function hasSidebar(user) {
@@ -98,7 +95,7 @@ export function titleForPath(pathname) {
   if (pathname === '/brand-kit') return 'Brand kit';
   if (pathname === '/templates') return 'Templates';
   if (pathname === '/team') return 'Team';
-  if (pathname === '/settings') return 'Settings';
+  if (pathname === '/security') return 'Security';
   if (pathname === '/clients') return 'Organizations';
   if (pathname === '/users') return 'Users';
   if (pathname.startsWith('/templates/') && pathname.endsWith('/edit')) return 'Edit template';

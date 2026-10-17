@@ -11,6 +11,11 @@ import {
   RECIPE_VARIANTS,
   recipeIds,
 } from '../../../shared/designRecipes.js';
+import {
+  deduplicateFields,
+  extractEventFacts,
+  extractTitle,
+} from '../../../shared/fallbackParser.js';
 
 const ajv = new Ajv({ allErrors: true });
 
@@ -319,10 +324,13 @@ export function matchCategoryFromText(text) {
 
 export function preferredArchetypesFor(text) {
   const cat = matchCategoryFromText(text);
+  const all = recipeIds();
   if (cat && CATEGORY_ARCHETYPES[cat]) {
-    return CATEGORY_ARCHETYPES[cat];
+    const preferred = CATEGORY_ARCHETYPES[cat];
+    const others = all.filter((id) => !preferred.includes(id));
+    return [...preferred, ...others];
   }
-  return recipeIds();
+  return all;
 }
 
 export function hashSeed(str) {
@@ -361,7 +369,8 @@ export function selectArchetypeAndVariant({
     }
   }
 
-  const seedString = `${text}|${instruction || ''}|${seed ?? ''}`;
+  const effectiveSeed = seed !== null && seed !== undefined ? seed : Math.floor(Math.random() * 1000000);
+  const seedString = `${text}|${instruction || ''}|${effectiveSeed}`;
   const baseSeed = hashSeed(seedString);
 
   const avoids = (Array.isArray(avoidRecipeIds) ? avoidRecipeIds : [avoidRecipeIds].filter(Boolean))
@@ -473,7 +482,7 @@ export function sanitizeAndTruncateDesign(raw, { avoidRecipeIds = [], variant = 
   const photoKeywords = isFieldsFormat ? rawFields.photoKeywords : raw.imageQuery;
 
   const kickerClean = trimToWords(stripInstructionWords(sanitizeString(kicker)), 4);
-  const titleClean = truncateAtWordBoundary(sanitizeString(title), 60);
+  let titleClean = truncateAtWordBoundary(sanitizeString(title), 60);
   const subtitleClean = trimToWords(sanitizeString(subtitle), 10);
   const bulletsClean = (Array.isArray(bullets) ? bullets : [])
     .slice(0, 3)
@@ -483,11 +492,25 @@ export function sanitizeAndTruncateDesign(raw, { avoidRecipeIds = [], variant = 
   const dateClean = truncateAtWordBoundary(sanitizeString(date), 30);
   const timeClean = truncateAtWordBoundary(sanitizeString(time), 20);
   let venueClean = sanitizeString(venue);
-  if (!venueClean || /no\s+venue/i.test(venueClean)) {
-    venueClean = 'Venue to be announced';
+  if (!venueClean || /no\s+venue/i.test(venueClean) || /^venue\s+to\s+be\s+announced$/i.test(venueClean)) {
+    venueClean = '';
   } else {
     venueClean = truncateAtWordBoundary(venueClean, 80);
   }
+
+  // Ensure title is never the entire description if description has other facts
+  if (prompt && titleClean.toLowerCase().trim() === prompt.toLowerCase().trim() && (dateClean || timeClean || venueClean || bulletsClean.length)) {
+    titleClean = extractTitle(prompt, dateClean, timeClean, venueClean);
+  }
+
+  const deduped = deduplicateFields({
+    title: titleClean,
+    subtitle: subtitleClean,
+    date: dateClean,
+    time: timeClean,
+    venue: venueClean,
+    details: bulletsClean,
+  });
 
   let ctaClean = sanitizeString(typeof cta === 'object' ? (cta.button || cta.line) : cta);
   if (!ctaClean || /^(?:join\s+us|come\s+celebrate|find\s+out\s+more|click\s+here)\b/i.test(ctaClean)) {
@@ -500,12 +523,12 @@ export function sanitizeAndTruncateDesign(raw, { avoidRecipeIds = [], variant = 
 
   const fields = {
     kicker: kickerClean,
-    title: titleClean,
-    subtitle: subtitleClean,
-    bullets: bulletsClean,
-    date: dateClean,
-    time: timeClean,
-    venue: venueClean,
+    title: deduped.title,
+    subtitle: deduped.subtitle,
+    bullets: deduped.details,
+    date: deduped.date,
+    time: deduped.time,
+    venue: deduped.venue,
     cta: ctaClean,
     photoKeywords: photoKeywordsClean,
   };
@@ -569,7 +592,7 @@ export function designToContent(design) {
       tagline: truncateAtWordBoundary(sanitizeString(fields.subtitle), 100),
       date: truncateAtWordBoundary(sanitizeString(fields.date), 30),
       time: truncateAtWordBoundary(sanitizeString(fields.time), 20),
-      venue: truncateAtWordBoundary(sanitizeString(fields.venue), 80) || 'Venue to be announced',
+      venue: truncateAtWordBoundary(sanitizeString(fields.venue), 80),
       details: (Array.isArray(fields.bullets) ? fields.bullets : [])
         .slice(0, 3)
         .map((line) => trimToWords(truncateAtWordBoundary(sanitizeString(line), 90), 6))
@@ -602,7 +625,7 @@ export function designToContent(design) {
     tagline: truncateAtWordBoundary(sanitizeString(source.tagline), 100),
     date: truncateAtWordBoundary(sanitizeString(source.info?.date || source.date), 30),
     time: truncateAtWordBoundary(sanitizeString(source.info?.time || source.time), 20),
-    venue: truncateAtWordBoundary(sanitizeString(source.info?.venue || source.venue), 80) || 'Venue to be announced',
+    venue: truncateAtWordBoundary(sanitizeString(source.info?.venue || source.venue), 80),
     details: (Array.isArray(source.bullets || source.details) ? (source.bullets || source.details) : [])
       .slice(0, 3)
       .map((line) => trimToWords(truncateAtWordBoundary(sanitizeString(line), 90), 6))
@@ -680,8 +703,7 @@ export function extractVariablesFromText(description = '', variables = []) {
   const text = String(description || '').trim();
   const slots = Array.isArray(variables) ? variables.filter((s) => s?.key) : [];
   const result = {};
-
-  const firstClause = text.split(/[,.\n]|(?:\s+(?:on|at|in|from)\s+)/i)[0]?.trim() || '';
+  const facts = extractEventFacts(text);
 
   for (const slot of slots) {
     const key = slot.key.toLowerCase();
@@ -691,19 +713,20 @@ export function extractVariablesFromText(description = '', variables = []) {
     let extracted = '';
     if (key.includes('title') || key.includes('headline') || lbl.includes('headline') || lbl.includes('title')) {
       if (key.includes('sub') || lbl.includes('sub')) {
-        extracted = '';
+        extracted = facts.subtitle || '';
       } else {
-        extracted = firstClause.length > 3 ? firstClause : text.slice(0, 50);
+        extracted = facts.title || '';
       }
     } else if (key.includes('date') || lbl.includes('date')) {
-      const dm = text.match(/\b(?:\d{1,2}(?:st|nd|rd|th)?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)[,\s]+\d{1,2}\s+[A-Za-z]+)\b/i);
-      extracted = dm ? dm[0] : '';
+      extracted = facts.date || '';
     } else if (key.includes('time') || lbl.includes('time') || lbl.includes('hour')) {
-      const tm = text.match(/\b(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)|\d{1,2}\s*(?:am|pm)\s*(?:to|-)\s*\d{1,2}\s*(?:am|pm))\b/i);
-      extracted = tm ? tm[0] : '';
+      extracted = facts.time || '';
     } else if (key.includes('venue') || key.includes('location') || lbl.includes('venue') || lbl.includes('location')) {
-      const vm = text.match(/\b(?:at|in|venue:?)\s+([A-Za-z0-9][A-Za-z0-9\s,'-]{1,45}?)(?:,\s*|\.\s*|\s+(?:on|from|with|for)\b|$)/i);
-      extracted = vm ? vm[1].replace(/^(?:the)\s+/i, '').trim() : '';
+      extracted = facts.venue || '';
+    } else if (key.includes('cta') || lbl.includes('cta') || lbl.includes('action')) {
+      extracted = 'Open to all';
+    } else if (key.includes('detail') || lbl.includes('detail') || key.includes('bullet')) {
+      extracted = facts.details[0] || '';
     } else {
       extracted = '';
     }

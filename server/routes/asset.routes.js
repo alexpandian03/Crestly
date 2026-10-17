@@ -5,20 +5,20 @@ import {
   getAssets,
   deleteAsset,
 } from '../controllers/asset.controller.js';
-import { requireAuth, requireRole, tenantGuard } from '../middleware/auth.middleware.js';
+import { requireAuth, requirePermission, tenantGuard } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
 
 // Direct browser upload signature limited to this tenant's brand and posters folders
-router.post('/sign', requireAuth, tenantGuard, signAssetUpload);
+router.post('/sign', requireAuth, requirePermission('assets:create'), tenantGuard, signAssetUpload);
 
 // Register an uploaded asset
-router.post('/', requireAuth, tenantGuard, createAsset);
+router.post('/', requireAuth, requirePermission('assets:create'), tenantGuard, createAsset);
 
 // Paginated asset library (search by name, newest first)
-router.get('/', requireAuth, tenantGuard, getAssets);
+router.get('/', requireAuth, requirePermission('assets:read'), tenantGuard, getAssets);
 
 // Soft delete asset (clientadmin and superadmin)
-router.delete('/:id', requireAuth, requireRole('superadmin', 'clientadmin'), tenantGuard, deleteAsset);
+router.delete('/:id', requireAuth, requirePermission('assets:delete'), tenantGuard, deleteAsset);
 
 export default router;

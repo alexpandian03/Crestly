@@ -40,6 +40,7 @@ export const EVENT_TYPES = {
   blood_camp: {
     id: 'blood_camp',
     label: 'Blood Donation Camp',
+    neededSections: ['hero', 'info', 'message', 'cta'],
     sections: [
       { id: 'title',    kind: 'field', label: 'Event title',    min: 0, max: 60 },
       { id: 'date',     kind: 'field', label: 'Date',           min: 0, max: 30 },
@@ -53,6 +54,7 @@ export const EVENT_TYPES = {
   birthday: {
     id: 'birthday',
     label: 'Birthday',
+    neededSections: ['hero', 'info', 'message'],
     sections: [
       { id: 'mainPhoto', kind: 'photo', label: 'Main photo',       min: 0, max: 1 },
       { id: 'name',      kind: 'field', label: "Person's name",    min: 0, max: 60 },
@@ -66,6 +68,7 @@ export const EVENT_TYPES = {
   award_function: {
     id: 'award_function',
     label: 'Award Function',
+    neededSections: ['hero', 'info', 'message', 'cta'],
     sections: [
       { id: 'title',     kind: 'field',    label: 'Event title',     min: 0, max: 60 },
       { id: 'date',      kind: 'field',    label: 'Date',            min: 0, max: 30 },
@@ -81,6 +84,7 @@ export const EVENT_TYPES = {
   sports_day: {
     id: 'sports_day',
     label: 'Sports Day',
+    neededSections: ['hero', 'info', 'cta'],
     sections: [
       { id: 'title',    kind: 'field',    label: 'Event title',     min: 0, max: 60 },
       { id: 'date',     kind: 'field',    label: 'Date',            min: 0, max: 30 },
@@ -95,6 +99,7 @@ export const EVENT_TYPES = {
   school_annual_day: {
     id: 'school_annual_day',
     label: 'School Annual Day',
+    neededSections: ['hero', 'info', 'message'],
     sections: [
       { id: 'title',     kind: 'field',    label: 'Event title',        min: 0, max: 60 },
       { id: 'date',      kind: 'field',    label: 'Date',               min: 0, max: 30 },
@@ -110,6 +115,7 @@ export const EVENT_TYPES = {
   temple_festival: {
     id: 'temple_festival',
     label: 'Temple Festival',
+    neededSections: ['hero', 'info', 'message'],
     sections: [
       { id: 'title',    kind: 'field',    label: 'Festival name',   min: 0, max: 60 },
       { id: 'date',     kind: 'field',    label: 'Date',            min: 0, max: 30 },
@@ -125,6 +131,7 @@ export const EVENT_TYPES = {
   wedding: {
     id: 'wedding',
     label: 'Wedding',
+    neededSections: ['hero', 'info', 'message'],
     sections: [
       { id: 'title',    kind: 'field', label: 'Bride & Groom names', min: 0, max: 60 },
       { id: 'date',     kind: 'field', label: 'Wedding date',        min: 0, max: 30 },
@@ -139,6 +146,7 @@ export const EVENT_TYPES = {
   workshop: {
     id: 'workshop',
     label: 'Workshop / Seminar',
+    neededSections: ['hero', 'info', 'message', 'cta'],
     sections: [
       { id: 'title',    kind: 'field',    label: 'Workshop title',   min: 0, max: 60 },
       { id: 'date',     kind: 'field',    label: 'Date',             min: 0, max: 30 },
@@ -154,6 +162,7 @@ export const EVENT_TYPES = {
   meeting: {
     id: 'meeting',
     label: 'Meeting / Assembly',
+    neededSections: ['hero', 'info', 'message', 'cta'],
     sections: [
       { id: 'title',   kind: 'field', label: 'Meeting title',   min: 0, max: 60 },
       { id: 'date',    kind: 'field', label: 'Date',            min: 0, max: 30 },
@@ -167,6 +176,7 @@ export const EVENT_TYPES = {
   general: {
     id: 'general',
     label: 'General Event',
+    neededSections: ['hero', 'info', 'message', 'cta'],
     sections: [
       { id: 'title',    kind: 'field', label: 'Event title',    min: 0, max: 60 },
       { id: 'date',     kind: 'field', label: 'Date',           min: 0, max: 30 },
@@ -238,4 +248,12 @@ export function guessEventType(description) {
     }
   }
   return 'general';
+}
+
+/**
+ * Returns the block sections needed for an event type.
+ */
+export function neededSectionsFor(eventType) {
+  const cfg = typeof eventType === 'string' ? eventTypeById(eventType) : eventType;
+  return cfg?.neededSections || ['hero', 'info', 'message', 'cta'];
 }

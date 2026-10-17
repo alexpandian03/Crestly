@@ -54,7 +54,7 @@ function dateParam(value, endOfDay) {
 
 export default function History() {
   const navigate = useNavigate();
-  const { user, role, activeClientId } = useAuth();
+  const { user, role, activeClientId, can } = useAuth();
 
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -82,7 +82,7 @@ export default function History() {
 
   const requestSeqRef = useRef(0);
 
-  const canSeeAuthors = role === "clientadmin" || role === "superadmin";
+  const canSeeAuthors = can ? can('posters:read:all') : (role === "clientadmin" || role === "superadmin");
 
   useEffect(() => {
     const timer = setTimeout(

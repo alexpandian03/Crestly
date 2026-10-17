@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { AlertCircle, Eye, EyeOff, Info, Loader2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import Logo from "../components/Logo";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { sanitizeRedirect } from "../../../shared/redirect.js";
 
 function landingForRole(role) {
   if (role === "superadmin") return "/clients";
@@ -13,8 +14,18 @@ function landingForRole(role) {
   return "/create";
 }
 
+/* A page that asked for an account keeps its own address or "next" parameter; only same-origin relative paths are allowed. */
+function afterLogin(from, role, search = "") {
+  const query = new URLSearchParams(search || "");
+  const nextParam = query.get("next");
+  const fallback = landingForRole(role);
+  const candidate = nextParam || (from?.pathname ? `${from.pathname}${from.search || ""}` : "");
+  return sanitizeRedirect(candidate, fallback);
+}
+
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { login, isAuthenticated, user } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -29,16 +40,16 @@ export default function Login() {
 
   useEffect(() => {
     if (isAuthenticated && user)
-      navigate(landingForRole(user.role), { replace: true });
-  }, [isAuthenticated, navigate, user]);
+      navigate(afterLogin(location.state?.from, user.role, location.search), { replace: true });
+  }, [isAuthenticated, location, navigate, user]);
 
   const handleLogin = async (event) => {
     event.preventDefault();
     setError("");
     setSubmitting(true);
     try {
-      const loggedInUser = await login(email.trim(), password);
-      navigate(landingForRole(loggedInUser.role), { replace: true });
+      const result = await login(email.trim(), password);
+      navigate(afterLogin(location.state?.from, result.role, location.search), { replace: true });
     } catch (err) {
       setError(
         err.response?.data?.error?.message ||
@@ -125,6 +136,15 @@ export default function Login() {
                 )}
               </button>
             </div>
+          </div>
+
+          <div className="flex justify-end">
+            <Link
+              to="/forgot-password"
+              className="text-xs text-[#2563EB] hover:underline"
+            >
+              Forgot password?
+            </Link>
           </div>
 
           <Button

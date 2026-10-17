@@ -19,7 +19,7 @@ import {
   trackPhotoDownloadController,
   parseCardListController,
 } from '../controllers/poster.controller.js';
-import { requireAuth, requireRole, tenantGuard } from '../middleware/auth.middleware.js';
+import { requireAuth, requirePermission, tenantGuard } from '../middleware/auth.middleware.js';
 import { validateBody, validateParams, validateQuery } from '../middleware/validate.middleware.js';
 import { uploadThumbnailMiddleware } from '../middleware/upload.middleware.js';
 import {
@@ -51,10 +51,11 @@ function smallBody(req, res, next) {
   return next();
 }
 
-router.use(requireAuth, requireRole('superadmin', 'clientadmin', 'user'));
+router.use(requireAuth);
 
 router.post(
   '/generate',
+  requirePermission('posters:create'),
   tenantGuard,
   validateBody(generatePosterRequestSchema),
   generatePosterContentController
@@ -64,6 +65,7 @@ router.post(
    picture service, and it keeps its own daily count. */
 router.post(
   '/image',
+  requirePermission('posters:create'),
   tenantGuard,
   validateBody(posterImageRequestSchema),
   generatePosterImageController
@@ -72,20 +74,22 @@ router.post(
 /* Tidy my list: takes pasted text and card list definition and returns structured entries */
 router.post(
   '/parse-list',
+  requirePermission('posters:create'),
   tenantGuard,
   smallBody,
   validateBody(parseCardListSchema),
   parseCardListController
 );
 
-router.post('/', tenantGuard, validateBody(createPosterSchema), createPosterController);
-router.get('/', tenantGuard, validateQuery(posterListQuerySchema), listPostersController);
-router.get('/photos/search', tenantGuard, searchPhotosController);
-router.post('/photos/download', tenantGuard, trackPhotoDownloadController);
-router.get('/:id', tenantGuard, validateParams(posterIdParamsSchema), getPosterController);
+router.post('/', requirePermission('posters:create'), tenantGuard, smallBody, validateBody(createPosterSchema), createPosterController);
+router.get('/', requirePermission('posters:read:own'), tenantGuard, validateQuery(posterListQuerySchema), listPostersController);
+router.get('/photos/search', requirePermission('posters:create'), tenantGuard, searchPhotosController);
+router.post('/photos/download', requirePermission('posters:create'), tenantGuard, trackPhotoDownloadController);
+router.get('/:id', requirePermission('posters:read:own'), tenantGuard, validateParams(posterIdParamsSchema), getPosterController);
 
 router.put(
   '/:id/draft',
+  requirePermission('posters:create'),
   tenantGuard,
   smallBody,
   validateParams(posterIdParamsSchema),
@@ -94,12 +98,14 @@ router.put(
 );
 router.get(
   '/:id/draft',
+  requirePermission('posters:read:own'),
   tenantGuard,
   validateParams(posterIdParamsSchema),
   getPosterDraftController
 );
 router.delete(
   '/:id/draft',
+  requirePermission('posters:create'),
   tenantGuard,
   validateParams(posterIdParamsSchema),
   discardPosterDraftController
@@ -107,6 +113,7 @@ router.delete(
 
 router.patch(
   '/:id',
+  requirePermission('posters:create'),
   tenantGuard,
   smallBody,
   validateParams(posterIdParamsSchema),
@@ -116,6 +123,7 @@ router.patch(
 
 router.post(
   '/:id/versions',
+  requirePermission('posters:create'),
   tenantGuard,
   validateParams(posterIdParamsSchema),
   validateBody(regeneratePosterSchema),
@@ -124,6 +132,7 @@ router.post(
 
 router.post(
   '/:id/restore',
+  requirePermission('posters:create'),
   tenantGuard,
   validateParams(posterIdParamsSchema),
   validateBody(restorePosterSchema),
@@ -132,6 +141,7 @@ router.post(
 
 router.post(
   '/:id/duplicate',
+  requirePermission('posters:create'),
   tenantGuard,
   validateParams(posterIdParamsSchema),
   duplicatePosterController
@@ -139,6 +149,7 @@ router.post(
 
 router.post(
   '/:id/apply-latest-design',
+  requirePermission('posters:create'),
   tenantGuard,
   validateParams(posterIdParamsSchema),
   validateBody(applyLatestDesignSchema),
@@ -147,12 +158,13 @@ router.post(
 
 router.post(
   '/:id/thumbnail',
+  requirePermission('posters:create'),
   tenantGuard,
   validateParams(posterIdParamsSchema),
   uploadThumbnailMiddleware,
   uploadPosterThumbnailController
 );
 
-router.delete('/:id', tenantGuard, validateParams(posterIdParamsSchema), deletePosterController);
+router.delete('/:id', requirePermission('posters:delete'), tenantGuard, validateParams(posterIdParamsSchema), deletePosterController);
 
 export default router;

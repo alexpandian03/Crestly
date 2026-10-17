@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, KeyRound, LogOut, LogOutIcon } from 'lucide-react';
+import { ChevronDown, KeyRound, LogOut, LogOutIcon, Shield } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { ROLE_LABELS } from './navItems';
@@ -23,24 +23,29 @@ function initialsOf(name, email) {
 }
 
 export default function UserMenu({ onPassword }) {
-  const { user, logout } = useAuth();
+  const { user, logout, logoutAll } = useAuth();
   const navigate = useNavigate();
 
-  const signOut = () => {
-    logout();
+  const signOut = async () => {
+    await logout();
     navigate('/login');
   };
 
-  /** Forgets every credential stored in browser; other devices keep their own token. */
-  const signOutEverywhere = () => {
-    ['token', 'activeClientId', 'bf-sidebar-collapsed', 'bf-theme'].forEach((key) => {
+  /** Forgets credentials and revokes all sessions across devices. */
+  const signOutEverywhere = async () => {
+    ['activeClientId', 'bf-sidebar-collapsed', 'bf-theme'].forEach((key) => {
       localStorage.removeItem(key);
       sessionStorage.removeItem(key);
     });
     sessionStorage.removeItem('authMessage');
     sessionStorage.removeItem('accessDeniedMessage');
-    signOut();
-    toast.success('Signed out on this device. Other devices sign out when their session ends.');
+    if (logoutAll) {
+      await logoutAll();
+    } else {
+      await logout();
+    }
+    navigate('/login');
+    toast.success('Signed out of all devices.');
   };
 
   const roleText = ROLE_LABELS[user?.role] || user?.role || 'Member';
@@ -93,6 +98,14 @@ export default function UserMenu({ onPassword }) {
         </div>
 
         <DropdownMenuSeparator className="bg-[#E5E7EB] my-1" />
+
+        <DropdownMenuItem
+          onClick={() => navigate('/security')}
+          className="flex cursor-pointer items-center gap-2 rounded-[6px] px-2.5 py-1.5 text-sm text-[#374151] hover:bg-[#F3F4F6] hover:text-[#111827] focus:bg-[#F3F4F6] focus:text-[#111827]"
+        >
+          <Shield className="h-4 w-4 text-[#6B7280]" />
+          <span>Security & sign-in</span>
+        </DropdownMenuItem>
 
         <DropdownMenuItem
           onClick={onPassword}

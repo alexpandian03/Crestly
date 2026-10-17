@@ -60,11 +60,32 @@ export function firstAllowedMode(modes) {
   return allowedModes(modes)[0] || MODE_TEMPLATE;
 }
 
-/** Both switches are the settings route's own shape; the server refuses both off. */
 export const BOTH_OFF_MESSAGE = 'Keep at least one way of making posters switched on.';
 
-export function designModesPayload(modes) {
-  return { designModes: { ai: Boolean(modes?.ai), templates: Boolean(modes?.templates) } };
+export const DESIGN_PALETTE_DEFAULT = 'balanced';
+export const DESIGN_PALETTES = [
+  {
+    id: 'strict',
+    name: 'Strict',
+    description: 'Use exact brand kit colors only without extra tints or shades.',
+  },
+  {
+    id: 'balanced',
+    name: 'Balanced',
+    description: 'Default. Brand colors expanded with gentle tints, shades, and clean neutrals.',
+  },
+  {
+    id: 'expressive',
+    name: 'Expressive',
+    description: 'Adds an algorithmic supporting accent tone for vibrant variety.',
+  },
+];
+
+export function designModesPayload(modes, palette = 'balanced') {
+  return {
+    designModes: { ai: Boolean(modes?.ai), templates: Boolean(modes?.templates) },
+    ...(palette ? { designPalette: palette } : {}),
+  };
 }
 
 /**

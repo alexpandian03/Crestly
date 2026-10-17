@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { saveDraft } from "../config/draft";
 import { DEMO_POSTERS, SAMPLE_PROMPTS } from "../data/demoPosters";
@@ -105,13 +105,32 @@ export default function Home() {
     const next = (value ?? text).trim();
     if (next) saveDraft(next);
     if (isAuthenticated) navigate("/create");
-    else navigate("/login");
+    else navigate("/login", { state: { from: { pathname: "/create" } } });
   };
 
   const onHeroSubmit = (e) => {
     e.preventDefault();
     goCreate(text);
   };
+
+  /* Menu and footer links name a part of this page. The browser cannot jump to a section that
+     React has not drawn yet, so the jump is retried until the section is on the page. */
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (!hash) return undefined;
+    let tries = 0;
+    let timer = 0;
+    const jump = () => {
+      const target = document.getElementById(hash.slice(1));
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
+      if (tries++ < 5) timer = window.setTimeout(jump, 120);
+    };
+    jump();
+    return () => window.clearTimeout(timer);
+  }, [hash]);
 
   return (
     <div>
@@ -390,81 +409,6 @@ export default function Home() {
               <div key={a.title} className="card-surface p-5">
                 <h3 className="text-base">{a.title}</h3>
                 <p className="mt-2 text-sm text-body">{a.body}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section id="pricing" className="section-pad bg-canvas scroll-mt-20">
-        <div className="container-page">
-          <h2 className="text-2xl sm:text-3xl tracking-tight">Pricing</h2>
-          <p className="mt-2 text-body">
-            Choose a starting point. Billing is not live yet.
-          </p>
-          <div className="mt-10 grid md:grid-cols-3 gap-6 items-stretch">
-            {[
-              // Placeholder prices — not billed
-              {
-                name: "Free",
-                price: "$0",
-                note: "Try layouts on one brand kit.",
-                items: ["1 organization", "Core templates", "PNG downloads"],
-              },
-              {
-                name: "Pro",
-                price: "$29",
-                note: "For a busy comms team.",
-                items: ["Unlimited drafts", "JPG and PDF", "Priority layouts"],
-                highlight: true,
-              },
-              {
-                name: "Team",
-                price: "$79",
-                note: "Several brands, one workspace.",
-                items: ["Several kits", "Admin controls", "Shared history"],
-              },
-            ].map((plan) => (
-              <div
-                key={plan.name}
-                className={`rounded-[8px] border p-6 ${
-                  plan.highlight
-                    ? "border-[#2563EB] bg-[#F9FAFB]"
-                    : "border-[#E5E7EB] bg-white"
-                }`}
-              >
-                {plan.highlight && (
-                  <p className="text-xs font-semibold text-[#2563EB] uppercase tracking-wide mb-2">
-                    Most used
-                  </p>
-                )}
-                <h3 className="text-lg font-semibold text-[#111827]">{plan.name}</h3>
-                <p className="mt-2 text-3xl font-semibold text-[#111827] tracking-tight">
-                  {plan.price}
-                  <span className="text-sm font-medium text-[#6B7280]">
-                    {" "}
-                    /mo
-                  </span>
-                </p>
-                <p className="mt-2 text-sm text-[#6B7280]">
-                  {plan.note}
-                </p>
-                <ul className="mt-4 space-y-2 text-sm text-[#4B5563]">
-                  {plan.items.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-                <button
-                  type="button"
-                  onClick={() => goCreate("")}
-                  className={`w-full mt-6 h-9 rounded-[6px] text-sm font-medium transition-colors ${
-                    plan.highlight
-                      ? "bg-[#2563EB] text-white hover:bg-[#1D4ED8]"
-                      : "border border-[#E5E7EB] bg-white text-[#111827] hover:bg-[#F3F4F6]"
-                  }`}
-                >
-                  Log in to create
-                </button>
               </div>
             ))}
           </div>

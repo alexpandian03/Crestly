@@ -587,52 +587,57 @@ templateSchema.set('toJSON', {
   },
 });
 
+/** The areas every new layout starts with: a brand strip top and bottom, words and one photo. */
+export function defaultTemplateZones() {
+  return [
+    {
+      id: 'zone-header',
+      type: 'header',
+      x: 0,
+      y: 0,
+      w: 1080,
+      h: 140,
+      locked: true,
+    },
+    {
+      id: 'zone-content',
+      type: 'content',
+      x: 70,
+      y: 170,
+      w: 940,
+      h: 640,
+      locked: false,
+      minFont: 16,
+      maxFont: 54,
+    },
+    {
+      id: 'zone-image',
+      type: 'image',
+      x: 70,
+      y: 830,
+      w: 940,
+      h: 370,
+      locked: false,
+    },
+    {
+      id: 'zone-footer',
+      type: 'footer',
+      x: 0,
+      y: 1220,
+      w: 1080,
+      h: 130,
+      locked: true,
+    },
+  ];
+}
+
 export function getDefaultTemplateData(clientId, clientName = 'Default') {
   return {
     clientId,
     name: `${clientName} Standard Event Poster`,
     category: 'Event',
     size: { width: 1080, height: 1350 },
-    zones: [
-      {
-        id: 'zone-header',
-        type: 'header',
-        x: 0,
-        y: 0,
-        w: 1080,
-        h: 140,
-        locked: true,
-      },
-      {
-        id: 'zone-content',
-        type: 'content',
-        x: 70,
-        y: 170,
-        w: 940,
-        h: 640,
-        locked: false,
-        minFont: 16,
-        maxFont: 54,
-      },
-      {
-        id: 'zone-image',
-        type: 'image',
-        x: 70,
-        y: 830,
-        w: 940,
-        h: 370,
-        locked: false,
-      },
-      {
-        id: 'zone-footer',
-        type: 'footer',
-        x: 0,
-        y: 1220,
-        w: 1080,
-        h: 130,
-        locked: true,
-      },
-    ],
+    zones: defaultTemplateZones(),
     layout: layoutDefaultsFor([{ type: 'image' }]),
     page: defaultPage(),
     version: 1,

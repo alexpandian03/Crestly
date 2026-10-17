@@ -11,12 +11,13 @@ if (!cached) {
 }
 
 export async function connectDB() {
-  const uri = process.env.MONGODB_URI;
+  const uri = process.env.DATABASE_URL || process.env.MONGODB_URI;
 
   if (!uri) {
     // If not configured, we do not throw here to allow health checks & offline dev testing
     return null;
   }
+
 
   if (cached.conn) {
     return cached.conn;

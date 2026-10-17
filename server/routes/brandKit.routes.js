@@ -1,6 +1,6 @@
 import express from 'express';
 import { getBrandKit, updateBrandKit } from '../controllers/brandKit.controller.js';
-import { requireAuth, requireRole, tenantGuard } from '../middleware/auth.middleware.js';
+import { requireAuth, requirePermission, tenantGuard } from '../middleware/auth.middleware.js';
 import { validateBody } from '../middleware/validate.middleware.js';
 import { updateBrandKitSchema } from '../validation/brandKit.schema.js';
 
@@ -21,14 +21,14 @@ function smallBody(req, res, next) {
   return next();
 }
 
-// Read brand kit: any authenticated user in the tenant
-router.get('/', requireAuth, tenantGuard, getBrandKit);
+// Read brand kit: any authenticated user in the tenant with brandkit:read
+router.get('/', requireAuth, requirePermission('brandkit:read'), tenantGuard, getBrandKit);
 
-// Modify brand kit: clientadmin and superadmin only, with schema validation
+// Modify brand kit: clientadmin and superadmin with brandkit:write, with schema validation
 router.put(
   '/',
   requireAuth,
-  requireRole('superadmin', 'clientadmin'),
+  requirePermission('brandkit:write'),
   tenantGuard,
   smallBody,
   validateBody((req) =>

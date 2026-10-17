@@ -1,7 +1,7 @@
 /**
  * Google Gemini LLM Provider (plain fetch, no heavy SDKs)
  */
-export async function generateWithGemini({ prompt, systemPrompt, signal, maxTokens = 1000 }) {
+export async function generateWithGemini({ prompt, systemPrompt, signal, maxTokens = 1000, model: overrideModel }) {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
     const err = new Error('Gemini API key is not configured.');
@@ -10,7 +10,7 @@ export async function generateWithGemini({ prompt, systemPrompt, signal, maxToke
     throw err;
   }
 
-  let model = process.env.GEMINI_MODEL?.trim() || 'gemini-2.0-flash';
+  let model = overrideModel || process.env.GEMINI_MODEL?.trim() || 'gemini-2.0-flash';
   if (model.includes('2.5')) {
     model = 'gemini-2.0-flash';
   }

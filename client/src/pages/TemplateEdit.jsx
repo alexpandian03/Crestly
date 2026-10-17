@@ -203,7 +203,7 @@ export default function TemplateEdit({ brandLayer = false }) {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user, activeClientId } = useAuth();
+  const { user, activeClientId, can } = useAuth();
   const wide = useWideScreen();
 
   /* The brand layer opens on the band the Brand Kit page pointed at. */
@@ -2145,7 +2145,7 @@ export default function TemplateEdit({ brandLayer = false }) {
       selectedItem={selected}
       items={activeItems}
       selectedIds={selectedIds}
-      isNormalUser={user?.role === "user"}
+      isNormalUser={can ? !can('templates:write') : user?.role === "user"}
       activeSection={activeSection}
       sections={sections}
       brandKit={brandKit}
@@ -2517,7 +2517,7 @@ export default function TemplateEdit({ brandLayer = false }) {
               onToggleGrid={() => setGridOn((on) => !on)}
               onOverflow={setItemsOverflow}
               onComment={handleComment}
-              isNormalUser={user?.role === "user"}
+              isNormalUser={can ? !can('templates:write') : user?.role === "user"}
               onScaleChange={handleScaleChange}
               onDropImage={insertImage}
               onEditCard={handleEditCard}

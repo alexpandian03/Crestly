@@ -6,6 +6,7 @@ import {
   withBrandKitDefaults,
   withEditableBands,
 } from '../services/brand/style.js';
+import { audit } from '../services/audit.service.js';
 
 function kitForEditor(kit) {
   return withEditableBands(withBrandKitDefaults(kit));
@@ -97,6 +98,12 @@ export async function updateBrandKit(req, res, next) {
       { $set: { ...seeded, clientId, orgName: seeded.orgName || 'Organization' } },
       { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
     );
+
+    await audit(req, 'brandkit.update', {
+      targetType: 'brandkit',
+      targetId: updated._id,
+      meta: { orgName: updated.orgName },
+    });
 
     return res.status(200).json({
       success: true,

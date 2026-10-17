@@ -1,6 +1,8 @@
 import Client from '../models/Client.model.js';
 import BrandKit from '../models/BrandKit.model.js';
 import Template, { getDefaultTemplateData } from '../models/Template.model.js';
+import { createStandardTemplates } from '../../shared/defaultTemplates.js';
+import { audit } from '../services/audit.service.js';
 
 function sendNotFound(res) {
   return res.status(404).json({ success: false, error: { message: 'Client not found', status: 404 } });
@@ -19,7 +21,8 @@ export async function createClient(req, res, next) {
   try {
     const client = await Client.create({ name: req.body.name, plan: req.body.plan, isActive: true });
     await BrandKit.create({ clientId: client._id, orgName: client.name });
-    await Template.create(getDefaultTemplateData(client._id, client.name));
+    const standards = createStandardTemplates(client._id);
+    await Template.insertMany(standards, { ordered: false });
     return res.status(201).json({ success: true, data: { client } });
   } catch (err) {
     return next(err);
@@ -42,10 +45,7 @@ export async function getClientById(req, res, next) {
     if (req.user.role !== 'superadmin') {
       const ownId = req.user.clientId?._id || req.user.clientId;
       if (String(ownId) !== req.params.id) {
-        return res.status(403).json({
-          success: false,
-          error: { message: "You don't have access to this organization.", status: 403 },
-        });
+        return sendNotFound(res);
       }
     }
     const client = await Client.findById(req.params.id);
@@ -56,12 +56,12 @@ export async function getClientById(req, res, next) {
   }
 }
 
-/** A client administrator may change only how its own organization makes posters. */
-function designModesOnlyDenied(res) {
+/** A client administrator may change only how its own organization works. */
+function settingsOnlyDenied(res) {
   return res.status(403).json({
     success: false,
     error: {
-      message: 'Design settings are the only thing you can change for your organization here.',
+      message: 'You can only change organization settings here.',
       status: 403,
     },
   });
@@ -75,13 +75,20 @@ export async function updateClient(req, res, next) {
   try {
     if (req.user.role !== 'superadmin') {
       if (String(ownClientId(req)) !== req.params.id) {
-        return res.status(403).json({
-          success: false,
-          error: { message: "You don't have access to this organization.", status: 403 },
-        });
+        return sendNotFound(res);
       }
       const keys = Object.keys(req.body).filter((key) => req.body[key] !== undefined);
-      if (keys.length !== 1 || keys[0] !== 'designModes') return designModesOnlyDenied(res);
+      const allowedKeys = [
+        'designModes',
+        'designPalette',
+        'requireMfaForAdmins',
+        'sessionLength',
+        'allowedEmailDomains',
+        'minPasswordLength',
+        'requireApprovalForPosters',
+        'requireEmailVerification',
+      ];
+      if (keys.some((k) => !allowedKeys.includes(k))) return settingsOnlyDenied(res);
     }
 
     const stored = await Client.findById(req.params.id).select('designModes').lean();
@@ -107,11 +114,52 @@ export async function updateClient(req, res, next) {
       changes.designModes = modes;
     }
 
+    if (changes.allowedEmailDomains !== undefined) {
+      if (typeof changes.allowedEmailDomains === 'string') {
+        changes.allowedEmailDomains = changes.allowedEmailDomains
+          .split(/[\s,]+/)
+          .map((d) => d.toLowerCase().trim().replace(/^@/, ''))
+          .filter(Boolean);
+      } else if (Array.isArray(changes.allowedEmailDomains)) {
+        changes.allowedEmailDomains = changes.allowedEmailDomains
+          .map((d) => String(d || '').toLowerCase().trim().replace(/^@/, ''))
+          .filter(Boolean);
+      }
+    }
+
+    if (changes.minPasswordLength !== undefined) {
+      const minLen = parseInt(changes.minPasswordLength, 10);
+      if (isNaN(minLen) || minLen < 10 || minLen > 16) {
+        return res.status(400).json({
+          success: false,
+          error: { message: 'Minimum password length must be between 10 and 16 characters.', status: 400 },
+        });
+      }
+      changes.minPasswordLength = minLen;
+    }
+
+    if (changes.sessionLength !== undefined && !['8h', '7d', '30d'].includes(changes.sessionLength)) {
+      return res.status(400).json({
+        success: false,
+        error: { message: 'Session length must be 8 hours (8h), 7 days (7d), or 30 days (30d).', status: 400 },
+      });
+    }
+
     const client = await Client.findByIdAndUpdate(req.params.id, changes, {
       new: true,
       runValidators: true,
     });
     if (!client) return sendNotFound(res);
+
+    await audit(req, 'client.settings_update', client, {
+      meta: {
+        changes: Object.keys(changes),
+        sessionLength: client.sessionLength,
+        requireMfaForAdmins: client.requireMfaForAdmins,
+        minPasswordLength: client.minPasswordLength,
+      },
+    });
+
     return res.status(200).json({ success: true, data: { client } });
   } catch (err) {
     return next(err);

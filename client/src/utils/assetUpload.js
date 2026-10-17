@@ -76,18 +76,21 @@ export async function directUploadAsset(file) {
 
   // 1. Get signed signature for this client tenant
   const signRes = await api.post('/assets/sign', { folder: 'posters' });
-  const { signature, timestamp, apiKey, cloudName, folder } = signRes.data?.data || {};
+  const { signature, timestamp, apiKey, cloudName, folder, allowedFormats } =
+    signRes.data?.data || {};
   if (!signature || !cloudName) {
     throw new Error('Image storage is not connected. Please contact an administrator.');
   }
 
   // 2. Direct upload to Cloudinary
+  // Every name the server signed must be sent back unchanged, or the check fails.
   const formData = new FormData();
   formData.append('file', blob, file.name);
   formData.append('api_key', apiKey);
   formData.append('timestamp', String(timestamp));
   formData.append('signature', signature);
   formData.append('folder', folder);
+  formData.append('allowed_formats', allowedFormats || 'jpg,png,webp');
 
   const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
     method: 'POST',

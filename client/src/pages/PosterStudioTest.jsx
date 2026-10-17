@@ -1623,10 +1623,6 @@ export default function PosterStudioTest() {
   // Fetch real tenant BrandKit and Template
   useEffect(() => {
     async function loadData() {
-      if (!localStorage.getItem('token')) {
-        setLoading(false);
-        return;
-      }
       try {
         setLoading(true);
         const [kitRes, tempRes] = await Promise.all([

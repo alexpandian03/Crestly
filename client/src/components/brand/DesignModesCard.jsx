@@ -12,6 +12,7 @@ import { Toggle } from "./controls";
 import {
   BOTH_OFF_MESSAGE,
   BRAND_LINE,
+  DESIGN_PALETTES,
   designModesOf,
   designModesPayload,
 } from "../../utils/posterAiDesign";
@@ -24,6 +25,8 @@ export default function DesignModesCard() {
   const { activeClientId } = useAuth();
   const [modes, setModes] = useState(null);
   const [saved, setSaved] = useState(null);
+  const [palette, setPalette] = useState("balanced");
+  const [savedPalette, setSavedPalette] = useState("balanced");
   const [organization, setOrganization] = useState(activeClientId);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -40,10 +43,13 @@ export default function DesignModesCard() {
         const res = await api.get(activeClientId ? `/clients/${activeClientId}` : "/clients/me");
         const client = res.data?.data?.client;
         const next = designModesOf(client);
+        const nextPalette = client?.designPalette || "balanced";
         if (cancelled) return;
         setOrganization(client?._id || activeClientId);
         setModes(next);
         setSaved(next);
+        setPalette(nextPalette);
+        setSavedPalette(nextPalette);
       } catch (err) {
         if (!cancelled) {
           setError(
@@ -67,7 +73,8 @@ export default function DesignModesCard() {
   };
 
   const dirty = Boolean(
-    modes && saved && JSON.stringify(modes) !== JSON.stringify(saved),
+    (modes && saved && JSON.stringify(modes) !== JSON.stringify(saved)) ||
+      palette !== savedPalette,
   );
 
   const save = async () => {
@@ -85,11 +92,15 @@ export default function DesignModesCard() {
     try {
       const res = await api.patch(
         `/clients/${organization}`,
-        designModesPayload(modes),
+        designModesPayload(modes, palette),
       );
-      const next = designModesOf(res.data?.data?.client);
+      const client = res.data?.data?.client;
+      const next = designModesOf(client);
+      const nextPalette = client?.designPalette || palette;
       setModes(next);
       setSaved(next);
+      setPalette(nextPalette);
+      setSavedPalette(nextPalette);
     } catch (err) {
       const serverMessage = err.response?.data?.error?.message;
       setError(
@@ -117,7 +128,7 @@ export default function DesignModesCard() {
   }
 
   return (
-    <section className="card-surface p-4 sm:p-5 space-y-4">
+    <section className="card-surface p-4 sm:p-5 space-y-5">
       <div className="pb-3 border-b border-line">
         <h2 className="text-sm font-semibold text-heading">
           Ways of making a poster
@@ -144,6 +155,42 @@ export default function DesignModesCard() {
           />
         </div>
       )}
+
+      <div className="pt-3 border-t border-line space-y-3">
+        <div>
+          <h3 className="text-sm font-semibold text-heading">
+            Color variety for AI designs
+          </h3>
+          <p className="text-xs text-muted-foreground mt-0.5 leading-snug">
+            Choose how strictly the assistant follows your brand colors when generating new posters.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          {DESIGN_PALETTES.map((opt) => (
+            <label
+              key={opt.id}
+              className={`p-3 rounded-lg border text-left cursor-pointer transition-colors ${
+                palette === opt.id
+                  ? "border-primary bg-primary/5 text-heading font-medium"
+                  : "border-line hover:border-line-hover text-muted-foreground"
+              }`}
+            >
+              <input
+                type="radio"
+                name="designPalette"
+                value={opt.id}
+                checked={palette === opt.id}
+                onChange={() => setPalette(opt.id)}
+                className="sr-only"
+              />
+              <div className="text-xs font-semibold">{opt.name}</div>
+              <div className="text-[11px] leading-tight text-muted-foreground mt-1">
+                {opt.description}
+              </div>
+            </label>
+          ))}
+        </div>
+      </div>
 
       {error && (
         <p className="text-sm text-danger flex items-start gap-2" role="alert">

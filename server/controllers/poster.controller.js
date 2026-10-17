@@ -26,12 +26,13 @@ import { screenSubject } from '../services/image/prompt.js';
 import { consumeRateLimit } from '../services/rateLimit.js';
 import { parseCardListEntries } from '../services/ai/listParser.js';
 import { guessEventType, isValidEventType } from '../../shared/eventTypes.js';
+import { audit } from '../services/audit.service.js';
 
 /**
  * POST /api/posters/generate with mode "ai": one whole design taken from a recipe, plus the
  * words that go on it. Whether this mode is open is the organization's setting, not the user's.
  */
-async function generateFromRecipe(req, res, { templateId, prompt, instruction, avoidRecipeIds, variant, imageUrl: userImageUrl, cacheKey }) {
+async function generateFromRecipe(req, res, { templateId, prompt, instruction, avoidRecipeIds, variant, seed, imageUrl: userImageUrl, cacheKey }) {
   try {
     const client = await Client.findById(req.clientId).select('designModes').lean();
     if (!(client?.designModes?.ai ?? true)) {
@@ -66,7 +67,7 @@ async function generateFromRecipe(req, res, { templateId, prompt, instruction, a
     // Generate the design (timeout, retry, sanitization handled internally)
     // STAGE-10-COUNT: one AI generation. Count it here against the client's plan limit.
     try {
-      answer = await generateDesign({ prompt, brandKit, instruction, avoidRecipeIds, variant });
+      answer = await generateDesign({ prompt, brandKit, instruction, avoidRecipeIds, variant, seed });
       content = designToContent(answer);
       built = buildRecipeDesign({
         recipe: {
@@ -99,8 +100,9 @@ async function generateFromRecipe(req, res, { templateId, prompt, instruction, a
           mode: 'design',
           avoidRecipeIds,
           variant,
+          seed,
         });
-        answer = sanitizeAndTruncateDesign(mockRaw, { avoidRecipeIds, variant, prompt, instruction });
+        answer = sanitizeAndTruncateDesign(mockRaw, { avoidRecipeIds, variant, prompt, instruction, seed });
         content = designToContent(answer);
         built = buildRecipeDesign({
           recipe: {
@@ -204,17 +206,19 @@ export async function generatePosterContentController(req, res, next) {
       imageUrl: userImageUrl,
       eventType: requestedEventType,
       variants = 1,
+      seed,
     } = req.body;
 
-    const cacheKey = createCacheKey(prompt, {
+    const cacheKey = mode === 'ai' ? null : createCacheKey(prompt, {
       instruction,
       mode,
       variants,
       eventType: requestedEventType,
       avoidRecipeIds,
       variant,
+      seed,
     });
-    const cached = getFromCache(cacheKey);
+    const cached = cacheKey ? getFromCache(cacheKey) : null;
     if (cached) {
       return res.status(200).json({ success: true, data: cached });
     }
@@ -223,7 +227,7 @@ export async function generatePosterContentController(req, res, next) {
     if (userId) {
       const quota = await consumeRateLimit({
         key: `ai-generate:user:${userId}`,
-        limit: 50,
+        limit: process.env.NODE_ENV === 'production' ? 50 : 1000,
         windowMs: 24 * 60 * 60 * 1000,
       });
       if (!quota.allowed) {
@@ -280,7 +284,7 @@ export async function generatePosterContentController(req, res, next) {
 
     if (mode === 'ai') {
       try {
-        return await generateFromRecipe(req, res, { templateId, prompt, instruction, avoidRecipeIds, variant, imageUrl: userImageUrl, cacheKey });
+        return await generateFromRecipe(req, res, { templateId, prompt, instruction, avoidRecipeIds, variant, seed, imageUrl: userImageUrl, cacheKey: null });
       } catch (err) {
         console.error(`[AI Design Controller] Failed: ${err.message || 'unknown error'}`);
         return res.status(500).json({
@@ -538,6 +542,17 @@ async function designForPoster(req, poster, template) {
 
 export async function createPosterController(req, res, next) {
   try {
+    const client = await Client.findById(req.clientId).select('requireEmailVerification').lean();
+    if (client?.requireEmailVerification && !req.user?.isEmailVerified) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          message: 'Please verify your email address before creating posters.',
+          status: 403,
+        },
+      });
+    }
+
     const template = await Template.findOne(
       scopedFilter(req, { _id: req.body.templateId, isActive: true })
     );
@@ -1023,6 +1038,12 @@ export async function uploadPosterThumbnailController(req, res, next) {
     const thumbnailUrl = normalizeImageUrl(upload.secure_url || upload.url, 'thumbnailUrl');
     poster.thumbnailUrl = thumbnailUrl;
     await poster.save();
+
+    await audit(req, 'poster.export', {
+      targetType: 'poster',
+      targetId: poster._id,
+      meta: { format: 'thumbnail' },
+    });
 
     return res.status(200).json({ success: true, data: { thumbnailUrl } });
   } catch (err) {

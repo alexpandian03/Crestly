@@ -194,6 +194,24 @@ function useToolbarPanel() {
 }
 
 /**
+ * A choice list opened from the tool strip.
+ *
+ * The strip's overflow panel is painted at a high stacking level, so a plain menu list opened
+ * from inside it lands underneath and its buttons cannot be reached. These lists are marked as
+ * editor tools and painted above every panel, so a click inside them stays inside the tools
+ * instead of shutting the panel that holds the button.
+ */
+function ToolbarMenuContent({ className = "", ...props }) {
+  return (
+    <DropdownMenuContent
+      data-editor-ui="true"
+      className={`z-[1300] ${className}`}
+      {...props}
+    />
+  );
+}
+
+/**
  * How many of the last groups step into the More panel.
  *
  * Every group is measured once, invisibly, at its natural width. The bar then keeps the groups
@@ -909,7 +927,7 @@ function AlignDropdown({ align = "left", mixed = false, onAlign }) {
           <span>Align</span>
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="center" className="w-32 text-xs">
+      <ToolbarMenuContent align="center" className="w-32 text-xs">
         {[
           { key: "left", Icon: AlignLeft, label: "Left" },
           { key: "center", Icon: AlignCenter, label: "Center" },
@@ -923,7 +941,7 @@ function AlignDropdown({ align = "left", mixed = false, onAlign }) {
             <option.Icon className="mr-2 h-3.5 w-3.5" /> {option.label}
           </DropdownMenuItem>
         ))}
-      </DropdownMenuContent>
+      </ToolbarMenuContent>
     </DropdownMenu>
   );
 }
@@ -945,7 +963,7 @@ function EffectsPopover({ effect = "none", mixed = false, onEffect }) {
           Effects
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="center" className="w-36 text-xs">
+      <ToolbarMenuContent align="center" className="w-36 text-xs">
         {[
           { key: "none", label: "None" },
           { key: "shadow", label: "Shadow" },
@@ -960,7 +978,7 @@ function EffectsPopover({ effect = "none", mixed = false, onEffect }) {
             {eff.label}
           </DropdownMenuItem>
         ))}
-      </DropdownMenuContent>
+      </ToolbarMenuContent>
     </DropdownMenu>
   );
 }
@@ -1005,7 +1023,7 @@ function CropPopover({ style, onCommit }) {
           <span>Crop</span>
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="center" className="w-56 p-3 text-xs space-y-3" onClick={(e) => e.stopPropagation()}>
+      <ToolbarMenuContent align="center" className="w-56 p-3 text-xs space-y-3" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <span className="font-semibold text-xs text-[#111827]">Crop & Pan</span>
           {hasCrop && (
@@ -1069,7 +1087,7 @@ function CropPopover({ style, onCommit }) {
             className="w-full accent-[#2563EB]"
           />
         </div>
-      </DropdownMenuContent>
+      </ToolbarMenuContent>
     </DropdownMenu>
   );
 }
@@ -1101,7 +1119,7 @@ function ImageFiltersPopover({ style, onCommit }) {
           <span>Filters</span>
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="center" className="w-56 p-3 text-xs space-y-3" onClick={(e) => e.stopPropagation()}>
+      <ToolbarMenuContent align="center" className="w-56 p-3 text-xs space-y-3" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <span className="font-semibold text-xs text-[#111827]">Photo Filters</span>
           {hasFilters && (
@@ -1159,7 +1177,7 @@ function ImageFiltersPopover({ style, onCommit }) {
             className="h-4 w-4 rounded border-[#D1D5DB] text-[#2563EB] focus:ring-blue-500"
           />
         </label>
-      </DropdownMenuContent>
+      </ToolbarMenuContent>
     </DropdownMenu>
   );
 }
@@ -1194,7 +1212,7 @@ function TextModePopover({ item, items, onChangeMode, onChangeMeta }) {
         <button
           type="button"
           title="Field fill-in settings"
-          className={`h-8 px-2.5 flex items-center gap-1.5 rounded-[6px] border text-xs font-medium transition-colors ${
+          className={`h-8 w-full min-w-0 px-2.5 flex items-center gap-1.5 rounded-[6px] border text-xs font-medium transition-colors ${
             isAi
               ? "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold"
               : "border-[#E5E7EB] bg-white text-[#4B5563] hover:bg-[#F9FAFB] hover:text-[#111827]"
@@ -1202,19 +1220,21 @@ function TextModePopover({ item, items, onChangeMode, onChangeMeta }) {
         >
           {isAi ? (
             <>
-              <Sparkles className="h-3.5 w-3.5 text-blue-600" />
-              <span>Fill-in: {item.label || "Text"}</span>
+              <Sparkles className="h-3.5 w-3.5 shrink-0 text-blue-600" />
+              <span className="min-w-0 truncate" title={item.label || "Text"}>
+                Fill-in: {item.label || "Text"}
+              </span>
             </>
           ) : (
             <>
-              <Type className="h-3.5 w-3.5 text-gray-500" />
+              <Type className="h-3.5 w-3.5 shrink-0 text-gray-500" />
               <span>Fixed text</span>
             </>
           )}
-          <ChevronDown className="h-3 w-3 opacity-60" />
+          <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-80 p-3 text-xs space-y-3" onClick={(e) => e.stopPropagation()}>
+      <ToolbarMenuContent align="start" className="w-80 p-3 text-xs space-y-3" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <span className="font-semibold text-xs text-[#111827]">Who writes this?</span>
           <span className="text-[11px] font-mono text-[#6B7280]">
@@ -1354,7 +1374,7 @@ function TextModePopover({ item, items, onChangeMode, onChangeMeta }) {
             This text stays fixed as part of the poster design and cannot be changed by normal users.
           </p>
         )}
-      </DropdownMenuContent>
+      </ToolbarMenuContent>
     </DropdownMenu>
   );
 }
@@ -1418,7 +1438,7 @@ function ImageModePopover({ item, items, onChangeMode, onChangeMeta }) {
           <ChevronDown className="h-3 w-3 opacity-60" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-72 p-3 text-xs space-y-3" onClick={(e) => e.stopPropagation()}>
+      <ToolbarMenuContent align="start" className="w-72 p-3 text-xs space-y-3" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <span className="font-semibold text-xs text-[#111827]">Who changes this?</span>
           <span className="text-[11px] font-mono text-[#6B7280]">
@@ -1558,7 +1578,7 @@ function ImageModePopover({ item, items, onChangeMode, onChangeMeta }) {
             This photo stays fixed as part of the poster design and cannot be changed by normal users.
           </p>
         )}
-      </DropdownMenuContent>
+      </ToolbarMenuContent>
     </DropdownMenu>
   );
 }
@@ -1784,7 +1804,7 @@ function OrderMenu({ ids, onReorder }) {
           <Layers className="h-3.5 w-3.5" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <ToolbarMenuContent align="end">
         <DropdownMenuItem onClick={() => onReorder?.(ids, 1)}>
           <ArrowUp className="mr-2 h-3.5 w-3.5" /> Bring forward
         </DropdownMenuItem>
@@ -1797,7 +1817,7 @@ function OrderMenu({ ids, onReorder }) {
         <DropdownMenuItem onClick={() => onReorder?.(ids, "back")}>
           <ArrowDown className="mr-2 h-3.5 w-3.5 text-blue-600" /> Send to back
         </DropdownMenuItem>
-      </DropdownMenuContent>
+      </ToolbarMenuContent>
     </DropdownMenu>
   );
 }

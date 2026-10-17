@@ -287,7 +287,9 @@ const templateWriteSchema = (context) => ({
   name: z.string().trim().min(2).max(120),
   category: z.enum(TEMPLATE_CATEGORIES).optional(),
   size: sizeSchema.optional(),
-  zones: zonesSchema,
+  /* A layout created from the Templates page arrives with just a name; the API gives it the
+     standard areas itself. Anything that does send areas still has to send a usable set. */
+  zones: zonesSchema.optional(),
   layout: layoutSchema.optional(),
   page: templatePageSchema(context.clientId).optional(),
   elements: templateElementsSchema(context).optional(),

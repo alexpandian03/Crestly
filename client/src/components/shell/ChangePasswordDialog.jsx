@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { X } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../../services/api";
@@ -10,6 +11,7 @@ export default function ChangePasswordDialog({
   onClose,
   onSignedOut,
 }) {
+  const navigate = useNavigate();
   const { refreshUser, logout } = useAuth();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -114,9 +116,22 @@ export default function ChangePasswordDialog({
         )}
         <form onSubmit={submit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-heading mb-1.5">
-              Current password
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-sm font-medium text-heading">
+                Current password
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  reset();
+                  onClose();
+                  navigate("/forgot-password");
+                }}
+                className="text-xs text-primary hover:underline"
+              >
+                Forgot password?
+              </button>
+            </div>
             <input
               type="password"
               required

@@ -193,6 +193,9 @@ export function createCacheKey(prompt, options = {}) {
     eventType: options.eventType || '',
     avoidRecipeIds: options.avoidRecipeIds || [],
     variant: options.variant ?? null,
+    count: options.count ?? 1,
+    seedCounter: options.seedCounter ?? 0,
+    seed: options.seed ?? 42,
   });
   return `${text}::${optPart}`;
 }

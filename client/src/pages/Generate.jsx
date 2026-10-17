@@ -190,7 +190,7 @@ function SkeletonPoster() {
 }
 
 export default function Generate() {
-  const { activeClientId, user } = useAuth();
+  const { activeClientId, user, can } = useAuth();
   const [description, setDescription] = useState("");
   const [activeInstruction, setActiveInstruction] = useState("");
   const [templates, setTemplates] = useState([]);
@@ -405,9 +405,10 @@ export default function Generate() {
         mode: designMode,
         ...(userImageUrl?.trim() ? { imageUrl: userImageUrl.trim() } : {}),
         ...(inst ? { instruction: inst } : {}),
-        ...(designMode === MODE_AI && avoid && seenRecipesRef.current.length > 0
+        ...(designMode === MODE_AI && seenRecipesRef.current.length > 0
           ? { avoidRecipeIds: seenRecipesRef.current }
           : {}),
+        seed: Math.floor(Math.random() * 1000000),
         /** Let the server know the event type so it constrains the AI output. */
         ...(eventType ? { eventType } : {}),
       };
@@ -447,10 +448,13 @@ export default function Generate() {
           );
           if (nextDesign) {
             const id = nextDesign.template.archetype || nextDesign.template.recipeId;
-            sameDesignAgain = avoid && seenRecipesRef.current.includes(id);
+            sameDesignAgain = seenRecipesRef.current.includes(id);
             seenRecipesRef.current = Array.from(
               new Set([...seenRecipesRef.current, id]),
             );
+            if (seenRecipesRef.current.length >= 8) {
+              seenRecipesRef.current = [id];
+            }
           }
         }
 
@@ -584,8 +588,7 @@ export default function Generate() {
   const blanksSource = posterDesign || drawTemplate;
 
   const aiPoster = isAiDesign(drawTemplate);
-  const canManageTemplates =
-    user?.role === "superadmin" || user?.role === "clientadmin";
+  const canManageTemplates = can ? can('templates:write') : (user?.role === "superadmin" || user?.role === "clientadmin");
 
   const designStale = useMemo(
     () => isDesignStale(posterDesign, { brandKit, templates }),

@@ -13,9 +13,13 @@ import Home from './pages/Home';
 import HowItWorks from './pages/HowItWorks';
 import Login from './pages/Login';
 import Users from './pages/Users';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
+import AcceptInvite from './pages/AcceptInvite';
+import VerifyEmail from './pages/VerifyEmail';
 
 const History = React.lazy(() => import('./pages/History'));
-const Settings = React.lazy(() => import('./pages/Settings'));
+const Security = React.lazy(() => import('./pages/Security'));
 const BrandKit = React.lazy(() => import('./pages/BrandKit'));
 const Templates = React.lazy(() => import('./pages/Templates'));
 const TemplateBuilder = React.lazy(() => import('./pages/TemplateBuilder'));
@@ -27,6 +31,12 @@ const PosterStudioTest = import.meta.env.DEV
   : null;
 const ExportTestPage = import.meta.env.DEV
   ? React.lazy(() => import('./pages/ExportTestPage'))
+  : null;
+const CatalogDevPage = import.meta.env.DEV
+  ? React.lazy(() => import('./pages/CatalogDevPage'))
+  : null;
+const PreviewTestPage = import.meta.env.DEV
+  ? React.lazy(() => import('./pages/PreviewTestPage'))
   : null;
 
 function PageFallback() {
@@ -116,8 +126,11 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/how-it-works" element={<HowItWorks />} />
-              <Route path="/pricing" element={<Navigate to="/#pricing" replace />} />
               <Route path="/login" element={<Login />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/invite" element={<AcceptInvite />} />
+              <Route path="/verify-email" element={<VerifyEmail />} />
               <Route path="/access-denied" element={<ProtectedRoute><AccessDenied /></ProtectedRoute>} />
 
               <Route path="/dashboard" element={<ProtectedRoute allowedRoles={['superadmin', 'clientadmin']}><Dashboard /></ProtectedRoute>} />
@@ -125,11 +138,11 @@ export default function App() {
               <Route path="/users" element={<ProtectedRoute allowedRoles={['superadmin']}><Users /></ProtectedRoute>} />
               <Route path="/team" element={<ProtectedRoute allowedRoles={['clientadmin']}><Users /></ProtectedRoute>} />
               <Route
-                path="/settings"
+                path="/security"
                 element={
-                  <ProtectedRoute allowedRoles={['clientadmin']} requireActiveClient>
+                  <ProtectedRoute allowedRoles={['superadmin', 'clientadmin', 'user']}>
                     <React.Suspense fallback={<PageFallback />}>
-                      <Settings />
+                      <Security />
                     </React.Suspense>
                   </ProtectedRoute>
                 }
@@ -192,6 +205,22 @@ export default function App() {
                 element={
                   <React.Suspense fallback={<PageFallback />}>
                     <ExportTestPage />
+                  </React.Suspense>
+                }
+              />
+              <Route
+                path="/catalog-dev"
+                element={
+                  <React.Suspense fallback={<PageFallback />}>
+                    <CatalogDevPage />
+                  </React.Suspense>
+                }
+              />
+              <Route
+                path="/preview-test"
+                element={
+                  <React.Suspense fallback={<PageFallback />}>
+                    <PreviewTestPage />
                   </React.Suspense>
                 }
               />
