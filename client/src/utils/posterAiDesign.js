@@ -13,7 +13,7 @@ export const MODE_AI = 'ai';
 export const MODE_TEMPLATE = 'template';
 
 /** What the assistant's own designs are called on a poster. */
-export const AI_DESIGN_NAME = 'AI design';
+const AI_DESIGN_NAME = 'AI design';
 
 /** The one sentence that explains why nothing brand-related is asked for. */
 export const BRAND_LINE = 'Your logo, colors and contact details are always added by your brand.';

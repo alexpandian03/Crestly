@@ -8,7 +8,7 @@ import { TEMPLATE_SIZE_DEFAULT } from '../services/template/zones.js';
 import { scopedFilter } from '../middleware/auth.middleware.js';
 import { generateContent, generateDesign, generateVariants } from '../services/ai/index.js';
 import { createCacheKey, getFromCache, setInCache } from '../services/ai/chain.js';
-import { resolveImage, resolveImageDetails, resolvePosterImage, searchPhotos, triggerDownload } from '../services/images.js';
+import { resolveImage, resolvePosterImage, searchPhotos, triggerDownload } from '../services/images.js';
 import { sanitizeString, designToContent, sanitizeAndTruncateDesign } from '../services/ai/schema.js';
 import { generateWithMock } from '../services/ai/providers/mock.js';
 import { normalizePosterContent, normalizeImageUrl, contentValuesContext, remapContentToDesign } from '../services/poster/content.js';
@@ -27,6 +27,9 @@ import { consumeRateLimit } from '../services/rateLimit.js';
 import { parseCardListEntries } from '../services/ai/listParser.js';
 import { guessEventType, isValidEventType } from '../../shared/eventTypes.js';
 import { audit } from '../services/audit.service.js';
+import { composeDesignBatch, resolvePagedOptions, deriveNextSeed, TOTAL_PAGING_DESIGNS } from '../../shared/designPaging.js';
+import { generateAiChoices } from '../services/ai/choices.js';
+import { createRuleBasedChoices } from '../../shared/aiChoices.js';
 
 /**
  * POST /api/posters/generate with mode "ai": one whole design taken from a recipe, plus the
@@ -294,9 +297,115 @@ export async function generatePosterContentController(req, res, next) {
       }
     }
 
+    if (mode === 'paging') {
+      try {
+        let brandKit = await BrandKit.findOne(scopedFilter(req)).lean();
+        if (!brandKit) {
+          brandKit = { orgName: 'Our Organization', colors: {}, fonts: {}, header: {}, footer: {} };
+        }
 
+        const pageSize = Math.max(1, Math.min(12, Number(req.body.pageSize) || 2));
+        let seed = req.body.seed ?? 42;
+        if (req.body.remaining === 0) {
+          seed = deriveNextSeed(seed);
+        }
+        const seen = Array.isArray(req.body.seen) ? req.body.seen : [];
+        let facts = req.body.facts;
+        let mood = req.body.mood;
+        let reason = req.body.reason;
+        let blockPreferences = req.body.blockPreferences;
+        let copyVariants = req.body.copyVariants;
 
-    // Determine the event type: use the one the user chose (if valid), else guess from the description.
+        if (!copyVariants || !facts) {
+          const aiChoices = await generateAiChoices({
+            prompt,
+            eventType: requestedEventType,
+            brandKit,
+            instruction,
+            seed,
+            userId,
+          });
+          facts = aiChoices.facts;
+          mood = aiChoices.mood;
+          reason = aiChoices.reason;
+          blockPreferences = aiChoices.blockPreferences;
+          copyVariants = aiChoices.copyVariants;
+        }
+
+        const eventType = isValidEventType(requestedEventType) ? requestedEventType : (facts?.eventType || guessEventType(prompt));
+
+        let batch = composeDesignBatch({
+          facts,
+          eventType,
+          mood,
+          blockPreferences,
+          copyVariants,
+          seed,
+          totalCount: TOTAL_PAGING_DESIGNS,
+          brandKit,
+        });
+
+        let paged = resolvePagedOptions({
+          candidates: batch,
+          pageSize,
+          seen,
+          mood,
+          reason,
+          seenCount: seen.length,
+        });
+
+        if (paged.options.length === 0 && (seen.length >= TOTAL_PAGING_DESIGNS || req.body.remaining === 0)) {
+          seed = deriveNextSeed(seed);
+          const freshChoices = createRuleBasedChoices({ prompt, seed });
+          facts = freshChoices.facts;
+          mood = freshChoices.mood;
+          reason = freshChoices.reason;
+          blockPreferences = freshChoices.blockPreferences;
+          copyVariants = freshChoices.copyVariants;
+
+          const freshBatch = composeDesignBatch({
+            facts,
+            eventType: facts.eventType || eventType,
+            mood,
+            blockPreferences,
+            copyVariants,
+            seed,
+            totalCount: TOTAL_PAGING_DESIGNS,
+            brandKit,
+          });
+
+          paged = resolvePagedOptions({
+            candidates: freshBatch,
+            pageSize,
+            seen,
+            mood,
+            reason,
+            seenCount: seen.length,
+          });
+        }
+
+        return res.status(200).json({
+          success: true,
+          data: {
+            options: paged.options,
+            total: paged.total,
+            remaining: paged.remaining,
+            copyVariants,
+            facts,
+            mood,
+            reason,
+            blockPreferences,
+            seed,
+          },
+        });
+      } catch (err) {
+        console.error(`[AI Paging Controller] Failed: ${err.message || 'unknown error'}`);
+        return res.status(500).json({
+          success: false,
+          error: { message: 'We could not generate paged designs. Please try again.', status: 500 },
+        });
+      }
+    }
     const eventType = isValidEventType(requestedEventType)
       ? requestedEventType
       : guessEventType(prompt);

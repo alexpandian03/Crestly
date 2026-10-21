@@ -22,7 +22,7 @@ import {
   resolveColorToken,
   validateElements,
 } from '../../../shared/templateElements.js';
-import { contrastRatio, pickReadableColor, toHex } from './contrast.js';
+import { contrastRatio, toHex } from './contrast.js';
 
 /** At least 100 steps of the item list are kept for undo/redo. */
 export const HISTORY_LIMIT = 100;
@@ -212,7 +212,7 @@ export function labelSuggestions(label = '') {
 }
 
 /** What the assistant is told to write when the admin did not say anything else. */
-export function defaultHint(label) {
+export function defaultHint(_label) {
   return 'What should go here?';
 }
 
@@ -423,9 +423,6 @@ export function looksLikeFixedText(words) {
   return /[.!?]["'”’)\]]*$/.test(trimmed);
 }
 
-export const FIXED_TEXT_WARNING =
-  'This looks like fixed text. Switch it to Locked, or shorten it to a name like Chief guest.';
-
 /** A box of your own words that has not been written yet: empty, or still the sample it came with. */
 const PRESET_WORDS = new Set([...Object.values(TEXT_SAMPLE), ...Object.values(AI_TEXT_START)]);
 
@@ -564,7 +561,7 @@ export function pickDefaultTextColor(backdrop, brandKit = null) {
  * admin only has to write its name; when the template already holds the most fill-ins it
  * can, the caller asks for a locked one instead and says why.
  */
-export function newTextItem(variantKey, items, area, { variable = true, brandKit = null, section = 'content', sections = null, page = null } = {}) {
+export function newTextItem(variantKey, items, area, { variable = true, _brandKit = null, _section = 'content', _sections = null, _page = null } = {}) {
   const variant = TEXT_VARIANTS[variantKey] || TEXT_VARIANTS.body;
   const spot = openSpot(area, items.length);
   const rect = place(area, spot, boxIn(area, variant.box.w, variant.box.h));
@@ -632,7 +629,7 @@ export function commitItemText(item, items, words, area) {
   return { ...fixed, ...clampRectToArea({ x: fixed.x, y: fixed.y, w: fixed.w, h: fixed.h }, area) };
 }
 
-export function newShapeItem(variantKey, items, area, { brandKit = null } = {}) {
+export function newShapeItem(variantKey, items, area, { _brandKit = null } = {}) {
   const variant = SHAPE_VARIANTS[variantKey] || SHAPE_VARIANTS.rect;
   const spot = openSpot(area, items.length);
   const isLine = variantKey === 'line';
@@ -709,8 +706,8 @@ export function duplicateItem(item, items, area) {
 /* ------------------------------------------------------------- clipboard */
 
 /** One paste in this browser tab: the items only, never a whole template. */
-export const CLIPBOARD_KEY = 'poster-template-clipboard';
-export const CLIPBOARD_MAX = 10;
+const CLIPBOARD_KEY = 'poster-template-clipboard';
+const CLIPBOARD_MAX = 10;
 
 export const CLIPBOARD_EMPTY = 'There is nothing to put back yet. Pick an item and copy it first.';
 

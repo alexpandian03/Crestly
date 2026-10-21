@@ -1,11 +1,10 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Plus,
   Trash2,
   ArrowUp,
   ArrowDown,
   Sparkles,
-  Image as ImageIcon,
   Loader2,
   X,
   Upload,

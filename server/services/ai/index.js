@@ -5,11 +5,11 @@ import { generateWithAnthropic } from './providers/anthropic.js';
 import { OPENAI_COMPATIBLE_PROVIDERS, generateWithOpenAiCompatible } from './providers/openaiCompatible.js';
 import { executeWithChain } from './chain.js';
 import { buildSystemPrompt, buildDesignSystemPrompt, buildFillSystemPrompt, buildVariantsSystemPrompt } from './prompt.js';
-import { aiSlotsOf, contentArea } from '../../../shared/templateElements.js';
-import { isValidEventType, guessEventType, eventTypeById } from '../../../shared/eventTypes.js';
-import { buildRecipeDesign, recipePayload, recipeNeedsPhoto } from '../poster/recipe.js';
+import { aiSlotsOf } from '../../../shared/templateElements.js';
+import { isValidEventType, guessEventType } from '../../../shared/eventTypes.js';
+import { buildRecipeDesign, recipePayload } from '../poster/recipe.js';
 import { scoreDesign } from '../../../shared/visualScore.js';
-import { extractEventFacts, deduplicateFields } from '../../../shared/fallbackParser.js';
+import { extractEventFacts } from '../../../shared/fallbackParser.js';
 
 export function logFallback(requestId, reason) {
   const reqStr = requestId ? String(requestId) : 'unknown';

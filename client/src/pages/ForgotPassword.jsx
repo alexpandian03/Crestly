@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { ArrowLeft, CheckCircle2, Loader2 } from 'lucide-react';
 import Logo from '../components/Logo';
 import { Button } from '../components/ui/button';
@@ -10,7 +10,6 @@ import api from '../services/api';
 
 export default function ForgotPassword() {
   const { user } = useAuth();
-  const navigate = useNavigate();
   const [email, setEmail] = useState(() => user?.email || '');
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);

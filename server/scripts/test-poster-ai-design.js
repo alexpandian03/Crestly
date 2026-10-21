@@ -45,7 +45,7 @@ eq(firstAllowedMode(designModesOf({ designModes: { ai: false } })), MODE_TEMPLAT
 eq(firstAllowedMode(DESIGN_MODES_DEFAULT), MODE_AI, 'default card is AI');
 eq(modeAllowed({ ai: false, templates: true }, MODE_AI), false, 'ai refused');
 eq(modeAllowed({ ai: false, templates: true }, 'nonsense'), false, 'unknown mode');
-eq(designModesPayload({ ai: true, templates: false }), { designModes: { ai: true, templates: false } }, 'save shape');
+eq(designModesPayload({ ai: true, templates: false }), { designModes: { ai: true, templates: false }, designPalette: 'balanced' }, 'save shape');
 eq(BOTH_OFF_MESSAGE, 'Keep at least one way of making posters switched on.', 'the server sentence');
 eq(BRAND_LINE, 'Your logo, colors and contact details are always added by your brand.', 'the brand line');
 

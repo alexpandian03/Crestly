@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { AlertTriangle, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import {
   contrastLabel,
   parseColor,
@@ -604,7 +604,7 @@ export function BackgroundEditor({
 export function SectionCard({
   title,
   desc,
-  icon: Icon,
+  icon: _Icon,
   onReset,
   resetLabel = "Reset section",
   children,

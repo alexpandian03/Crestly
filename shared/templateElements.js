@@ -283,7 +283,6 @@ export const SECTION_LIMITS = {
   content: { maxItems: 150 },
 };
 
-export const PAGE_MODES = ['brand', 'custom'];
 export const CONTENT_BACKGROUND_TYPES = ['color', 'gradient', 'image', 'pattern'];
 export const BACKGROUND_POSITIONS = ['top', 'center', 'bottom', 'left', 'right'];
 export const BACKGROUND_PATTERNS = ['none', 'dots', 'lines', 'grid'];
@@ -335,10 +334,6 @@ export function isBrandColorToken(value) {
 
 export function isBrandFontToken(value) {
   return typeof value === 'string' && BRAND_FONT_TOKENS.includes(value.trim());
-}
-
-export function isStyleColor(value) {
-  return isHexColor(value) || isBrandColorToken(value);
 }
 
 export function isStyleFont(value) {

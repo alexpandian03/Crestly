@@ -15,9 +15,9 @@ import {
   DEFAULT_PAGE_INFO_CARD,
   DEFAULT_PAGE_WATERMARK,
   SECTION_LIMITS,
-  brandBandForEditing,
   resolveColorToken,
 } from "../../../../shared/templateElements.js";
+import { bandToCustomize } from "../../utils/brandBands";
 import { toHex } from "../../utils/contrast.js";
 
 const BRAND_PALETTE = [
@@ -316,16 +316,8 @@ export default function SectionSettingsPanel({
     if (mode === "custom") {
       /* Start from exactly what every poster of this organization draws today: the items the
          brand lays out for itself, or the ones its settings turn into when it never placed any. */
-      const band = brandBandForEditing(brandKit, section, { size });
-      const kitBg = isHeader
-        ? brandKit?.header?.background
-        : brandKit?.footer?.background;
-      onSectionChange(section, {
-        mode: "custom",
-        height: band?.height ?? height,
-        elements: band?.elements || [],
-        background: kitBg ? { ...kitBg } : { ...DEFAULT_PAGE_BACKGROUND },
-      });
+      const takeover = bandToCustomize(brandKit, section, { size, current: currentSection });
+      onSectionChange(section, takeover || { mode: "custom" });
     } else {
       handleResetToBrand();
     }

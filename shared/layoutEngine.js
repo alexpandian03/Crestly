@@ -668,7 +668,7 @@ function layoutNode(node, availableBox, context) {
 }
 
 /** Builds a standardized element from a leaf node */
-function buildLeafElement(node, rect, elemId, context) {
+function buildLeafElement(node, rect, elemId, _context) {
   const type = String(node.type || node.kind || '').toLowerCase();
   const z = Number(node.z || 10);
   const locked = Boolean(node.locked);

@@ -289,13 +289,13 @@ async function runRouteTests(baseUrl) {
     const shortTitle = await call(tokenA, photoBody('go'));
     assert(shortTitle.status === 400, 'a headline too short to draw is refused');
 
-    const noPictureArea = await call(tokenA, photoBody('Annual Sports Meet', 'typographic'));
+    const noPictureArea = await call(tokenA, photoBody('Annual Sports Meet', 'big-type'));
     assert(noPictureArea.status === 400, 'a design with no place for a picture is refused');
     assert(
       /no place for a picture/i.test(noPictureArea.json?.error?.message || ''),
       'and the answer explains what to choose instead'
     );
-    const wordsOnly = await call(tokenA, photoBody('Annual Sports Meet', 'boldBand'));
+    const wordsOnly = await call(tokenA, photoBody('Annual Sports Meet', 'quote-center'));
     assert(wordsOnly.status === 400, 'the words-only design is refused the same way');
 
     const unsafe = await call(tokenA, photoBody('Toy gun safety day'));

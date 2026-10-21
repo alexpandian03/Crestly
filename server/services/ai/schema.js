@@ -1,13 +1,11 @@
 import Ajv from 'ajv';
 import {
-  ICON_NAMES,
   VARIABLE_LIMITS,
   iconForWords,
   normalizeIconName,
 } from '../../../shared/templateElements.js';
 import {
   DESIGN_BLANKS,
-  DESIGN_RECIPES,
   RECIPE_VARIANTS,
   recipeIds,
 } from '../../../shared/designRecipes.js';
@@ -644,7 +642,7 @@ export function designToContent(design) {
  * - No invented facts or hallucinated details
  * - Ignores prompt injection keys/instructions
  */
-export function validateAndSanitizeVariableFill(rawOutput, variables = [], description = '') {
+export function validateAndSanitizeVariableFill(rawOutput, variables = [], _description = '') {
   if (!rawOutput || typeof rawOutput !== 'object' || Array.isArray(rawOutput)) {
     return { valid: false, errors: ['Output must be a JSON object with requested keys'], data: null };
   }

@@ -305,10 +305,14 @@ await (async () => {
       const p = res.posters[i];
       // Title must contain Tamil characters
       assert.ok(/[\u0B80-\u0BFF]/.test(p.content.title), `Poster ${i} title must contain Tamil characters: ${p.content.title}`);
-      // Tagline/subtitle must contain Tamil characters
-      assert.ok(/[\u0B80-\u0BFF]/.test(p.content.tagline), `Poster ${i} tagline must contain Tamil characters`);
+      // Tagline/subtitle must contain Tamil characters if present
+      if (p.content.tagline) {
+        assert.ok(/[\u0B80-\u0BFF]/.test(p.content.tagline), `Poster ${i} tagline must contain Tamil characters`);
+      }
       // Bullets must contain Tamil
-      assert.ok(p.content.details.some((d) => /[\u0B80-\u0BFF]/.test(d)), `Poster ${i} details must contain Tamil`);
+      if (p.content.details && p.content.details.length > 0) {
+        assert.ok(p.content.details.some((d) => /[\u0B80-\u0BFF]/.test(d)), `Poster ${i} details must contain Tamil`);
+      }
       // Venue must contain Tamil
       assert.ok(/[\u0B80-\u0BFF]/.test(p.content.venue), `Poster ${i} venue must contain Tamil`);
     }

@@ -1,11 +1,11 @@
-import { CARD_LIST_LIMITS, VARIABLE_LIMITS } from '../../../shared/templateElements.js';
+import { VARIABLE_LIMITS } from '../../../shared/templateElements.js';
 
-function toInt(val, fallback = 0) {
+function _toInt(val, fallback = 0) {
   const n = parseInt(val, 10);
   return Number.isFinite(n) ? n : fallback;
 }
 
-function clamp(val, min, max) {
+function _clamp(val, min, max) {
   return Math.min(Math.max(val, min), max);
 }
 

@@ -1,6 +1,6 @@
 import Client from '../models/Client.model.js';
 import BrandKit from '../models/BrandKit.model.js';
-import Template, { getDefaultTemplateData } from '../models/Template.model.js';
+import Template from '../models/Template.model.js';
 import { createStandardTemplates } from '../../shared/defaultTemplates.js';
 import { audit } from '../services/audit.service.js';
 

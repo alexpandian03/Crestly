@@ -17,8 +17,7 @@
  */
 
 import { composeDesign, resolveDefaultFacts } from './designComposer.js';
-import { createRuleBasedCopyVariants, createRuleBasedChoices } from './aiChoices.js';
-import { extractEventFacts } from './fallbackParser.js';
+import { createRuleBasedCopyVariants } from './aiChoices.js';
 
 export const TOTAL_PAGING_DESIGNS = 12;
 

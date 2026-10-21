@@ -17,7 +17,6 @@
  */
 
 import {
-  DESIGN_BLOCKS,
   HERO_BLOCKS,
   INFO_BLOCKS,
   MESSAGE_BLOCKS,
@@ -27,9 +26,7 @@ import {
   TYPE_PAIRING_BLOCKS,
   COLOUR_ASSIGNMENT_BLOCKS,
   blockById,
-  blocksByRole,
   isCompatible,
-  extractBlockContent,
 } from './designBlocks.js';
 import { neededSectionsFor } from './eventTypes.js';
 import {
@@ -501,7 +498,7 @@ export function composeDesign({
     }
   }
 
-  const rng = createRng(seed);
+  createRng(seed);
 
   // Attempt composition with candidate selection and retry loop
   let bestResult = null;

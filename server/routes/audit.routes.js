@@ -1,6 +1,6 @@
 import express from 'express';
 import { getAuditLogs, exportAuditLogsCsv } from '../controllers/audit.controller.js';
-import { requireAuth, requirePermission, tenantGuard } from '../middleware/auth.middleware.js';
+import { requireAuth, requirePermission } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
 
