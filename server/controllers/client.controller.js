@@ -1,6 +1,11 @@
 import Client from '../models/Client.model.js';
 import BrandKit from '../models/BrandKit.model.js';
 import Template from '../models/Template.model.js';
+import User from '../models/User.model.js';
+import Poster from '../models/Poster.model.js';
+import Session from '../models/Session.model.js';
+import Token from '../models/Token.model.js';
+import Asset from '../models/Asset.model.js';
 import { createStandardTemplates } from '../../shared/defaultTemplates.js';
 import { audit } from '../services/audit.service.js';
 
@@ -166,16 +171,55 @@ export async function updateClient(req, res, next) {
   }
 }
 
-export async function deactivateClient(req, res, next) {
+export async function deleteClient(req, res, next) {
   try {
-    const client = await Client.findByIdAndUpdate(
-      req.params.id,
-      { $set: { isActive: false } },
-      { new: true, runValidators: true }
-    );
+    if (req.user.role !== 'superadmin') {
+      return res.status(403).json({
+        success: false,
+        error: { message: 'Only super administrators can delete organizations.', status: 403 },
+      });
+    }
+
+    const client = await Client.findById(req.params.id);
     if (!client) return sendNotFound(res);
-    return res.status(200).json({ success: true, data: { client } });
+
+    if (req.query.deactivate === 'true') {
+      client.isActive = false;
+      await client.save();
+      await audit(req, 'client.deactivate', client, { meta: { name: client.name } });
+      return res.status(200).json({ success: true, data: { client } });
+    }
+
+    const users = await User.find({ clientId: client._id }).select('_id');
+    const userIds = users.map((u) => u._id);
+
+    if (userIds.length > 0) {
+      await Session.deleteMany({ userId: { $in: userIds } });
+      await Token.deleteMany({ userId: { $in: userIds } });
+      await User.deleteMany({ _id: { $in: userIds } });
+    }
+
+    await Poster.deleteMany({ clientId: client._id });
+    await Template.deleteMany({ clientId: client._id });
+    await BrandKit.deleteMany({ clientId: client._id });
+    await Asset.deleteMany({ clientId: client._id });
+    await Client.findByIdAndDelete(client._id);
+
+    await audit(req, 'client.delete', client, {
+      meta: { name: client.name, usersCount: userIds.length },
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: { deleted: true, id: String(client._id), name: client.name },
+    });
   } catch (err) {
     return next(err);
   }
 }
+
+export async function deactivateClient(req, res, next) {
+  req.query.deactivate = 'true';
+  return deleteClient(req, res, next);
+}
+

@@ -456,6 +456,27 @@ export default function TemplateEdit({ brandLayer = false }) {
       if (kitBandIsLaidOut(kit, kind)) continue;
       if (band?.elements?.length > 0 && band.mode !== "custom") band.mode = "custom";
     }
+    // Ensure all element IDs across all sections are globally unique
+    const seenIds = new Set();
+    for (const kind of ["header", "content", "footer"]) {
+      if (!sec[kind]?.elements) continue;
+      sec[kind].elements = sec[kind].elements.map((el) => {
+        if (!seenIds.has(el.id)) {
+          seenIds.add(el.id);
+          return el;
+        }
+        let counter = 1;
+        let nextId = `${kind}-${el.id}`;
+        while (seenIds.has(nextId)) {
+          counter += 1;
+          nextId = `${kind}-${el.id}-${counter}`;
+        }
+        nextId = nextId.slice(0, ELEMENT_LIMITS.idChars);
+        seenIds.add(nextId);
+        return { ...el, id: nextId };
+      });
+    }
+
     // Migrate existing templates on load: rename those labels to "Text N" and "Photo N" with a quiet note
     const migration = migrateTemplateLabels(sec);
     if (migration.migrated) {
@@ -1052,19 +1073,30 @@ export default function TemplateEdit({ brandLayer = false }) {
            moved, so it is not frozen to the page. */
         item = { ...item, variable: false };
       }
-      /* A second headline box still needs its own name, even though the first one keeps the plain one. */
-      const taken = new Set(current.map((each) => each.id));
-      const fresh = taken.has(item.id)
-        ? {
-            ...item,
-            id: `${item.id}-${current.length + 1}`.slice(
-              0,
-              ELEMENT_LIMITS.idChars,
-            ),
-          }
-        : item;
+      /* Ensure ID is globally unique across header, content, and footer */
+      const allSecs = readSections() || {};
+      const allElements = [
+        ...(allSecs.header?.elements || []),
+        ...(allSecs.content?.elements || []),
+        ...(allSecs.footer?.elements || []),
+        ...(band?.elements || []),
+      ];
+      const taken = new Set(allElements.map((each) => each.id));
+      let uniqueId = item.id;
+      if (activeSection !== "content" && !uniqueId.startsWith(`${activeSection}-`)) {
+        uniqueId = `${activeSection}-${uniqueId}`;
+      }
+      if (taken.has(uniqueId)) {
+        let counter = allElements.length + 1;
+        while (taken.has(`${uniqueId}-${counter}`)) {
+          counter += 1;
+        }
+        uniqueId = `${uniqueId}-${counter}`.slice(0, ELEMENT_LIMITS.idChars);
+      }
+      const fresh = { ...item, id: uniqueId };
       edit((list) => [...list, fresh], { band });
       setSelectedId(fresh.id);
+      setSelectedIds([fresh.id]);
       setPreviewOn(false);
       if (warn) setBanner({ tone: "warn", text: warn });
       else if (!band) setBanner(null);
@@ -1403,6 +1435,12 @@ export default function TemplateEdit({ brandLayer = false }) {
           return;
         }
       }
+      const allSecs = readSections() || {};
+      const allTaken = new Set([
+        ...(allSecs.header?.elements || []).map((e) => e.id),
+        ...(allSecs.content?.elements || []).map((e) => e.id),
+        ...(allSecs.footer?.elements || []).map((e) => e.id),
+      ]);
       const created = [];
       let workingList = [...current];
       for (const item of toDuplicate) {
@@ -1410,7 +1448,16 @@ export default function TemplateEdit({ brandLayer = false }) {
         if (activeSection !== "content") {
           copy.locked = false;
           copy.variable = false;
+          if (!copy.id.startsWith(`${activeSection}-`)) {
+            copy.id = `${activeSection}-${copy.id}`;
+          }
         }
+        if (allTaken.has(copy.id)) {
+          let c = workingList.length + 1;
+          while (allTaken.has(`${copy.id}-${c}`)) c++;
+          copy.id = `${copy.id}-${c}`.slice(0, ELEMENT_LIMITS.idChars);
+        }
+        allTaken.add(copy.id);
         workingList.push(copy);
         created.push(copy);
       }
@@ -1425,7 +1472,7 @@ export default function TemplateEdit({ brandLayer = false }) {
       }
       setBanner(reason ? { tone: "warn", text: reason } : null);
     },
-    [activeArea, activeSection, edit, readActiveItems, selectedId, selectedIds],
+    [activeArea, activeSection, edit, readActiveItems, readSections, selectedId, selectedIds],
   );
 
   const copyItem = useCallback(

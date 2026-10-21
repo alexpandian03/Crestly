@@ -954,10 +954,23 @@ export default function EditorStage({
   const allEditorItemsRef = useRef(allEditorItems);
   allEditorItemsRef.current = allEditorItems;
 
-  const selectedItem = useMemo(
-    () => allEditorItems.find((item) => item.id === selectedId) || null,
-    [allEditorItems, selectedId]
-  );
+  const selectedItem = useMemo(() => {
+    if (!selectedId) return null;
+    const fromActive = allEditorItems.find(
+      (item) => item.id === selectedId && item.section === activeSection
+    );
+    if (fromActive) return fromActive;
+    return allEditorItems.find((item) => item.id === selectedId) || null;
+  }, [allEditorItems, selectedId, activeSection]);
+
+  const editingItem = useMemo(() => {
+    if (!editingId) return null;
+    const fromActive = allEditorItems.find(
+      (item) => item.id === editingId && item.section === activeSection
+    );
+    if (fromActive) return fromActive;
+    return allEditorItems.find((item) => item.id === editingId) || selectedItem;
+  }, [allEditorItems, editingId, activeSection, selectedItem]);
 
   const handleItemSelect = useCallback(
     (id, itemSection, isShift = false) => {
@@ -965,7 +978,10 @@ export default function EditorStage({
         onSwitchSection?.(itemSection, id);
       } else {
         if (!isShift) {
-          const target = allEditorItemsRef.current.find((it) => it.id === id);
+          const target =
+            allEditorItemsRef.current.find(
+              (it) => it.id === id && it.section === (itemSection || activeSection)
+            ) || allEditorItemsRef.current.find((it) => it.id === id);
           if (target?.groupId) {
             const groupIds = allEditorItemsRef.current
               .filter((it) => it.section === activeSection && it.groupId === target.groupId)
@@ -1758,7 +1774,7 @@ export default function EditorStage({
                       width: '100%',
                       height: `${whole(band.height * scale) + room}px`,
                       overflow: 'hidden',
-                      zIndex: 10,
+                      zIndex: band.key === activeSection ? 20 : 10,
                       opacity: isDimmed ? 0.4 : 1,
                       transition: 'opacity 200ms ease-out',
                       pointerEvents: isDimmed ? 'none' : 'auto',
@@ -1808,13 +1824,13 @@ export default function EditorStage({
 
               <div ref={guidesRef} data-editor-guides aria-hidden="true" className="pointer-events-none absolute inset-0" style={{ zIndex: 38 }} />
 
-              {editingId && selectedItem ? (
+              {editingId && editingItem ? (
                 <ItemTextEditor
-                  item={selectedItem}
+                  item={editingItem}
                   scale={scale}
                   brandKit={brandKit}
                   onCommit={(text) => {
-                    actionsRef.current.onCommitText?.(selectedItem.id, text);
+                    actionsRef.current.onCommitText?.(editingItem.id, text);
                     onStopEdit?.();
                   }}
                   onCancel={onStopEdit}

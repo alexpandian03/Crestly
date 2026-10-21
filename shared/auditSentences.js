@@ -65,6 +65,21 @@ export function formatAuditSentence(event) {
       return `${actorName} deactivated member account${deactivatedUser}`;
     }
 
+    case 'user.delete': {
+      const deletedUser = meta.email ? ` (${meta.email})` : '';
+      return `${actorName} deleted member account${deletedUser}`;
+    }
+
+    case 'client.delete': {
+      const deletedOrg = meta.name ? ` "${meta.name}"` : '';
+      return `${actorName} deleted organization${deletedOrg}`;
+    }
+
+    case 'client.deactivate': {
+      const deactOrg = meta.name ? ` "${meta.name}"` : '';
+      return `${actorName} deactivated organization${deactOrg}`;
+    }
+
     case 'client.settings_update':
       return `${actorName} updated organization security settings`;
 
