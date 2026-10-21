@@ -483,6 +483,49 @@ export default function BrandKit() {
     if (savedOk) toast.success(`Your ${label} is back to its default look.`);
   };
 
+  const copyBandFromTemplate = async (kind) => {
+    if (!kit || !template?.sections?.[kind]) return;
+    const tBand = template.sections[kind];
+    const label = kind === "header" ? "header" : "footer";
+    const nextKit = {
+      ...kit,
+      [kind]: {
+        ...(kit[kind] || {}),
+        mode: "elements",
+        height: tBand.height ?? kit[kind]?.height,
+        background: tBand.background || kit[kind]?.background,
+        elements: tBand.elements || [],
+      },
+    };
+    setKit(nextKit);
+    const savedOk = await persist(nextKit);
+    if (savedOk) {
+      toast.success(`Copied ${template.name || "layout"}'s ${label} to your brand kit.`);
+    }
+  };
+
+  const copyBothBandsFromTemplate = async () => {
+    if (!kit || !template?.sections) return;
+    const nextKit = { ...kit };
+    for (const kind of ["header", "footer"]) {
+      const tBand = template.sections[kind];
+      if (tBand && (tBand.mode === "custom" || (tBand.elements && tBand.elements.length > 0))) {
+        nextKit[kind] = {
+          ...(nextKit[kind] || {}),
+          mode: "elements",
+          height: tBand.height ?? nextKit[kind]?.height,
+          background: tBand.background || nextKit[kind]?.background,
+          elements: tBand.elements || [],
+        };
+      }
+    }
+    setKit(nextKit);
+    const savedOk = await persist(nextKit);
+    if (savedOk) {
+      toast.success(`Copied header and footer from ${template.name || "layout"} to your brand kit.`);
+    }
+  };
+
   const applyPreset = (presetId) => {
     setKit((prev) => applyBrandPreset(prev, presetId));
     setPendingPreset(null);
@@ -1187,6 +1230,27 @@ export default function BrandKit() {
 
               {/* Tab 3: Header and footer */}
               <TabsContent value="bands" className="mt-0 outline-none space-y-8">
+                {(template?.sections?.header?.mode === "custom" || template?.sections?.footer?.mode === "custom") && (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-[8px] border border-[#2563EB]/30 bg-[#EFF6FF]">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-[#1D4ED8]">
+                        Previewing with {template.name || "custom template"}
+                      </p>
+                      <p className="text-[11px] text-[#2563EB] mt-0.5 leading-snug">
+                        This layout has custom header/footer styling. Copy it to your Brand Kit so all AI posters use this design automatically.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={copyBothBandsFromTemplate}
+                      disabled={saving}
+                      className="shrink-0 h-8 px-3 rounded-[6px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-medium shadow-none disabled:opacity-50"
+                    >
+                      Apply to Brand Kit
+                    </Button>
+                  </div>
+                )}
                 {bandCards.map((card) => (
                   <SectionCard
                     key={card.kind}
@@ -1262,6 +1326,17 @@ export default function BrandKit() {
                         >
                           Reset to the default from my logo and contact details
                         </Button>
+                        {template?.sections?.[card.kind]?.mode === "custom" && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => copyBandFromTemplate(card.kind)}
+                            disabled={saving}
+                            className="h-9 px-3 rounded-[6px] border-[#2563EB]/40 bg-[#EFF6FF] text-xs font-medium text-[#1D4ED8] hover:bg-[#DBEAFE] disabled:opacity-50"
+                          >
+                            Copy from preview layout
+                          </Button>
+                        )}
                       </div>
 
                       {dirty && (

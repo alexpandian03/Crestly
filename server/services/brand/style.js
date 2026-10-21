@@ -3,6 +3,7 @@ import {
   BRAND_BAND_KINDS,
   brandBandForEditing,
   brandBandProblems,
+  isBrandColorToken,
   normalizeBrandBand,
 } from '../../../shared/templateElements.js';
 
@@ -73,11 +74,19 @@ const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
 const RGB_COLOR = /^rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*(?:,\s*[\d.]+\s*)?\)$/i;
 
 export function isBrandColor(value) {
-  return typeof value === 'string' && (HEX_COLOR.test(value.trim()) || RGB_COLOR.test(value.trim()));
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  return (
+    HEX_COLOR.test(trimmed) ||
+    RGB_COLOR.test(trimmed) ||
+    trimmed.toLowerCase() === 'transparent' ||
+    isBrandColorToken(trimmed)
+  );
 }
 
 export function normalizeBrandColor(value) {
   const color = String(value || '').trim();
+  if (isBrandColorToken(color) || color.toLowerCase() === 'transparent') return color;
   if (!HEX_COLOR.test(color)) return color;
   if (color.length === 4) {
     const [, r, g, b] = color;
