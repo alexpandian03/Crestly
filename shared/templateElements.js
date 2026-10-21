@@ -2448,7 +2448,8 @@ export function normalizeBrandBand(section, kind, brandKit = null) {
       return item;
     });
 
-  return { mode: raw.mode === 'elements' ? 'elements' : 'legacy', height, background, elements };
+  const isElements = raw.mode === 'elements' || raw.mode === 'custom';
+  return { mode: isElements ? 'elements' : 'legacy', height, background, elements };
 }
 
 /**

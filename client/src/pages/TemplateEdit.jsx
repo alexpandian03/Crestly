@@ -2015,6 +2015,30 @@ export default function TemplateEdit({ brandLayer = false }) {
     leaveTo(`/brand-layer/edit?section=${kind}`);
   };
 
+  const handleSaveBandToBrandKit = async (kind) => {
+    const band = sections[kind];
+    if (!band || band.mode !== 'custom') return;
+    try {
+      const payload = {
+        [kind]: {
+          mode: 'elements',
+          height: band.height,
+          background: band.background,
+          elements: band.elements || [],
+        },
+      };
+      const res = await api.put('/brand-kit', payload);
+      if (res.data?.success) {
+        toast.success(`Saved this ${kind} to your Brand Kit. All new posters and AI posters will use it.`);
+        if (res.data.data?.brandKit) {
+          setBrandKit(res.data.data.brandKit);
+        }
+      }
+    } catch (err) {
+      toast.error(friendlyError(err, 'Could not save to brand kit.'));
+    }
+  };
+
   const handleComment = (item) => {
     const currentNote = item?.note || "";
     const next = window.prompt("Note or comment for this item:", currentNote);
@@ -2693,6 +2717,7 @@ export default function TemplateEdit({ brandLayer = false }) {
             onSectionChange={editSection}
             onPageChange={editPage}
             onResetPageSection={resetPageSection}
+            onSaveToBrandKit={handleSaveBandToBrandKit}
           />
         </div>
       )}

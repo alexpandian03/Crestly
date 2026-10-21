@@ -46,7 +46,8 @@ const color = (label) =>
     .refine(isBrandColor, `${label} must be a color like #10b981.`)
     .transform(normalizeBrandColor);
 
-const maybeColor = (label) => color(label).optional();
+const maybeColor = (label) =>
+  z.preprocess((val) => (val === '' ? undefined : val), color(label).optional());
 
 const plainText = (max) => z.string().transform((value) => sanitizePlainText(value, max));
 

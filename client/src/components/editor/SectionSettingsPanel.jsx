@@ -89,6 +89,7 @@ export default function SectionSettingsPanel({
   onSectionChange,
   onPageChange,
   onResetPageSection,
+  onSaveToBrandKit = null,
 }) {
   if (!isOpen) return null;
 
@@ -371,15 +372,27 @@ export default function SectionSettingsPanel({
             </p>
           </div>
         {isCustom && !brandLayer && (
-          <button
-            type="button"
-            onClick={handleResetToBrand}
-            className="inline-flex items-center gap-1 text-[11px] font-medium text-[#6B7280] hover:text-[#111827] px-1.5 py-0.5 rounded border border-[#E5E7EB]"
-            title="Reset to brand"
-          >
-            <RotateCcw className="h-3 w-3" />
-            <span>Reset</span>
-          </button>
+          <div className="flex items-center gap-1.5">
+            {onSaveToBrandKit && (
+              <button
+                type="button"
+                onClick={() => onSaveToBrandKit(section)}
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-[#2563EB] hover:text-[#1D4ED8] px-2 py-0.5 rounded border border-[#2563EB]/30 bg-[#EFF6FF]"
+                title="Save this design to your organization Brand Kit"
+              >
+                <span>Save to Brand Kit</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleResetToBrand}
+              className="inline-flex items-center gap-1 text-[11px] font-medium text-[#6B7280] hover:text-[#111827] px-1.5 py-0.5 rounded border border-[#E5E7EB]"
+              title="Reset to brand"
+            >
+              <RotateCcw className="h-3 w-3" />
+              <span>Reset</span>
+            </button>
+          </div>
         )}
       </div>
 
