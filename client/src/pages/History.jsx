@@ -16,10 +16,19 @@ import {
   Search,
   SlidersHorizontal,
   Sparkles,
+  Trash2,
   X,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog";
 import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import PosterCard, { PosterCardSkeleton } from "../components/PosterCard";
@@ -78,6 +87,8 @@ export default function History() {
   const [namesById, setNamesById] = useState({});
 
   const [busyIds, setBusyIds] = useState(() => new Set());
+  const [posterToDelete, setPosterToDelete] = useState(null);
+  const [deletingPoster, setDeletingPoster] = useState(false);
   const [openId, setOpenId] = useState("");
 
   const requestSeqRef = useRef(0);
@@ -252,14 +263,14 @@ export default function History() {
     }
   }
 
-  async function handleDelete(poster) {
-    const id = idOf(poster);
-    const label = poster.title || "this poster";
-    const ok = window.confirm(
-      `Delete “${label}”?\n\nIt will be removed from your list.`,
-    );
-    if (!ok) return;
+  function handleDelete(poster) {
+    setPosterToDelete(poster);
+  }
 
+  async function confirmDeletePoster() {
+    if (!posterToDelete) return;
+    const id = idOf(posterToDelete);
+    setDeletingPoster(true);
     setBusy(id, true);
     try {
       const response = await api.delete(`/posters/${id}`);
@@ -268,6 +279,7 @@ export default function History() {
       setTotal((prev) => Math.max(0, prev - 1));
       if (openId === id) setOpenId("");
       toast.success("Poster deleted");
+      setPosterToDelete(null);
     } catch (err) {
       toast.error(
         err.response?.status === 404
@@ -276,6 +288,7 @@ export default function History() {
       );
     } finally {
       setBusy(id, false);
+      setDeletingPoster(false);
     }
   }
 
@@ -633,6 +646,54 @@ export default function History() {
           />
         )}
       </div>
-    </div>
+    
+        {/* Delete poster confirmation modal */}
+        <Dialog
+          open={Boolean(posterToDelete)}
+          onOpenChange={(open) => {
+            if (!open && !deletingPoster) setPosterToDelete(null);
+          }}
+        >
+          <DialogContent className="sm:max-w-md rounded-[8px] border border-[#E5E7EB] bg-white p-6 shadow-md">
+            <DialogHeader>
+              <DialogTitle className="text-base font-semibold text-[#111827]">
+                Delete poster
+              </DialogTitle>
+              <DialogDescription className="text-xs text-[#6B7280] mt-1 leading-relaxed">
+                Are you sure you want to delete{" "}
+                <strong className="font-semibold text-[#111827]">
+                  {posterToDelete?.title ? `“${posterToDelete.title}”` : "this poster"}
+                </strong>
+                ? It will be removed from your list.
+              </DialogDescription>
+            </DialogHeader>
+
+            <DialogFooter className="pt-4 gap-2 sm:gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={deletingPoster}
+                onClick={() => setPosterToDelete(null)}
+                className="h-8 rounded-[6px] border-[#E5E7EB] text-xs font-medium text-[#374151] hover:bg-[#F3F4F6]"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={deletingPoster}
+                onClick={confirmDeletePoster}
+                className="h-8 rounded-[6px] bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-medium inline-flex items-center gap-1.5 shadow-none disabled:opacity-50"
+              >
+                {deletingPoster ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5" />
+                )}
+                <span>{deletingPoster ? "Deleting..." : "Delete"}</span>
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+</div>
   );
 }
