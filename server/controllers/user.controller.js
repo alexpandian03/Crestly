@@ -2,6 +2,8 @@ import crypto from 'crypto';
 import User from '../models/User.model.js';
 import Client from '../models/Client.model.js';
 import Token from '../models/Token.model.js';
+import Session from '../models/Session.model.js';
+import LoginAttempt from '../models/LoginAttempt.model.js';
 import { createUser, publicUser } from '../services/auth.service.js';
 import { scopedFilter } from '../middleware/auth.middleware.js';
 import { createToken, hashToken } from '../services/token.service.js';
@@ -131,7 +133,46 @@ export async function updateUser(req, res, next) {
   }
 }
 
+export async function deleteUser(req, res, next) {
+  try {
+    if (req.user.role !== 'superadmin') {
+      throw httpError(403, 'Only super administrators can delete user accounts.');
+    }
+    const target = await targetForActor(req);
+    if (sameId(target._id, req.user._id)) {
+      throw httpError(400, 'You cannot delete your own account.');
+    }
+
+    if (target.role === 'superadmin') {
+      const remaining = await User.countDocuments({ role: 'superadmin', _id: { $ne: target._id } });
+      if (remaining === 0) {
+        throw httpError(400, 'The last superadmin cannot be deleted.');
+      }
+    }
+
+    await Session.deleteMany({ userId: target._id });
+    await Token.deleteMany({ userId: target._id });
+    await LoginAttempt.deleteMany({ email: target.email });
+
+    await target.deleteOne();
+
+    await audit(req, 'user.delete', target, {
+      meta: { email: target.email, name: target.name, role: target.role },
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: { deleted: true, id: String(target._id), name: target.name },
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
 export async function deactivateUser(req, res, next) {
+  if (req.query.permanent === 'true') {
+    return deleteUser(req, res, next);
+  }
   req.body = { isActive: false };
   return updateUser(req, res, next);
 }

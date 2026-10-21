@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import api from "../services/api";
 import { friendlyError } from "../utils/brandImage";
-import { Plus, CheckCircle2, AlertCircle, Building2 } from "lucide-react";
+import { Plus, CheckCircle2, AlertCircle, Building2, Trash2 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import {
   Dialog,
@@ -40,6 +40,8 @@ export default function Clients() {
   const [name, setName] = useState("");
   const [plan, setPlan] = useState("starter");
   const [feedback, setFeedback] = useState({ type: null, message: "" });
+  const [clientToDelete, setClientToDelete] = useState(null);
+  const [deletingClient, setDeletingClient] = useState(false);
 
   const fetchClients = async () => {
     try {
@@ -85,6 +87,30 @@ export default function Clients() {
       });
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleDeleteClient = async () => {
+    if (!clientToDelete) return;
+    const id = clientToDelete.id || clientToDelete._id;
+    try {
+      setDeletingClient(true);
+      await api.delete(`/clients/${id}`);
+      setFeedback({
+        type: "success",
+        message: `"${clientToDelete.name}" and all associated data were deleted.`,
+      });
+      setClientToDelete(null);
+      await fetchClients();
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        message:
+          err.response?.data?.error?.message ||
+          friendlyError(err, "That organisation could not be deleted."),
+      });
+    } finally {
+      setDeletingClient(false);
     }
   };
 
@@ -164,22 +190,22 @@ export default function Clients() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-[#FAFAFA] border-b border-[#E5E7EB] hover:bg-[#FAFAFA]">
-                  <TableHead className="py-3 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
+                  <TableHead className="py-3 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] min-w-[160px]">
                     Name
                   </TableHead>
-                  <TableHead className="py-3 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] hidden md:table-cell">
+                  <TableHead className="py-3 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] hidden md:table-cell min-w-[200px]">
                     Tenant ID
                   </TableHead>
-                  <TableHead className="py-3 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
+                  <TableHead className="py-3 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] min-w-[90px]">
                     Plan
                   </TableHead>
-                  <TableHead className="py-3 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
+                  <TableHead className="py-3 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] min-w-[90px]">
                     Status
                   </TableHead>
-                  <TableHead className="py-3 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] hidden sm:table-cell">
+                  <TableHead className="py-3 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] hidden sm:table-cell min-w-[110px]">
                     Created
                   </TableHead>
-                  <TableHead className="py-3 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] text-right">
+                  <TableHead className="py-3 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] text-right min-w-[220px]">
                     Action
                   </TableHead>
                 </TableRow>
@@ -217,16 +243,27 @@ export default function Clients() {
                           ? new Date(client.createdAt).toLocaleDateString()
                           : "—"}
                       </TableCell>
-                      <TableCell className="py-3 px-4 text-right">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={!isActive || activeClientId === id}
-                          onClick={() => selectActiveClient(id)}
-                          className="h-7 rounded-[6px] border-[#E5E7EB] text-xs font-medium text-[#111827] shadow-none hover:bg-[#F3F4F6] disabled:opacity-40"
-                        >
-                          {activeClientId === id ? "Selected" : "Work as client"}
-                        </Button>
+                      <TableCell className="py-3 px-4 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={!isActive || activeClientId === id}
+                            onClick={() => selectActiveClient(id)}
+                            className="h-8 rounded-[6px] border-[#E5E7EB] text-xs font-medium text-[#111827] shadow-none hover:bg-[#F3F4F6] disabled:opacity-40 shrink-0"
+                          >
+                            {activeClientId === id ? "Selected" : "Work as client"}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setClientToDelete(client)}
+                            className="h-8 px-2.5 rounded-[6px] text-xs font-medium text-[#DC2626] hover:text-[#B91C1C] hover:bg-[#FEF2F2] inline-flex items-center gap-1 shrink-0"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Delete</span>
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -317,6 +354,49 @@ export default function Clients() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+      {/* Delete Organisation Confirmation Dialog */}
+      <Dialog
+        open={Boolean(clientToDelete)}
+        onOpenChange={(open) => {
+          if (!open) setClientToDelete(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md rounded-[8px] border-[#E5E7EB] bg-white p-6 shadow-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold text-[#111827]">
+              Delete organisation
+            </DialogTitle>
+            <DialogDescription className="text-xs text-[#6B7280] mt-1 leading-relaxed">
+              Are you sure you want to permanently delete{" "}
+              <strong className="font-semibold text-[#111827]">
+                {clientToDelete?.name}
+              </strong>
+              ? All users, brand kits, templates, and posters belonging to this organisation will be permanently removed. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="pt-4 gap-2 sm:gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={deletingClient}
+              onClick={() => setClientToDelete(null)}
+              className="h-8 rounded-[6px] border-[#E5E7EB] text-xs font-medium text-[#374151] hover:bg-[#F3F4F6]"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={deletingClient}
+              onClick={handleDeleteClient}
+              className="h-8 rounded-[6px] bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-medium inline-flex items-center gap-1.5 shadow-none disabled:opacity-50"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>{deletingClient ? "Deleting…" : "Delete organisation"}</span>
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

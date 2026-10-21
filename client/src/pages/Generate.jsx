@@ -7,7 +7,6 @@ import React, {
   lazy,
   Suspense,
 } from "react";
-import { allEventTypes } from "../../../shared/eventTypes.js";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
@@ -200,8 +199,6 @@ export default function Generate() {
   const [designMode, setDesignMode] = useState(MODE_AI);
   /** Which event type the user chose; controls template filtering and which form fields appear. */
   const [eventType, setEventType] = useState("general");
-  /** True when the user manually selected an event type — prevents AI suggestion from overriding. */
-  const userChangedTypeRef = useRef(false);
   const [templateDialog, setTemplateDialog] = useState({
     open: false,
     busy: false,
@@ -433,7 +430,7 @@ export default function Generate() {
         /* If the server returned a suggested event type and the user has not manually
            chosen one yet, apply it now so the picker and the form update automatically. */
         const suggested = res.data.data.suggestedEventType;
-        if (suggested && !userChangedTypeRef.current) {
+        if (suggested) {
           setEventType(suggested);
         }
 
@@ -1331,35 +1328,6 @@ export default function Generate() {
           {/* Left Column: Form Controls (about 420px) */}
           <div className="w-full lg:w-[420px] shrink-0">
             <form onSubmit={handleGenerate} className="space-y-6">
-              {/* 0. Event type picker */}
-              <div className="space-y-1.5">
-                <label className="block text-sm font-semibold text-[#111827]">
-                  What kind of event?
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {allEventTypes().map((et) => {
-                    const isActive = eventType === et.id;
-                    return (
-                      <button
-                        key={et.id}
-                        type="button"
-                        onClick={() => {
-                          setEventType(et.id);
-                          userChangedTypeRef.current = true;
-                        }}
-                        className={`px-2.5 py-1 rounded-[6px] border text-xs font-medium transition-colors ${
-                          isActive
-                            ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB]"
-                            : "border-[#E5E7EB] bg-white text-[#6B7280] hover:border-[#9CA3AF] hover:text-[#111827]"
-                        }`}
-                      >
-                        {et.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
               {/* 1. Prompt Textarea */}
               <div className="space-y-1.5">
                 <label

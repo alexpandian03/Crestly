@@ -21,6 +21,7 @@
     "migrate:poster-designs": "node server/scripts/migrate-poster-designs.js",
     "test:auth": "node server/scripts/test-auth.js",
     "test:security": "node server/scripts/test-security.js",
+    "test:delete-admin": "node server/scripts/test-delete-admin.js",
     "test:autosave": "node server/scripts/test-autosave.js",
     "test:stage8": "node server/scripts/test-stage8.js",
     "test:stage9": "node server/scripts/test-stage9.js",

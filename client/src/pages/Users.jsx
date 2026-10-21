@@ -7,6 +7,7 @@ import {
   Loader2,
   Plus,
   X,
+  Trash2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext";
@@ -74,6 +75,8 @@ export default function Users() {
   const [feedback, setFeedback] = useState({ type: "", message: "" });
   const [dialogError, setDialogError] = useState("");
   const [temporaryPassword, setTemporaryPassword] = useState(null);
+  const [userToDelete, setUserToDelete] = useState(null);
+  const [deletingUser, setDeletingUser] = useState(false);
 
   const loadData = async () => {
     try {
@@ -204,6 +207,33 @@ export default function Users() {
     }
   };
 
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return;
+    const id = itemId(userToDelete);
+    try {
+      setDeletingUser(true);
+      await api.delete(`/users/${id}?permanent=true`);
+      toast.success(`${userToDelete.name} was deleted.`);
+      setFeedback({
+        type: "success",
+        message: `${userToDelete.name} was permanently deleted.`,
+      });
+      setUserToDelete(null);
+      await loadData();
+    } catch (err) {
+      const msg =
+        err.response?.data?.error?.message ||
+        friendlyError(err, "We could not delete this account.");
+      toast.error(msg);
+      setFeedback({
+        type: "error",
+        message: msg,
+      });
+    } finally {
+      setDeletingUser(false);
+    }
+  };
+
   const copyTemporaryPassword = async () => {
     try {
       await navigator.clipboard.writeText(temporaryPassword.value);
@@ -314,98 +344,99 @@ export default function Users() {
 
         {/* Table container: 1px-bordered 8px-radius, no shadow */}
         <div className="rounded-[8px] border border-[#E5E7EB] bg-white overflow-hidden">
-          {loading ? (
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-[#FAFAFA] border-b border-[#E5E7EB] hover:bg-[#FAFAFA]">
-                  <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
-                    Name
-                  </TableHead>
-                  <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
-                    Email
-                  </TableHead>
-                  <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
-                    Role
-                  </TableHead>
-                  <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
-                    Status
-                  </TableHead>
-                  <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
-                    Last login
-                  </TableHead>
-                  <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] text-right">
-                    Actions
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {Array.from({ length: 5 }).map((_, index) => (
-                  <TableRow key={index} className="border-b border-[#E5E7EB]">
-                    <TableCell className="px-4 py-3">
-                      <Skeleton className="h-4 w-32 rounded-[4px]" />
-                    </TableCell>
-                    <TableCell className="px-4 py-3">
-                      <Skeleton className="h-4 w-44 rounded-[4px]" />
-                    </TableCell>
-                    <TableCell className="px-4 py-3">
-                      <Skeleton className="h-4 w-20 rounded-[4px]" />
-                    </TableCell>
-                    <TableCell className="px-4 py-3">
-                      <Skeleton className="h-4 w-16 rounded-[4px]" />
-                    </TableCell>
-                    <TableCell className="px-4 py-3">
-                      <Skeleton className="h-4 w-24 rounded-[4px]" />
-                    </TableCell>
-                    <TableCell className="px-4 py-3 text-right">
-                      <Skeleton className="h-8 w-36 ml-auto rounded-[6px]" />
-                    </TableCell>
+          <div className="overflow-x-auto">
+            {loading ? (
+              <Table className="w-full">
+                <TableHeader>
+                  <TableRow className="bg-[#FAFAFA] border-b border-[#E5E7EB] hover:bg-[#FAFAFA]">
+                    <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] min-w-[140px]">
+                      Name
+                    </TableHead>
+                    <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] min-w-[200px]">
+                      Email
+                    </TableHead>
+                    <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] min-w-[110px]">
+                      Role
+                    </TableHead>
+                    <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] min-w-[90px]">
+                      Status
+                    </TableHead>
+                    <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] min-w-[110px]">
+                      Last login
+                    </TableHead>
+                    <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] text-right min-w-[280px]">
+                      Actions
+                    </TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          ) : usersList.length === 0 ? (
-            <div className="p-12 text-center space-y-2">
-              <p className="text-sm font-medium text-[#111827]">
-                No members found
-              </p>
-              <p className="text-xs text-[#6B7280]">
-                Add a team member to give them access to create posters.
-              </p>
-              <Button
-                onClick={() => {
-                  setDialogError("");
-                  setShowAddForm(true);
-                }}
-                className="mt-2 h-9 px-3.5 rounded-[6px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-medium inline-flex items-center gap-1.5 shadow-none"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add member</span>
-              </Button>
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-[#FAFAFA] border-b border-[#E5E7EB] hover:bg-[#FAFAFA]">
-                  <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
-                    Name
-                  </TableHead>
-                  <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
-                    Email
-                  </TableHead>
-                  <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
-                    Role
-                  </TableHead>
-                  <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
-                    Status
-                  </TableHead>
-                  <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280]">
-                    Last login
-                  </TableHead>
-                  <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] text-right">
-                    Actions
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
+                </TableHeader>
+                <TableBody>
+                  {Array.from({ length: 5 }).map((_, index) => (
+                    <TableRow key={index} className="border-b border-[#E5E7EB]">
+                      <TableCell className="px-4 py-3">
+                        <Skeleton className="h-4 w-32 rounded-[4px]" />
+                      </TableCell>
+                      <TableCell className="px-4 py-3">
+                        <Skeleton className="h-4 w-44 rounded-[4px]" />
+                      </TableCell>
+                      <TableCell className="px-4 py-3">
+                        <Skeleton className="h-4 w-20 rounded-[4px]" />
+                      </TableCell>
+                      <TableCell className="px-4 py-3">
+                        <Skeleton className="h-4 w-16 rounded-[4px]" />
+                      </TableCell>
+                      <TableCell className="px-4 py-3">
+                        <Skeleton className="h-4 w-24 rounded-[4px]" />
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-right">
+                        <Skeleton className="h-8 w-36 ml-auto rounded-[6px]" />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : usersList.length === 0 ? (
+              <div className="p-12 text-center space-y-2">
+                <p className="text-sm font-medium text-[#111827]">
+                  No members found
+                </p>
+                <p className="text-xs text-[#6B7280]">
+                  Add a team member to give them access to create posters.
+                </p>
+                <Button
+                  onClick={() => {
+                    setDialogError("");
+                    setShowAddForm(true);
+                  }}
+                  className="mt-2 h-9 px-3.5 rounded-[6px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-medium inline-flex items-center gap-1.5 shadow-none"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add member</span>
+                </Button>
+              </div>
+            ) : (
+              <Table className="w-full">
+                <TableHeader>
+                  <TableRow className="bg-[#FAFAFA] border-b border-[#E5E7EB] hover:bg-[#FAFAFA]">
+                    <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] min-w-[140px]">
+                      Name
+                    </TableHead>
+                    <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] min-w-[200px]">
+                      Email
+                    </TableHead>
+                    <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] min-w-[110px]">
+                      Role
+                    </TableHead>
+                    <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] min-w-[90px]">
+                      Status
+                    </TableHead>
+                    <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] min-w-[110px]">
+                      Last login
+                    </TableHead>
+                    <TableHead className="h-10 px-4 text-xs font-semibold uppercase tracking-wider text-[#6B7280] text-right min-w-[280px]">
+                      Actions
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
               <TableBody>
                 {usersList.map((member) => {
                   const id = itemId(member);
@@ -448,15 +479,15 @@ export default function Users() {
                           member.lastLoginAt || member.lastLogin,
                         )}
                       </TableCell>
-                      <TableCell className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-2">
+                      <TableCell className="px-4 py-3 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1.5">
                           <Button
                             type="button"
                             variant="outline"
                             size="sm"
                             disabled={actionId === id}
                             onClick={() => resetPassword(member)}
-                            className="h-8 px-2.5 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-50 inline-flex items-center gap-1.5 shadow-none"
+                            className="h-8 px-2.5 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-50 inline-flex items-center gap-1.5 shadow-none shrink-0"
                           >
                             <KeyRound className="w-3.5 h-3.5 text-[#6B7280]" />
                             <span>Reset password</span>
@@ -470,10 +501,23 @@ export default function Users() {
                               (!isSuperadmin && isSelf && active)
                             }
                             onClick={() => toggleActive(member)}
-                            className="h-8 px-2.5 rounded-[6px] text-xs font-medium text-[#6B7280] hover:text-[#111827] hover:bg-[#F3F4F6] disabled:opacity-50"
+                            className="h-8 px-2.5 rounded-[6px] text-xs font-medium text-[#6B7280] hover:text-[#111827] hover:bg-[#F3F4F6] disabled:opacity-50 shrink-0"
                           >
                             {active ? "Deactivate" : "Activate"}
                           </Button>
+                          {isSuperadmin && !isSelf && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              disabled={actionId === id}
+                              onClick={() => setUserToDelete(member)}
+                              className="h-8 px-2.5 rounded-[6px] text-xs font-medium text-[#DC2626] hover:text-[#B91C1C] hover:bg-[#FEF2F2] disabled:opacity-50 inline-flex items-center gap-1 shrink-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Delete</span>
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -482,6 +526,7 @@ export default function Users() {
               </TableBody>
             </Table>
           )}
+          </div>
         </div>
 
         {/* Add member Dialog */}
@@ -607,6 +652,53 @@ export default function Users() {
                 </Button>
               </DialogFooter>
             </form>
+          </DialogContent>
+        </Dialog>
+        {/* Delete user confirmation Dialog */}
+        <Dialog
+          open={Boolean(userToDelete)}
+          onOpenChange={(open) => {
+            if (!open) setUserToDelete(null);
+          }}
+        >
+          <DialogContent className="sm:max-w-md rounded-[8px] border border-[#E5E7EB] bg-white p-6 shadow-md">
+            <DialogHeader>
+              <DialogTitle className="text-base font-semibold text-[#111827]">
+                Delete user account
+              </DialogTitle>
+              <DialogDescription className="text-xs text-[#6B7280] mt-1 leading-relaxed">
+                Are you sure you want to permanently delete{" "}
+                <strong className="font-semibold text-[#111827]">
+                  {userToDelete?.name}
+                </strong>{" "}
+                ({userToDelete?.email})? All active sessions will be terminated and this account cannot be recovered.
+              </DialogDescription>
+            </DialogHeader>
+
+            <DialogFooter className="pt-4 gap-2 sm:gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={deletingUser}
+                onClick={() => setUserToDelete(null)}
+                className="h-8 rounded-[6px] border-[#E5E7EB] text-xs font-medium text-[#374151] hover:bg-[#F3F4F6]"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={deletingUser}
+                onClick={handleDeleteUser}
+                className="h-8 rounded-[6px] bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-medium inline-flex items-center gap-1.5 shadow-none disabled:opacity-50"
+              >
+                {deletingUser ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5" />
+                )}
+                <span>{deletingUser ? "Deleting…" : "Delete user"}</span>
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
