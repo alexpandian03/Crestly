@@ -78,9 +78,12 @@ import {
   validateTemplateSections,
 } from "../../../shared/templateElements.js";
 import {
+  bandToCustomize,
+  borrowedBandPieces,
   brandLayerTemplate,
   changedBrandBands,
   editingTemplateFromKit,
+  kitBandIsLaidOut,
   pickSampleTemplate,
 } from "../utils/brandBands";
 import {
@@ -264,44 +267,8 @@ export default function TemplateEdit({ brandLayer = false }) {
   const [editingCardId, setEditingCardId] = useState("");
   const [tab, setTab] = useState("");
 
-  const handleItemSelect = useCallback((id, isShift = false) => {
-    if (!id) {
-      setSelectedId("");
-      setSelectedIds([]);
-      return;
-    }
-    if (isShift) {
-      setSelectedIds((prev) => {
-        const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
-        setSelectedId(next[next.length - 1] || "");
-        return next;
-      });
-    } else {
-      setSelectedId(id);
-      setSelectedIds([id]);
-    }
-  }, []);
-
-  const handleSelectMultiple = useCallback((ids, isShift = false) => {
-    if (!ids || ids.length === 0) {
-      if (!isShift) {
-        setSelectedId("");
-        setSelectedIds([]);
-      }
-      return;
-    }
-    if (isShift) {
-      setSelectedIds((prev) => {
-        const set = new Set([...prev, ...ids]);
-        const next = Array.from(set);
-        setSelectedId(next[next.length - 1] || "");
-        return next;
-      });
-    } else {
-      setSelectedIds(ids);
-      setSelectedId(ids[ids.length - 1] || "");
-    }
-  }, []);
+  /* Picking a piece of the poster is handled below, where a band that still follows the
+     organization can be handed over as part of the same click. */
   const [zoom, setZoom] = useState("fit");
   const [guidesOn, setGuidesOn] = useState(true);
   const [gridOn, setGridOn] = useState(false);
@@ -480,6 +447,15 @@ export default function TemplateEdit({ brandLayer = false }) {
     if (sec.footer?.elements) {
       sec.footer.elements = sec.footer.elements.map((el) => ({ ...el, locked: false }));
     }
+    /* A design that carries pieces on a band but still says the band follows the organization was
+       placed before this screen handed bands over: the poster painted the organization's header and
+       ignored these pieces, so nobody could click them. The band belongs to this design now.
+       A kit that laid its own band out is left alone, because that band is what paints. */
+    for (const kind of ["header", "footer"]) {
+      const band = sec[kind];
+      if (kitBandIsLaidOut(kit, kind)) continue;
+      if (band?.elements?.length > 0 && band.mode !== "custom") band.mode = "custom";
+    }
     // Migrate existing templates on load: rename those labels to "Text N" and "Photo N" with a quiet note
     const migration = migrateTemplateLabels(sec);
     if (migration.migrated) {
@@ -560,21 +536,46 @@ export default function TemplateEdit({ brandLayer = false }) {
 
   /* ----------------------------------------------------------- edits */
   /**
+   * A header or footer that still follows the organization is painted from the brand kit, so a piece
+   * placed on one would never show on this design's poster. Placing anything therefore starts by
+   * taking the organization's band over as this design's own, copied piece by piece so nothing the
+   * team can see disappears from it. The brand layer places its own band and needs no takeover.
+   */
+  const bandTakeover = useCallback(
+    (kind, currentSections) =>
+      brandLayer
+        ? null
+        : bandToCustomize(brandKit, kind, { size, current: currentSections?.[kind] }),
+    [brandLayer, brandKit, size],
+  );
+
+  const announceBandTakeover = useCallback(
+    (kind) =>
+      setBanner({
+        tone: "ok",
+        text: `This ${kind} is now this design's own, copied from your organization's. What you place here stays on this design alone. Change it back in the ${kind} settings.`,
+      }),
+    [],
+  );
+
+  /**
    * One change to the active section's item list. Live changes (a slider being dragged, a colour being
    * picked) are kept out of the undo stack until the gesture ends, so one action is one
    * step back.
    */
   const edit = useCallback(
-    (mutate, { live = false } = {}) => {
+    (mutate, { live = false, band = null } = {}) => {
       const current = readState();
       const currentSections = current.sections || legacyToSections(saved, brandKit);
-      const activeElements = currentSections[activeSection]?.elements || [];
+      const activeElements =
+        (band ? band.elements : currentSections[activeSection]?.elements) || [];
       const nextElements = mutate(activeElements);
       if (!Array.isArray(nextElements) || nextElements === activeElements) return;
       const nextSections = {
         ...currentSections,
         [activeSection]: {
           ...currentSections[activeSection],
+          ...(band || {}),
           elements: nextElements,
         },
       };
@@ -587,8 +588,9 @@ export default function TemplateEdit({ brandLayer = false }) {
       const from = txRef.current ?? current;
       txRef.current = null;
       dispatch({ type: "commit", from, present: next });
+      if (band) announceBandTakeover(activeSection);
     },
-    [readState, saved, brandKit, activeSection],
+    [readState, saved, brandKit, activeSection, announceBandTakeover],
   );
 
   const editSection = useCallback(
@@ -596,17 +598,105 @@ export default function TemplateEdit({ brandLayer = false }) {
       const current = readState();
       const currentSections = current.sections || legacyToSections(saved, brandKit);
       const targetSection = currentSections[sectionKey] || {};
+      /* Changing the height or the colour of a band that follows the organization is a change to
+         this design's band, so it is taken over first; the settings panel's own choice of mode
+         already says what it wants and is never second-guessed. */
+      const takeover = patch?.mode === undefined ? bandTakeover(sectionKey, currentSections) : null;
       const nextSections = {
         ...currentSections,
         [sectionKey]: {
           ...targetSection,
+          ...(takeover || {}),
           ...patch,
         },
       };
       const next = { ...current, sections: nextSections };
       dispatch({ type: "commit", from: current, present: next });
+      if (takeover) announceBandTakeover(sectionKey);
     },
-    [readState, saved, brandKit],
+    [readState, saved, brandKit, bandTakeover, announceBandTakeover],
+  );
+
+  /* While a band still follows the organization, its logo and name are painted from the brand kit
+     and this design carries no pieces of its own, so there was nothing on the canvas to click.
+     These borrowed pieces stand exactly where those words are painted. They live only on the
+     canvas and cannot be moved: picking one hands the band over as this design's own, and the very
+     same click then works on the real piece. */
+  const borrowedBands = useMemo(
+    () => (brandLayer ? {} : borrowedBandPieces(brandKit, sections, size)),
+    [brandLayer, brandKit, sections, size],
+  );
+
+  const stageSections = useMemo(() => {
+    const kinds = Object.keys(borrowedBands);
+    if (kinds.length === 0) return sections;
+    const next = { ...sections };
+    for (const kind of kinds) {
+      next[kind] = {
+        ...next[kind],
+        elements: borrowedBands[kind].map((item) => ({ ...item, locked: true })),
+      };
+    }
+    return next;
+  }, [borrowedBands, sections]);
+
+  /** Hand a band over when a piece picked on the canvas belongs to the organization, not to it. */
+  const takeOverBandFor = useCallback(
+    (ids) => {
+      for (const kind of ["header", "footer"]) {
+        const borrowed = borrowedBands[kind];
+        if (!borrowed) continue;
+        if (ids.some((id) => borrowed.some((item) => item.id === id))) editSection(kind, {});
+      }
+    },
+    [borrowedBands, editSection],
+  );
+
+  const handleItemSelect = useCallback(
+    (id, isShift = false) => {
+      if (!id) {
+        setSelectedId("");
+        setSelectedIds([]);
+        return;
+      }
+      takeOverBandFor([id]);
+      if (isShift) {
+        setSelectedIds((prev) => {
+          const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+          setSelectedId(next[next.length - 1] || "");
+          return next;
+        });
+      } else {
+        setSelectedId(id);
+        setSelectedIds([id]);
+      }
+    },
+    [takeOverBandFor],
+  );
+
+  const handleSelectMultiple = useCallback(
+    (ids, isShift = false) => {
+      if (!ids || ids.length === 0) {
+        if (!isShift) {
+          setSelectedId("");
+          setSelectedIds([]);
+        }
+        return;
+      }
+      takeOverBandFor(ids);
+      if (isShift) {
+        setSelectedIds((prev) => {
+          const set = new Set([...prev, ...ids]);
+          const next = Array.from(set);
+          setSelectedId(next[next.length - 1] || "");
+          return next;
+        });
+      } else {
+        setSelectedIds(ids);
+        setSelectedId(ids[ids.length - 1] || "");
+      }
+    },
+    [takeOverBandFor],
   );
 
   const editPage = useCallback(
@@ -681,6 +771,7 @@ export default function TemplateEdit({ brandLayer = false }) {
       /* The brand layer has no middle of its own: what shows there is a sample of somebody
          else's layout, so it cannot be stepped into. */
       if (brandLayer && nextSec === "content") return;
+      if (nextSelectedId) takeOverBandFor([nextSelectedId]);
       if (nextSec === activeSection) {
         if (nextSelectedId) {
           setSelectedId(nextSelectedId);
@@ -700,7 +791,7 @@ export default function TemplateEdit({ brandLayer = false }) {
       setZoom(remembered ? remembered.zoom : "fit");
       setShowFullPoster(remembered ? remembered.full : false);
     },
-    [activeSection, brandLayer, showFullPoster, zoom],
+    [activeSection, brandLayer, showFullPoster, takeOverBandFor, zoom],
   );
 
   const applyColorToken = useCallback(
@@ -941,7 +1032,8 @@ export default function TemplateEdit({ brandLayer = false }) {
 
   const add = useCallback(
     (make, warn = "") => {
-      const current = readActiveItems();
+      const band = bandTakeover(activeSection, readSections());
+      const current = band ? band.elements : readActiveItems();
       const maxCount = activeSection === "content" ? ELEMENT_LIMITS.maxItems : 15;
       if (current.length >= maxCount) {
         setBanner({
@@ -956,11 +1048,9 @@ export default function TemplateEdit({ brandLayer = false }) {
       let item = make(current);
       if (!item) return;
       if (activeSection !== "content") {
-        item = {
-          ...item,
-          locked: true,
-          variable: false,
-        };
+        /* Nobody fills a band piece in per poster, and a piece placed on a header is there to be
+           moved, so it is not frozen to the page. */
+        item = { ...item, variable: false };
       }
       /* A second headline box still needs its own name, even though the first one keeps the plain one. */
       const taken = new Set(current.map((each) => each.id));
@@ -973,12 +1063,13 @@ export default function TemplateEdit({ brandLayer = false }) {
             ),
           }
         : item;
-      edit((list) => [...list, fresh]);
+      edit((list) => [...list, fresh], { band });
       setSelectedId(fresh.id);
       setPreviewOn(false);
-      setBanner(warn ? { tone: "warn", text: warn } : null);
+      if (warn) setBanner({ tone: "warn", text: warn });
+      else if (!band) setBanner(null);
     },
-    [activeSection, edit, readActiveItems],
+    [activeSection, bandTakeover, edit, readActiveItems, readSections],
   );
 
   const addField = useCallback(
@@ -1191,7 +1282,8 @@ export default function TemplateEdit({ brandLayer = false }) {
   const addBrandText = useCallback(
     (token) => {
       if (activeSection === "content") return;
-      const current = readActiveItems();
+      const band = bandTakeover(activeSection, readSections());
+      const current = band ? band.elements : readActiveItems();
       if (current.length >= 15) {
         setBanner({
           tone: "error",
@@ -1208,7 +1300,6 @@ export default function TemplateEdit({ brandLayer = false }) {
         w: Math.min(300, Math.max(100, activeArea.w - 40)),
         h: 30,
         z: current.length,
-        locked: true,
         variable: false,
         style: {
           fontFamily: "brand:body",
@@ -1217,16 +1308,17 @@ export default function TemplateEdit({ brandLayer = false }) {
           textAlign: "left",
         },
       };
-      edit((list) => [...list, item]);
+      edit((list) => [...list, item], { band });
       setSelectedId(item.id);
       setPreviewOn(false);
     },
-    [activeArea, activeSection, edit, readActiveItems],
+    [activeArea, activeSection, bandTakeover, edit, readActiveItems, readSections],
   );
 
   const addBrandLogo = useCallback(() => {
     if (activeSection === "content") return;
-    const current = readActiveItems();
+    const band = bandTakeover(activeSection, readSections());
+    const current = band ? band.elements : readActiveItems();
     if (current.length >= 15) {
       setBanner({
         tone: "error",
@@ -1246,16 +1338,15 @@ export default function TemplateEdit({ brandLayer = false }) {
       w: logoW,
       h: logoH,
       z: current.length,
-      locked: true,
       variable: false,
       style: {
         fit: "contain",
       },
     };
-    edit((list) => [...list, item]);
+    edit((list) => [...list, item], { band });
     setSelectedId(item.id);
     setPreviewOn(false);
-  }, [activeArea, activeSection, edit, readActiveItems]);
+  }, [activeArea, activeSection, bandTakeover, edit, readActiveItems, readSections]);
 
   const remove = useCallback(
     (target) => {
@@ -1387,7 +1478,8 @@ export default function TemplateEdit({ brandLayer = false }) {
   );
 
   const pasteItem = useCallback(() => {
-    const current = readActiveItems();
+    const band = bandTakeover(activeSection, readSections());
+    const current = band ? band.elements : readActiveItems();
     const maxCount = activeSection === "content" ? ELEMENT_LIMITS.maxItems : 15;
     const room = maxCount - current.length;
     if (room <= 0) {
@@ -1425,7 +1517,7 @@ export default function TemplateEdit({ brandLayer = false }) {
       activeSection !== "content"
         ? placed.map((it) => ({ ...it, locked: false, variable: false }))
         : placed;
-    edit((list) => [...list, ...lockedPlaced]);
+    edit((list) => [...list, ...lockedPlaced], { band });
     setSelectedId(lockedPlaced[lockedPlaced.length - 1].id);
     setPreviewOn(false);
     setBanner(
@@ -1436,7 +1528,7 @@ export default function TemplateEdit({ brandLayer = false }) {
             text: `Put ${lockedPlaced.length} ${lockedPlaced.length === 1 ? "thing back" : "things back"} on this poster.`,
           },
     );
-  }, [activeClientId, activeArea, activeSection, edit, readActiveItems]);
+  }, [activeClientId, activeArea, activeSection, bandTakeover, edit, readActiveItems, readSections]);
 
   /**
    * One step forward or back through the stack, or all the way to the front or the
@@ -2172,6 +2264,7 @@ export default function TemplateEdit({ brandLayer = false }) {
       onChangeMeta={changeMeta}
       onSwitchSection={switchSection}
       onSectionChange={editSection}
+      onEditBrandBand={brandLayer ? null : editBrandBand}
       onPageChange={editPage}
       onToggleSettings={() => setSettingsDrawerOpen((prev) => !prev)}
       isSettingsOpen={settingsDrawerOpen}
@@ -2486,7 +2579,7 @@ export default function TemplateEdit({ brandLayer = false }) {
               editingId={editingId}
               hiddenIds={hiddenIds}
               activeSection={activeSection}
-              sections={sections}
+              sections={stageSections}
               sectionTabs={brandLayer ? ["header", "footer"] : null}
               showFullPoster={showFullPoster}
               onSwitchSection={switchSection}

@@ -7,8 +7,6 @@
 
 export const TEMPLATE_CATEGORIES = ['Event', 'Festival', 'Awareness', 'Achievement', 'Notice', 'Custom'];
 
-export const ZONE_TYPES = ['header', 'footer', 'content', 'image'];
-
 export const TEMPLATE_SIZE_DEFAULT = { width: 1080, height: 1350 };
 
 export const SIZE_LIMITS = { minWidth: 600, maxWidth: 2400, minHeight: 600, maxHeight: 3200 };

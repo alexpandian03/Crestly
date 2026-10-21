@@ -46,7 +46,7 @@ export const uploadPosterImageMiddleware = multer({
 }).single('image');
 
 const thumbnailMimetypes = ['image/jpeg', 'image/webp'];
-export const THUMBNAIL_MAX_BYTES = 300 * 1024;
+const THUMBNAIL_MAX_BYTES = 300 * 1024;
 
 const thumbnailFilter = (req, file, cb) => {
   if (thumbnailMimetypes.includes(file.mimetype)) {

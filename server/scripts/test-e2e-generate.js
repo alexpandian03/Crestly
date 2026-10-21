@@ -139,7 +139,11 @@ async function runE2ETests() {
         assert(resAi.status === 200, `"${item.name}" (mode: ai) returned HTTP 200`);
         assert(dataAi.success === true, `"${item.name}" (mode: ai) returned success: true`);
         assert(Boolean(dataAi.data?.content?.title), `"${item.name}" (mode: ai) produced title: "${dataAi.data?.content?.title}"`);
-        assert(Boolean(dataAi.data?.content?.venue), `"${item.name}" (mode: ai) produced venue: "${dataAi.data?.content?.venue}"`);
+        if (item.name === 'yoga with no venue') {
+          assert(dataAi.data?.content?.venue === '', `"${item.name}" correctly left venue empty`);
+        } else {
+          assert(Boolean(dataAi.data?.content?.venue), `"${item.name}" (mode: ai) produced venue: "${dataAi.data?.content?.venue}"`);
+        }
         assert(Array.isArray(dataAi.data?.content?.details), `"${item.name}" (mode: ai) produced details array`);
 
         // Check bullets max 6 words

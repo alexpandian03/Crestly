@@ -423,9 +423,6 @@ export function looksLikeFixedText(words) {
   return /[.!?]["'”’)\]]*$/.test(trimmed);
 }
 
-export const FIXED_TEXT_WARNING =
-  'This looks like fixed text. Switch it to Locked, or shorten it to a name like Chief guest.';
-
 /** A box of your own words that has not been written yet: empty, or still the sample it came with. */
 const PRESET_WORDS = new Set([...Object.values(TEXT_SAMPLE), ...Object.values(AI_TEXT_START)]);
 
@@ -709,8 +706,8 @@ export function duplicateItem(item, items, area) {
 /* ------------------------------------------------------------- clipboard */
 
 /** One paste in this browser tab: the items only, never a whole template. */
-export const CLIPBOARD_KEY = 'poster-template-clipboard';
-export const CLIPBOARD_MAX = 10;
+const CLIPBOARD_KEY = 'poster-template-clipboard';
+const CLIPBOARD_MAX = 10;
 
 export const CLIPBOARD_EMPTY = 'There is nothing to put back yet. Pick an item and copy it first.';
 

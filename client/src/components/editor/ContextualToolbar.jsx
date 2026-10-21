@@ -2213,6 +2213,7 @@ export default function ContextualToolbar({
   onPatchItem,
   onSwitchSection: _onSwitchSection,
   onSectionChange,
+  onEditBrandBand = null,
   onPageChange,
   onToggleSettings,
   isSettingsOpen: _isSettingsOpen,
@@ -2822,12 +2823,23 @@ export default function ContextualToolbar({
         </div>
       )}
 
-      {/* Locked note */}
-      {(isHeader || isFooter) && (
-        <span className="text-xs text-[#6B7280] ml-2">
-          Anyone making a poster sees this part exactly as you leave it
-        </span>
-      )}
+      {/* Band ownership: either the door to the organization's own header, or the promise that
+          what is placed here is what every poster of this design prints. */}
+      {(isHeader || isFooter) &&
+        (currentSection.mode !== "custom" && onEditBrandBand ? (
+          <button
+            type="button"
+            onClick={() => onEditBrandBand(activeSection)}
+            className="ml-2 inline-flex items-center gap-1.5 rounded-[6px] border border-[#E5E7EB] bg-white px-2.5 py-1 text-xs font-medium text-[#111827] hover:border-[#2563EB] hover:bg-[#EFF6FF] hover:text-[#2563EB] transition-colors"
+          >
+            Your organization&rsquo;s {isHeader ? "header" : "footer"}
+            <span className="font-semibold">Edit it</span>
+          </button>
+        ) : (
+          <span className="text-xs text-[#6B7280] ml-2">
+            Anyone making a poster sees this part exactly as you leave it
+          </span>
+        ))}
 
       {/* Settings Drawer Toggle */}
       {onToggleSettings && (
