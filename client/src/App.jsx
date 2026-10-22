@@ -1,7 +1,8 @@
 import React from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { homeForRole } from './components/shell/navItems';
 import ProtectedRoute from './components/ProtectedRoute';
 import AppShell from './components/shell/AppShell';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -38,6 +39,24 @@ const CatalogDevPage = import.meta.env.DEV
 const PreviewTestPage = import.meta.env.DEV
   ? React.lazy(() => import('./pages/PreviewTestPage'))
   : null;
+
+function RootRoute() {
+  const { user, isAuthenticated, loading } = useAuth();
+  if (loading) return null;
+  if (isAuthenticated && user) {
+    return <Navigate to={homeForRole(user.role)} replace />;
+  }
+  return <Home />;
+}
+
+function CatchAllRoute() {
+  const { user, isAuthenticated, loading } = useAuth();
+  if (loading) return null;
+  if (isAuthenticated && user) {
+    return <Navigate to={homeForRole(user.role)} replace />;
+  }
+  return <Navigate to="/" replace />;
+}
 
 function PageFallback() {
   return (
@@ -124,7 +143,7 @@ export default function App() {
             }
           >
             <Routes>
-              <Route path="/" element={<Home />} />
+              <Route path="/" element={<RootRoute />} />
               <Route path="/how-it-works" element={<HowItWorks />} />
               <Route path="/login" element={<Login />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -229,7 +248,7 @@ export default function App() {
 
           <Route path="/history" element={<Navigate to="/posters" replace />} />
           <Route path="/generate" element={<Navigate to="/create" replace />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<CatchAllRoute />} />
         </Routes>
       </ErrorBoundary>
     </AppShell>
