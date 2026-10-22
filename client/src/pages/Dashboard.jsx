@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Plus, Palette, LayoutTemplate, Sparkles, Trash2, Loader2 } from "lucide-react";
+import { Plus, Palette, LayoutTemplate, Sparkles, Trash2, Loader2, Images } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
@@ -21,7 +21,7 @@ function idOf(poster) {
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { user, activeClientId } = useAuth();
+  const { user, activeClientId, can } = useAuth();
   const [posters, setPosters] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -229,21 +229,35 @@ export default function Dashboard() {
               variant="outline"
               className="h-9 px-3.5 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB]"
             >
-              <Link to="/brand-kit" className="inline-flex items-center gap-2">
-                <Palette className="w-3.5 h-3.5 text-[#6B7280]" />
-                <span>Edit brand kit</span>
+              <Link to="/posters" className="inline-flex items-center gap-2">
+                <Images className="w-3.5 h-3.5 text-[#6B7280]" />
+                <span>View all posters</span>
               </Link>
             </Button>
-            <Button
-              asChild
-              variant="outline"
-              className="h-9 px-3.5 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB]"
-            >
-              <Link to="/templates" className="inline-flex items-center gap-2">
-                <LayoutTemplate className="w-3.5 h-3.5 text-[#6B7280]" />
-                <span>Manage templates</span>
-              </Link>
-            </Button>
+            {can?.('brandkit:write') && (
+              <Button
+                asChild
+                variant="outline"
+                className="h-9 px-3.5 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB]"
+              >
+                <Link to="/brand-kit" className="inline-flex items-center gap-2">
+                  <Palette className="w-3.5 h-3.5 text-[#6B7280]" />
+                  <span>Edit brand kit</span>
+                </Link>
+              </Button>
+            )}
+            {can?.('templates:write') && (
+              <Button
+                asChild
+                variant="outline"
+                className="h-9 px-3.5 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB]"
+              >
+                <Link to="/templates" className="inline-flex items-center gap-2">
+                  <LayoutTemplate className="w-3.5 h-3.5 text-[#6B7280]" />
+                  <span>Manage templates</span>
+                </Link>
+              </Button>
+            )}
           </div>
         </div>
 

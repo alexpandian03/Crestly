@@ -69,8 +69,7 @@ export default function AcceptInvite() {
 
       const role = res.data?.data?.user?.role;
       if (role === 'superadmin') navigate('/clients', { replace: true });
-      else if (role === 'clientadmin') navigate('/dashboard', { replace: true });
-      else navigate('/create', { replace: true });
+      else navigate('/dashboard', { replace: true });
     } catch (err) {
       setError(
         err.response?.data?.error?.message ||

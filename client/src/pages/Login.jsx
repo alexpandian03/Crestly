@@ -10,8 +10,7 @@ import { sanitizeRedirect } from "../../../shared/redirect.js";
 
 function landingForRole(role) {
   if (role === "superadmin") return "/clients";
-  if (role === "clientadmin") return "/dashboard";
-  return "/create";
+  return "/dashboard";
 }
 
 /* A page that asked for an account keeps its own address or "next" parameter; only same-origin relative paths are allowed. */
