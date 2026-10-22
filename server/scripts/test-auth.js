@@ -1127,6 +1127,47 @@ async function run() {
     String(shortPwRes.body.error?.message || '').includes('12'),
     'error message reflects client minPasswordLength'
   );
+
+  // 6. Admin Password Reset RBAC isolation:
+  const adminAUser = await User.findOne({ email: emails.adminA });
+  const peerAdminA = await directUser({
+    name: `Peer Admin A ${runId}`,
+    email: `auth-peer-admin-${runId}@example.test`,
+    role: 'clientadmin',
+    clientId: clientA._id,
+  });
+  const normalUserA = await directUser({
+    name: `Normal User A ${runId}`,
+    email: `auth-normal-user-${runId}@example.test`,
+    role: 'user',
+    clientId: clientA._id,
+  });
+
+  const peerResetRes = await request(`/api/users/${peerAdminA._id}/reset-password`, {
+    method: 'POST',
+    token: adminTokenAuth3,
+  });
+  assert(peerResetRes.status === 403, 'clientadmin cannot reset peer clientadmin password (403)');
+
+  const selfResetRes = await request(`/api/users/${adminAUser._id}/reset-password`, {
+    method: 'POST',
+    token: adminTokenAuth3,
+  });
+  assert(selfResetRes.status === 400, 'clientadmin cannot reset own password via admin reset (400)');
+
+  const userResetRes = await request(`/api/users/${normalUserA._id}/reset-password`, {
+    method: 'POST',
+    token: adminTokenAuth3,
+  });
+  assert(userResetRes.status === 200, 'clientadmin can reset standard user password (200)');
+  assert(Boolean(userResetRes.body.data?.temporaryPassword), 'reset returns temporaryPassword');
+
+  const superResetPeerRes = await request(`/api/users/${peerAdminA._id}/reset-password`, {
+    method: 'POST',
+    token: superTokenAuth3,
+  });
+  assert(superResetPeerRes.status === 200, 'superadmin can reset clientadmin password (200)');
+  assert(Boolean(superResetPeerRes.body.data?.temporaryPassword), 'superadmin reset returns temporaryPassword');
 }
 
 try {

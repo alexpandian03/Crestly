@@ -6,8 +6,7 @@ import { Button } from "../components/ui/button";
 
 function homeForRole(role) {
   if (role === "superadmin") return "/clients";
-  if (role === "clientadmin") return "/dashboard";
-  return "/create";
+  return "/dashboard";
 }
 
 export default function AccessDenied() {

@@ -180,8 +180,14 @@ export async function deactivateUser(req, res, next) {
 export async function resetUserPassword(req, res, next) {
   try {
     const target = await targetForActor(req);
+    if (sameId(req.user._id, target._id)) {
+      throw httpError(400, 'You cannot reset your own password here. Use Security settings instead.');
+    }
     if (target.role === 'superadmin' && req.user.role !== 'superadmin') {
       throw httpError(403, "You don't have access to this user.");
+    }
+    if (target.role === 'clientadmin' && req.user.role !== 'superadmin') {
+      throw httpError(403, "A client admin cannot reset another client admin's password. Only a superadmin can reset client admin passwords.");
     }
     const temporaryPassword = `${crypto.randomBytes(9).toString('base64url')}A1`;
     target.passwordHash = await User.hashPassword(temporaryPassword);
@@ -417,6 +423,15 @@ export async function revokeInvite(req, res, next) {
 export async function resetUserMfa(req, res, next) {
   try {
     const target = await targetForActor(req);
+    if (sameId(req.user._id, target._id)) {
+      throw httpError(400, 'You cannot reset your own MFA here. Use Security settings instead.');
+    }
+    if (target.role === 'superadmin' && req.user.role !== 'superadmin') {
+      throw httpError(403, "You don't have access to this user.");
+    }
+    if (target.role === 'clientadmin' && req.user.role !== 'superadmin') {
+      throw httpError(403, "A client admin cannot reset another client admin's MFA. Only a superadmin can reset client admin MFA.");
+    }
     const actor = await User.findById(req.user._id).select('+passwordHash +mfa.secretEncrypted');
     await verifyStepUpAuth(req, actor);
 

@@ -481,17 +481,19 @@ export default function Users() {
                       </TableCell>
                       <TableCell className="px-4 py-3 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={actionId === id}
-                            onClick={() => resetPassword(member)}
-                            className="h-8 px-2.5 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-50 inline-flex items-center gap-1.5 shadow-none shrink-0"
-                          >
-                            <KeyRound className="w-3.5 h-3.5 text-[#6B7280]" />
-                            <span>Reset password</span>
-                          </Button>
+                          {!isSelf && (isSuperadmin || member.role !== "clientadmin") && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={actionId === id}
+                              onClick={() => resetPassword(member)}
+                              className="h-8 px-2.5 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-50 inline-flex items-center gap-1.5 shadow-none shrink-0"
+                            >
+                              <KeyRound className="w-3.5 h-3.5 text-[#6B7280]" />
+                              <span>Reset password</span>
+                            </Button>
+                          )}
                           <Button
                             type="button"
                             variant="ghost"

@@ -16,8 +16,7 @@ export const ROLE_LABELS = {
 
 export function homeForRole(role) {
   if (role === 'superadmin') return '/clients';
-  if (role === 'clientadmin') return '/dashboard';
-  return '/create';
+  return '/dashboard';
 }
 
 export const guestNavItems = [
