@@ -124,7 +124,6 @@ api.interceptors.response.use(
         processQueue(refreshError);
         if (!isPublicPath) {
           localStorage.removeItem('activeClientId');
-          sessionStorage.setItem('authMessage', 'Your session has ended. Please log in again.');
           window.location.replace('/login');
         }
         return Promise.reject(refreshError);
@@ -135,7 +134,6 @@ api.interceptors.response.use(
       if (!originalRequest?.url?.includes('/login')) {
         if (!isPublicPath) {
           localStorage.removeItem('activeClientId');
-          sessionStorage.setItem('authMessage', 'Your session has ended. Please log in again.');
           window.location.replace('/login');
         }
       }
@@ -184,7 +182,6 @@ export async function apiFetch(endpoint, options = {}) {
       );
       if (!isPublic) {
         localStorage.removeItem('activeClientId');
-        sessionStorage.setItem('authMessage', 'Your session has ended. Please log in again.');
         window.location.replace('/login');
       }
     }
