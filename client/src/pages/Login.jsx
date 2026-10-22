@@ -19,6 +19,9 @@ function afterLogin(from, role, search = "") {
   const nextParam = query.get("next");
   const fallback = landingForRole(role);
   const candidate = nextParam || (from?.pathname ? `${from.pathname}${from.search || ""}` : "");
+  if (!candidate || candidate === "/" || candidate.startsWith("/login")) {
+    return fallback;
+  }
   return sanitizeRedirect(candidate, fallback);
 }
 
