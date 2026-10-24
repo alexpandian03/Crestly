@@ -721,42 +721,6 @@ export default function EditorStage({
   const activeMaxH = activeSection === 'header' ? maxHeaderH : maxFooterH;
   const activeCurrentH = activeSection === 'header' ? headerH : footerH;
 
-  const startResizeSection = useCallback(
-    (event, sectionToResize) => {
-      if (event.button !== undefined && event.button !== 0) return;
-      if (!onSectionChange) return;
-      event.preventDefault();
-      event.stopPropagation();
-
-      const isHdr = sectionToResize === 'header';
-      const initialHeight = isHdr ? headerH : footerH;
-      const startClientY = event.clientY;
-      const minH = isHdr ? minHeaderH : minFooterH;
-      const maxH = isHdr ? maxHeaderH : maxFooterH;
-
-      const handlePointerMove = (e) => {
-        const deltaScreenY = e.clientY - startClientY;
-        const deltaPosterY = deltaScreenY / scale;
-        const newHeightRaw = isHdr
-          ? initialHeight + deltaPosterY
-          : initialHeight - deltaPosterY;
-        const clampedHeight = Math.max(minH, Math.min(maxH, Math.round(newHeightRaw / 2) * 2));
-        onSectionChange(sectionToResize, { height: clampedHeight });
-      };
-
-      const handlePointerUp = () => {
-        window.removeEventListener('pointermove', handlePointerMove);
-        window.removeEventListener('pointerup', handlePointerUp);
-        window.removeEventListener('pointercancel', handlePointerUp);
-      };
-
-      window.addEventListener('pointermove', handlePointerMove);
-      window.addEventListener('pointerup', handlePointerUp);
-      window.addEventListener('pointercancel', handlePointerUp);
-    },
-    [footerH, headerH, maxFooterH, maxHeaderH, minFooterH, minHeaderH, onSectionChange, scale],
-  );
-
   /** Measure fit scale and fillWidth scale */
   useLayoutEffect(() => {
     const measure = () => {
@@ -799,6 +763,42 @@ export default function EditorStage({
   useEffect(() => {
     onScaleChange?.(scale, fitScale);
   }, [scale, fitScale, onScaleChange]);
+
+const startResizeSection = useCallback(
+    (event, sectionToResize) => {
+      if (event.button !== undefined && event.button !== 0) return;
+      if (!onSectionChange) return;
+      event.preventDefault();
+      event.stopPropagation();
+
+      const isHdr = sectionToResize === 'header';
+      const initialHeight = isHdr ? headerH : footerH;
+      const startClientY = event.clientY;
+      const minH = isHdr ? minHeaderH : minFooterH;
+      const maxH = isHdr ? maxHeaderH : maxFooterH;
+
+      const handlePointerMove = (e) => {
+        const deltaScreenY = e.clientY - startClientY;
+        const deltaPosterY = deltaScreenY / scale;
+        const newHeightRaw = isHdr
+          ? initialHeight + deltaPosterY
+          : initialHeight - deltaPosterY;
+        const clampedHeight = Math.max(minH, Math.min(maxH, Math.round(newHeightRaw / 2) * 2));
+        onSectionChange(sectionToResize, { height: clampedHeight });
+      };
+
+      const handlePointerUp = () => {
+        window.removeEventListener('pointermove', handlePointerMove);
+        window.removeEventListener('pointerup', handlePointerUp);
+        window.removeEventListener('pointercancel', handlePointerUp);
+      };
+
+      window.addEventListener('pointermove', handlePointerMove);
+      window.addEventListener('pointerup', handlePointerUp);
+      window.addEventListener('pointercancel', handlePointerUp);
+    },
+    [footerH, headerH, maxFooterH, maxHeaderH, minFooterH, minHeaderH, onSectionChange, scale],
+  );
 
   /* Step into an area and the view carries you there; step back and it puts you where you
      left off. Scroll is remembered in poster pixels, so it survives a change of zoom. */

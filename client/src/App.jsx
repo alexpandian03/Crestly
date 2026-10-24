@@ -1,4 +1,5 @@
 import React from 'react';
+import { AlertCircle } from 'lucide-react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -81,6 +82,42 @@ function PageFallback() {
   );
 }
 
+function FriendlyPageError({
+  title = 'Something went wrong',
+  message = 'We ran into an unexpected problem loading this page. Please try refreshing, or head back to your previous page.',
+  returnTo = '/templates',
+  returnLabel = 'Back to templates',
+}) {
+  return (
+    <div className="min-h-screen bg-[#F9FAFB] flex flex-col items-center justify-center p-6 text-center select-none">
+      <div className="max-w-md w-full p-8 rounded-[8px] border border-[#E5E7EB] bg-white shadow-sm space-y-4 text-center">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 text-[#2563EB]">
+          <AlertCircle className="h-6 w-6" />
+        </div>
+        <div className="space-y-1.5">
+          <h1 className="text-base font-semibold text-[#111827]">{title}</h1>
+          <p className="text-xs text-[#6B7280] leading-relaxed">{message}</p>
+        </div>
+        <div className="flex items-center justify-center gap-2 pt-2">
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="inline-flex items-center justify-center h-8 px-4 rounded-[6px] bg-[#2563EB] text-white text-xs font-semibold hover:bg-[#1D4ED8] transition-colors shadow-xs"
+          >
+            Reload page
+          </button>
+          <a
+            href={returnTo}
+            className="inline-flex items-center justify-center h-8 px-4 rounded-[6px] border border-[#E5E7EB] bg-white text-[#374151] text-xs font-semibold hover:bg-[#F9FAFB] transition-colors shadow-xs"
+          >
+            {returnLabel}
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const location = useLocation();
   /* Both editors take the whole screen: a template's layout, or the organization's own
@@ -105,9 +142,12 @@ export default function App() {
       {isFullScreenEditor ? (
         <ErrorBoundary
           fallback={
-            <div className="p-8 text-center text-sm text-[#6B7280]">
-              Something went wrong loading this page. Please refresh to try again.
-            </div>
+            <FriendlyPageError
+              title="Unable to open editor"
+              message="We had trouble loading the editor for this page. Refresh to try again or return to your templates."
+              returnTo="/templates"
+              returnLabel="Back to templates"
+            />
           }
         >
           <Routes>
@@ -137,9 +177,12 @@ export default function App() {
         <AppShell>
           <ErrorBoundary
             fallback={
-              <div className="p-8 text-center text-sm text-[#6B7280]">
-                Something went wrong loading this page. Please refresh to try again.
-              </div>
+              <FriendlyPageError
+                title="Page unavailable"
+                message="We encountered an issue loading this section. Refresh to try again or return to your dashboard."
+                returnTo="/dashboard"
+                returnLabel="Back to dashboard"
+              />
             }
           >
             <Routes>
