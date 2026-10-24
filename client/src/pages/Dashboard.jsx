@@ -10,7 +10,6 @@ import {
   Images,
   Building2,
   Users,
-  CheckCircle2,
   ArrowRight,
   ShieldCheck,
   Search,
@@ -45,7 +44,6 @@ export default function Dashboard() {
   const [busyIds, setBusyIds] = useState(() => new Set());
   const [posterToDelete, setPosterToDelete] = useState(null);
   const [deletingPoster, setDeletingPoster] = useState(false);
-  const [healthStatus, setHealthStatus] = useState("API OK · Database connected");
 
   // Superadmin platform overview state
   const [clients, setClients] = useState([]);
@@ -61,11 +59,10 @@ export default function Dashboard() {
       setLoading(true);
       try {
         if (isSuperadminWithoutClient) {
-          // Platform-level overview: load organizations, users, and health
-          const [clientsRes, usersRes, healthRes] = await Promise.all([
+          // Platform-level overview: load organizations and users
+          const [clientsRes, usersRes] = await Promise.all([
             api.get("/clients").catch(() => null),
             api.get("/users").catch(() => null),
-            api.get("/health").catch(() => null),
           ]);
 
           if (!active) return;
@@ -76,15 +73,11 @@ export default function Dashboard() {
           if (usersRes?.data?.success) {
             setPlatformUsers(usersRes.data.data?.users || []);
           }
-          if (healthRes?.data?.status === "ok" || healthRes?.data?.db === "connected") {
-            setHealthStatus("API OK · Database connected");
-          }
         } else {
-          // Organization workspace: load posters, templates, and health
-          const [postersRes, templatesRes, healthRes, clientsRes] = await Promise.all([
+          // Organization workspace: load posters and templates
+          const [postersRes, templatesRes, clientsRes] = await Promise.all([
             api.get("/posters", { params: { page: 1, limit: 4 } }).catch(() => null),
             api.get("/templates").catch(() => null),
-            api.get("/health").catch(() => null),
             user?.role === "superadmin" ? api.get("/clients").catch(() => null) : null,
           ]);
 
@@ -95,9 +88,6 @@ export default function Dashboard() {
           }
           if (templatesRes?.data?.success) {
             setTemplates(templatesRes.data.data?.templates || []);
-          }
-          if (healthRes?.data?.status === "ok" || healthRes?.data?.db === "connected") {
-            setHealthStatus("API OK · Database connected");
           }
           if (clientsRes?.data?.success) {
             setClients(clientsRes.data.data?.clients || []);
@@ -217,7 +207,7 @@ export default function Dashboard() {
           </div>
 
           {/* Metric Overview Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Card 1: Organizations */}
             <div className="rounded-[8px] border border-[#E5E7EB] bg-white p-5 space-y-3">
               <div className="flex items-center justify-between">
@@ -258,29 +248,6 @@ export default function Dashboard() {
                   className="font-medium text-[#2563EB] hover:underline inline-flex items-center gap-1"
                 >
                   Manage <ArrowRight className="w-3 h-3" />
-                </Link>
-              </div>
-            </div>
-
-            {/* Card 3: System Health */}
-            <div className="rounded-[8px] border border-[#E5E7EB] bg-white p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-[#6B7280]">System Status</span>
-                <div className="w-8 h-8 rounded-[6px] bg-[#DCFCE7] flex items-center justify-center text-[#15803D]">
-                  <CheckCircle2 className="w-4 h-4" />
-                </div>
-              </div>
-              <div className="text-sm font-semibold text-[#15803D] flex items-center gap-1.5 pt-1">
-                <span className="w-2 h-2 rounded-full bg-[#16A34A] animate-pulse" />
-                All systems normal
-              </div>
-              <div className="flex items-center justify-between pt-2.5 border-t border-[#F3F4F6] text-xs">
-                <span className="text-[#6B7280]">{healthStatus}</span>
-                <Link
-                  to="/security"
-                  className="font-medium text-[#2563EB] hover:underline inline-flex items-center gap-1"
-                >
-                  Security <ArrowRight className="w-3 h-3" />
                 </Link>
               </div>
             </div>
@@ -434,11 +401,6 @@ export default function Dashboard() {
                 </Link>
               </Button>
             </div>
-          </div>
-
-          {/* Bottom system status text */}
-          <div className="pt-8 border-t border-[#E5E7EB] text-center">
-            <p className="text-xs text-[#9CA3AF]">{healthStatus}</p>
           </div>
         </div>
       </div>
@@ -609,13 +571,6 @@ export default function Dashboard() {
               </Button>
             )}
           </div>
-        </div>
-
-        {/* Bottom system status text */}
-        <div className="pt-8 border-t border-[#E5E7EB] text-center">
-          <p className="text-xs text-[#9CA3AF]">
-            {healthStatus}
-          </p>
         </div>
       </div>
 
