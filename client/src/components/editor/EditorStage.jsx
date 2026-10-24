@@ -2,7 +2,7 @@ import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, 
 import { ImagePlus, Lock, RotateCw, Sparkles } from 'lucide-react';
 import PosterCanvas from '../PosterCanvas';
 import ItemTextEditor from './ItemTextEditor';
-import { ELEMENT_LIMITS, resolveBrandText } from '../../../../shared/templateElements.js';
+import { BAND_HEIGHTS, ELEMENT_LIMITS, SECTION_LIMITS, resolveBrandText } from '../../../../shared/templateElements.js';
 import {
   computeItemNumbers,
   isTypedText,
@@ -617,6 +617,8 @@ export default function EditorStage({
   activeSection = 'content',
   sections = null,
   sectionTabs = null,
+  brandLayer = false,
+  onSectionChange = null,
   showFullPoster = false,
   onSwitchSection,
   onToggleShowFullPoster,
@@ -690,6 +692,7 @@ export default function EditorStage({
     onReorder,
     onZoom,
     onCanvasClick,
+    onSectionChange,
   };
   const areaRef = useRef(area);
   areaRef.current = area;
@@ -705,9 +708,54 @@ export default function EditorStage({
   const selectedIdsRef = useRef(selectedIdsList);
   selectedIdsRef.current = selectedIdsList;
 
-  const headerH = sections?.header?.height ?? (brandKit?.header?.height ?? 80);
-  const footerH = sections?.footer?.height ?? (brandKit?.footer?.height ?? 70);
+  const headerH = sections?.header?.height ?? (brandKit?.header?.height ?? BAND_HEIGHTS.header.default);
+  const footerH = sections?.footer?.height ?? (brandKit?.footer?.height ?? BAND_HEIGHTS.footer.default);
   const contentH = Math.max(0, size.height - headerH - footerH);
+
+  const minHeaderH = brandLayer ? (BAND_HEIGHTS.header?.min ?? 60) : (SECTION_LIMITS.header?.minHeight ?? 60);
+  const maxHeaderH = brandLayer ? (BAND_HEIGHTS.header?.max ?? 200) : (SECTION_LIMITS.header?.maxHeight ?? 260);
+  const minFooterH = brandLayer ? (BAND_HEIGHTS.footer?.min ?? 60) : (SECTION_LIMITS.footer?.minHeight ?? 60);
+  const maxFooterH = brandLayer ? (BAND_HEIGHTS.footer?.max ?? 260) : (SECTION_LIMITS.footer?.maxHeight ?? 260);
+
+  const activeMinH = activeSection === 'header' ? minHeaderH : minFooterH;
+  const activeMaxH = activeSection === 'header' ? maxHeaderH : maxFooterH;
+  const activeCurrentH = activeSection === 'header' ? headerH : footerH;
+
+  const startResizeSection = useCallback(
+    (event, sectionToResize) => {
+      if (event.button !== undefined && event.button !== 0) return;
+      if (!onSectionChange) return;
+      event.preventDefault();
+      event.stopPropagation();
+
+      const isHdr = sectionToResize === 'header';
+      const initialHeight = isHdr ? headerH : footerH;
+      const startClientY = event.clientY;
+      const minH = isHdr ? minHeaderH : minFooterH;
+      const maxH = isHdr ? maxHeaderH : maxFooterH;
+
+      const handlePointerMove = (e) => {
+        const deltaScreenY = e.clientY - startClientY;
+        const deltaPosterY = deltaScreenY / scale;
+        const newHeightRaw = isHdr
+          ? initialHeight + deltaPosterY
+          : initialHeight - deltaPosterY;
+        const clampedHeight = Math.max(minH, Math.min(maxH, Math.round(newHeightRaw / 2) * 2));
+        onSectionChange(sectionToResize, { height: clampedHeight });
+      };
+
+      const handlePointerUp = () => {
+        window.removeEventListener('pointermove', handlePointerMove);
+        window.removeEventListener('pointerup', handlePointerUp);
+        window.removeEventListener('pointercancel', handlePointerUp);
+      };
+
+      window.addEventListener('pointermove', handlePointerMove);
+      window.addEventListener('pointerup', handlePointerUp);
+      window.addEventListener('pointercancel', handlePointerUp);
+    },
+    [footerH, headerH, maxFooterH, maxHeaderH, minFooterH, minHeaderH, onSectionChange, scale],
+  );
 
   /** Measure fit scale and fillWidth scale */
   useLayoutEffect(() => {
@@ -1504,8 +1552,8 @@ export default function EditorStage({
             data-editor-ui="true"
             className="sticky top-0 flex flex-col items-center gap-1.5 mb-2 z-40 select-none self-stretch"
           >
-            {/* Section tabs row: [Header | Content | Footer] & [Margin lines] */}
-            <div className="flex items-center justify-between w-full max-w-[640px] px-2 gap-4">
+            {/* Section tabs row: [Header | Content | Footer] & [Height Adjuster] & [Margin lines] */}
+            <div className="flex items-center justify-between w-full max-w-[760px] px-2 gap-3 flex-wrap sm:flex-nowrap">
               <div
                 role="tablist"
                 aria-label="Poster sections"
@@ -1531,6 +1579,58 @@ export default function EditorStage({
                   );
                 })}
               </div>
+
+              {/* Prominent Height Adjuster for Header and Footer */}
+              {activeSection !== 'content' && onSectionChange && (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] border border-[#E5E7EB] bg-white shadow-xs">
+                  <span className="text-xs font-medium text-[#4B5563]">
+                    {activeSection === 'header' ? 'Header height:' : 'Footer height:'}
+                  </span>
+                  <button
+                    type="button"
+                    title={activeSection === 'header' ? 'Make header smaller' : 'Make footer smaller'}
+                    onClick={() => {
+                      const next = Math.max(activeMinH, activeCurrentH - 10);
+                      onSectionChange(activeSection, { height: next });
+                    }}
+                    className="h-5 w-5 flex items-center justify-center rounded border border-[#E5E7EB] text-xs font-bold text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827] transition-colors"
+                    aria-label="Decrease section height"
+                  >
+                    −
+                  </button>
+                  <div className="flex items-center gap-0.5">
+                    <input
+                      type="number"
+                      value={activeCurrentH}
+                      min={activeMinH}
+                      max={activeMaxH}
+                      step={10}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        if (!isNaN(val)) {
+                          onSectionChange(activeSection, {
+                            height: Math.max(activeMinH, Math.min(activeMaxH, val)),
+                          });
+                        }
+                      }}
+                      className="w-12 text-center font-mono text-xs tabular-nums font-semibold text-[#111827] bg-[#F9FAFB] border border-[#E5E7EB] rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#2563EB]"
+                    />
+                    <span className="text-[11px] font-medium text-[#6B7280]">px</span>
+                  </div>
+                  <button
+                    type="button"
+                    title={activeSection === 'header' ? 'Make header bigger' : 'Make footer bigger'}
+                    onClick={() => {
+                      const next = Math.min(activeMaxH, activeCurrentH + 10);
+                      onSectionChange(activeSection, { height: next });
+                    }}
+                    className="h-5 w-5 flex items-center justify-center rounded border border-[#E5E7EB] text-xs font-bold text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827] transition-colors"
+                    aria-label="Increase section height"
+                  >
+                    +
+                  </button>
+                </div>
+              )}
 
               <div className="flex items-center gap-2 shrink-0">
                 <button
@@ -1754,6 +1854,54 @@ export default function EditorStage({
                   }}
                 />
               ) : null}
+
+              {/* Interactive Section Height Resize Divider Handle for Header */}
+              {onSectionChange && activeSection === 'header' && (
+                <div
+                  role="separator"
+                  aria-label="Resize header height"
+                  title="Drag up or down to resize header height"
+                  onPointerDown={(e) => startResizeSection(e, 'header')}
+                  className="group absolute cursor-row-resize flex items-center justify-center select-none"
+                  style={{
+                    left: 0,
+                    top: `${whole(headerH * scale) - 8}px`,
+                    width: `${whole(size.width * scale)}px`,
+                    height: '16px',
+                    zIndex: 35,
+                  }}
+                >
+                  <div className="w-full h-[2px] bg-blue-400 group-hover:bg-blue-600 transition-colors shadow-xs" />
+                  <div className="absolute px-2.5 py-0.5 rounded-full bg-blue-600 text-white text-[11px] font-medium shadow-md flex items-center gap-1.5 pointer-events-none group-hover:scale-105 transition-transform">
+                    <span className="text-xs">↕</span>
+                    <span>Header: {headerH}px (drag to resize)</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Interactive Section Height Resize Divider Handle for Footer */}
+              {onSectionChange && activeSection === 'footer' && (
+                <div
+                  role="separator"
+                  aria-label="Resize footer height"
+                  title="Drag up or down to resize footer height"
+                  onPointerDown={(e) => startResizeSection(e, 'footer')}
+                  className="group absolute cursor-row-resize flex items-center justify-center select-none"
+                  style={{
+                    left: 0,
+                    top: `${whole((size.height - footerH) * scale) - 8}px`,
+                    width: `${whole(size.width * scale)}px`,
+                    height: '16px',
+                    zIndex: 35,
+                  }}
+                >
+                  <div className="w-full h-[2px] bg-blue-400 group-hover:bg-blue-600 transition-colors shadow-xs" />
+                  <div className="absolute px-2.5 py-0.5 rounded-full bg-blue-600 text-white text-[11px] font-medium shadow-md flex items-center gap-1.5 pointer-events-none group-hover:scale-105 transition-transform">
+                    <span className="text-xs">↕</span>
+                    <span>Footer: {footerH}px (drag to resize)</span>
+                  </div>
+                </div>
+              )}
 
               {sectionBands.map((band) => {
                 const frames = ordered.filter((item) => (item.section || 'content') === band.key);

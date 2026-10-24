@@ -2327,6 +2327,7 @@ export default function TemplateEdit({ brandLayer = false }) {
       area={activeArea}
       showFullPoster={showFullPoster}
       isContentCustom={isContentCustom}
+      brandLayer={brandLayer}
       onStyle={patchStyle}
       onStyleLive={liveStyle}
       onRect={commitRect}
@@ -2662,6 +2663,8 @@ export default function TemplateEdit({ brandLayer = false }) {
               activeSection={activeSection}
               sections={stageSections}
               sectionTabs={brandLayer ? ["header", "footer"] : null}
+              brandLayer={brandLayer}
+              onSectionChange={editSection}
               showFullPoster={showFullPoster}
               onSwitchSection={switchSection}
               onToggleShowFullPoster={() => {

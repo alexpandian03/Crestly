@@ -25,10 +25,12 @@ import {
   FlipVertical,
 } from "lucide-react";
 import {
+  BAND_HEIGHTS,
   ELEMENT_FONTS,
   ELEMENT_LIMITS,
   IMAGE_FITS,
   IMAGE_MASKS,
+  SECTION_LIMITS,
   VARIABLE_LIMITS,
   isBrandColorToken,
   isGenericLabel,
@@ -2202,6 +2204,7 @@ export default function ContextualToolbar({
   area,
   showFullPoster: _showFullPoster,
   isContentCustom: _isContentCustom,
+  brandLayer = false,
   onStyle,
   onStyleLive,
   onRect,
@@ -2738,7 +2741,13 @@ export default function ContextualToolbar({
 
   // When NOTHING is selected: Section settings toolbar (matching Screenshot 1)
   const currentSection = sections?.[activeSection] || {};
-  const currentHeight = currentSection.height ?? (isHeader ? 108 : isFooter ? 70 : 0);
+  const currentHeight =
+    currentSection.height ??
+    (isHeader
+      ? (brandKit?.header?.height ?? BAND_HEIGHTS.header.default)
+      : isFooter
+        ? (brandKit?.footer?.height ?? BAND_HEIGHTS.footer.default)
+        : 0);
   const currentBg = isHeader
     ? sections?.header?.background
     : isFooter
@@ -2824,11 +2833,65 @@ export default function ContextualToolbar({
 
       {/* Band Height for Header & Footer */}
       {(isHeader || isFooter) && (
-        <div className="flex items-center gap-1.5 ml-2">
+        <div className="flex items-center gap-1.5 ml-2 border-l border-slate-200 pl-3">
           <span className="text-xs font-medium text-[#6B7280]">Height</span>
-          <span className="text-xs font-bold text-[#111827] tabular-nums">
-            {currentHeight} px
-          </span>
+          {onSectionChange ? (
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                title={isHeader ? "Make header smaller" : "Make footer smaller"}
+                onClick={() => {
+                  const minH = brandLayer
+                    ? (BAND_HEIGHTS[activeSection]?.min ?? 60)
+                    : (SECTION_LIMITS[activeSection]?.minHeight ?? 60);
+                  onSectionChange(activeSection, { height: Math.max(minH, currentHeight - 10) });
+                }}
+                className="h-5 w-5 flex items-center justify-center rounded border border-[#E5E7EB] bg-white text-xs font-bold text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827] transition-colors"
+                aria-label="Decrease height"
+              >
+                −
+              </button>
+              <input
+                type="number"
+                value={currentHeight}
+                min={brandLayer ? (BAND_HEIGHTS[activeSection]?.min ?? 60) : (SECTION_LIMITS[activeSection]?.minHeight ?? 60)}
+                max={brandLayer ? (BAND_HEIGHTS[activeSection]?.max ?? 200) : (SECTION_LIMITS[activeSection]?.maxHeight ?? 260)}
+                step={10}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  const minH = brandLayer
+                    ? (BAND_HEIGHTS[activeSection]?.min ?? 60)
+                    : (SECTION_LIMITS[activeSection]?.minHeight ?? 60);
+                  const maxH = brandLayer
+                    ? (BAND_HEIGHTS[activeSection]?.max ?? 200)
+                    : (SECTION_LIMITS[activeSection]?.maxHeight ?? 260);
+                  if (!isNaN(val)) {
+                    onSectionChange(activeSection, { height: Math.max(minH, Math.min(maxH, val)) });
+                  }
+                }}
+                className="w-12 text-center font-mono text-xs tabular-nums font-semibold text-[#111827] bg-[#F9FAFB] border border-[#E5E7EB] rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#2563EB]"
+              />
+              <span className="text-[11px] text-[#9CA3AF]">px</span>
+              <button
+                type="button"
+                title={isHeader ? "Make header bigger" : "Make footer bigger"}
+                onClick={() => {
+                  const maxH = brandLayer
+                    ? (BAND_HEIGHTS[activeSection]?.max ?? 200)
+                    : (SECTION_LIMITS[activeSection]?.maxHeight ?? 260);
+                  onSectionChange(activeSection, { height: Math.min(maxH, currentHeight + 10) });
+                }}
+                className="h-5 w-5 flex items-center justify-center rounded border border-[#E5E7EB] bg-white text-xs font-bold text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827] transition-colors"
+                aria-label="Increase height"
+              >
+                +
+              </button>
+            </div>
+          ) : (
+            <span className="text-xs font-bold text-[#111827] tabular-nums">
+              {currentHeight} px
+            </span>
+          )}
         </div>
       )}
 
