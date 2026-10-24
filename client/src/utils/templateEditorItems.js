@@ -43,6 +43,10 @@ const CARRIED_STYLE_KEYS = [
   'underline',
   'strike',
   'textTransform',
+  'align',
+  'textAlign',
+  'fontSize',
+  'bold',
 ];
 
 export const FIELD_LABELS = {

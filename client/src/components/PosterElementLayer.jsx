@@ -224,7 +224,7 @@ function TypeStyle({ style, text = '' }) {
     textTransform: style.textTransform || (style.uppercase ? 'uppercase' : 'none'),
     fontStyle: style.italic ? 'italic' : 'normal',
     textDecoration: style.textDecoration || (style.underline ? 'underline' : (style.strike ? 'line-through' : undefined)),
-    textAlign: cssAlign(style.align),
+    textAlign: cssAlign(style.align || style.textAlign),
     textShadow,
     WebkitTextStroke: webkitTextStroke,
     /* Tamil is spread last: its clusters cannot be spaced out or capitalised. */
@@ -582,8 +582,8 @@ const ElementBoxInner = memo(function ElementBoxInner({
   const [spills, setSpills] = useState(false);
 
   const floor = useMemo(
-    () => Math.max(22, ELEMENT_LIMITS.fontSize.min, Math.min(item.style.size, item.style.minSize || 22)),
-    [item.style.size, item.style.minSize]
+    () => Math.max(ELEMENT_LIMITS.fontSize.min, Math.min(item.style.size ?? item.style.fontSize ?? 28, item.style.minSize || ELEMENT_LIMITS.fontSize.min)),
+    [item.style.size, item.style.fontSize, item.style.minSize]
   );
 
   const isHighlighted = Boolean(highlightSlotKey && item.key === highlightSlotKey);
@@ -604,7 +604,15 @@ const ElementBoxInner = memo(function ElementBoxInner({
      The words are compared as text, so a redraw of the same poster never restarts the fit. */
   const signature = [
     item.id,
-    item.style.size,
+    item.style.size ?? item.style.fontSize,
+    item.style.align ?? item.style.textAlign,
+    item.style.weight,
+    item.style.fontFamily,
+    item.style.letterSpacing,
+    item.style.lineHeight,
+    item.style.effect,
+    item.style.textTransform,
+    item.style.textDecoration,
     item.w,
     item.h,
     words.text || '',
@@ -622,9 +630,9 @@ const ElementBoxInner = memo(function ElementBoxInner({
   const flaggedRef = useRef(false);
 
   useEffect(() => {
-    setSize(item.style.size);
+    setSize(item.style.size ?? item.style.fontSize ?? 28);
     setSpills(false);
-  }, [signature, item.style.size]);
+  }, [signature, item.style.size, item.style.fontSize]);
 
   const hasText = Boolean(words.text) || (Array.isArray(words.lines) && words.lines.length > 0);
 
@@ -670,7 +678,7 @@ const ElementBoxInner = memo(function ElementBoxInner({
   const onPlate = Boolean(plate);
   const ownsShape = ownsPlate(item, plate);
   const valign = onPlate ? 'center' : 'flex-start';
-  const halign = ownsShape ? 'center' : cssAlign(item.style.align);
+  const halign = ownsShape ? 'center' : cssAlign(item.style?.align || item.style?.textAlign || item?.align);
   /* A box too small for its words shows them anyway - clipping a line is worse. */
   const spill = spills ? { overflow: 'visible' } : null;
 
@@ -1002,7 +1010,15 @@ const ElementBoxInner = memo(function ElementBoxInner({
     />
   ) : null;
   const wordsNode = (
-    <div style={{ minWidth: 0, maxWidth: '100%', textAlign: isFactField ? 'center' : type.textAlign }}>
+    <div
+      style={{
+        width: showIcon ? undefined : '100%',
+        flex: showIcon ? 1 : undefined,
+        minWidth: 0,
+        maxWidth: '100%',
+        textAlign: isFactField ? 'center' : type.textAlign,
+      }}
+    >
       {label ? (
         <div
           style={{
@@ -1108,7 +1124,13 @@ const ElementBoxInner = memo(function ElementBoxInner({
       style={boxStyle(item, {
         display: 'flex',
         flexDirection: showIcon ? 'row' : 'column',
-        alignItems: showIcon ? 'center' : halign,
+        alignItems: showIcon
+          ? 'center'
+          : halign === 'center'
+            ? 'center'
+            : halign === 'right'
+              ? 'flex-end'
+              : 'flex-start',
         justifyContent: ownsShape ? 'center' : showIcon ? 'flex-start' : valign,
         gap,
         ...spill,

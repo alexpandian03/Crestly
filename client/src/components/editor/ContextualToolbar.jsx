@@ -1885,10 +1885,10 @@ function textToolGroups({ items, onSet, onLive, brandKit, surfaceBg }) {
   const bold = sharedFlag(items, (item) => Number(styleOf(item).weight) || (styleOf(item).bold ? 700 : 500) >= 700);
   const italic = sharedFlag(items, (item) => Boolean(styleOf(item).italic));
   const underline = sharedFlag(items, (item) => styleOf(item).textDecoration === "underline" || Boolean(styleOf(item).underline));
-  const strike = sharedFlag(items, (item) => styleOf(item).textDecoration === "line-through");
+  const strike = sharedFlag(items, (item) => styleOf(item).textDecoration === "line-through" || Boolean(styleOf(item).strike));
   const uppercase = sharedFlag(items, (item) => styleOf(item).textTransform === "uppercase" || Boolean(styleOf(item).uppercase));
   const fontFamily = sharedOf(items, (item) => styleOf(item).fontFamily || "brand:body");
-  const align = sharedOf(items, (item) => styleOf(item).align || "left");
+  const align = sharedOf(items, (item) => styleOf(item).align || styleOf(item).textAlign || "left");
   const color = sharedOf(items, (item) => styleOf(item).color || "brand:text");
   const weight = sharedOf(items, (item) => Number(styleOf(item).weight) || (styleOf(item).bold ? 700 : 500));
   const size = sharedOf(items, (item) => Math.round(Number(styleOf(item).size ?? styleOf(item).fontSize) || 0));
@@ -1967,7 +1967,12 @@ function textToolGroups({ items, onSet, onLive, brandKit, surfaceBg }) {
           aria-label="Words size"
           value={size === MIXED ? "" : size || ""}
           placeholder="—"
-          onChange={(e) => onSet({ size: Number(e.target.value) })}
+          onChange={(e) => {
+            const val = parseInt(e.target.value, 10);
+            if (!isNaN(val)) {
+              onSet({ size: Math.max(ELEMENT_LIMITS.fontSize.min, Math.min(ELEMENT_LIMITS.fontSize.max, val)) });
+            }
+          }}
           className="w-9 bg-transparent text-center font-mono text-xs tabular-nums text-[#111827] border-none focus:outline-none"
         />
         <button
@@ -2010,7 +2015,7 @@ function textToolGroups({ items, onSet, onLive, brandKit, surfaceBg }) {
           type="button"
           title="Bold"
           aria-pressed={any(bold)}
-          onClick={() => toggle(bold, (on) => ({ weight: on ? 700 : 400 }))}
+          onClick={() => toggle(bold, (on) => ({ weight: on ? 700 : 400, bold: on }))}
           className={`h-8 w-7 flex items-center justify-center rounded-[4px] text-xs font-bold transition-colors ${activeClass(bold)}`}
         >
           B
@@ -2018,7 +2023,10 @@ function textToolGroups({ items, onSet, onLive, brandKit, surfaceBg }) {
         <select
           aria-label="Font weight"
           value={weight === MIXED ? "" : weight}
-          onChange={(e) => onSet({ weight: Number(e.target.value) })}
+          onChange={(e) => {
+            const w = Number(e.target.value);
+            onSet({ weight: w, bold: w >= 700 });
+          }}
           className={`h-8 rounded-[4px] border border-[#E5E7EB] bg-white px-1 text-xs focus:outline-none ${
             weight === MIXED ? mixedTint : "text-[#111827]"
           }`}
@@ -2061,6 +2069,7 @@ function textToolGroups({ items, onSet, onLive, brandKit, surfaceBg }) {
           aria-pressed={any(strike)}
           onClick={() =>
             toggle(strike, (on) => ({
+              strike: on,
               textDecoration: on ? "line-through" : underline === true ? "underline" : "none",
             }))
           }
@@ -2090,7 +2099,7 @@ function textToolGroups({ items, onSet, onLive, brandKit, surfaceBg }) {
       <AlignDropdown
         align={align === MIXED ? "left" : align}
         mixed={align === MIXED}
-        onAlign={(next) => onSet({ align: next })}
+        onAlign={(next) => onSet({ align: next, textAlign: next })}
       />
     ),
   };

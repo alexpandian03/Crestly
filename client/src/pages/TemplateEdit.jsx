@@ -938,7 +938,11 @@ export default function TemplateEdit({ brandLayer = false }) {
       if (imageUrl !== undefined) itemPatch.imageUrl = imageUrl;
       if (mask !== undefined) itemPatch.mask = mask;
       if (previewCount !== undefined) itemPatch.previewCount = previewCount;
-      if (align !== undefined) itemPatch.align = align;
+      if (align !== undefined) {
+        itemPatch.align = align;
+        restStyle.align = align;
+        restStyle.textAlign = align;
+      }
       if (Object.keys(restStyle).length > 0) itemPatch.style = restStyle;
       return edit(
         mapOne(itemId, (item) => patchItem(item, itemPatch, activeArea)),
@@ -956,7 +960,11 @@ export default function TemplateEdit({ brandLayer = false }) {
       if (imageUrl !== undefined) itemPatch.imageUrl = imageUrl;
       if (mask !== undefined) itemPatch.mask = mask;
       if (previewCount !== undefined) itemPatch.previewCount = previewCount;
-      if (align !== undefined) itemPatch.align = align;
+      if (align !== undefined) {
+        itemPatch.align = align;
+        restStyle.align = align;
+        restStyle.textAlign = align;
+      }
       if (Object.keys(restStyle).length > 0) itemPatch.style = restStyle;
       return edit(
         mapOne(itemId, (item) => patchItem(item, itemPatch, activeArea)),
@@ -1335,8 +1343,10 @@ export default function TemplateEdit({ brandLayer = false }) {
         variable: false,
         style: {
           fontFamily: "brand:body",
+          size: 16,
           fontSize: 16,
           color: "brand:text",
+          align: "left",
           textAlign: "left",
         },
       };
