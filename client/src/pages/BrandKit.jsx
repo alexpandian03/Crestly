@@ -1291,7 +1291,37 @@ export default function BrandKit() {
                           const found = previewTemplates.find(
                             (t) => templateIdOf(t) === e.target.value,
                           );
-                          if (found) setTemplate(found);
+                          if (found) {
+                            setTemplate(found);
+                            // Apply custom header and footer from the chosen template to kit so Save persists it
+                            setKit((prev) => {
+                              if (!prev) return prev;
+                              const next = { ...prev };
+                              let changed = false;
+                              for (const kind of ["header", "footer"]) {
+                                const tBand = found.sections?.[kind];
+                                if (
+                                  tBand &&
+                                  (tBand.mode === "custom" ||
+                                    (Array.isArray(tBand.elements) &&
+                                      tBand.elements.length > 0))
+                                ) {
+                                  next[kind] = {
+                                    ...(next[kind] || {}),
+                                    mode: "elements",
+                                    height:
+                                      tBand.height ?? next[kind]?.height,
+                                    background:
+                                      tBand.background ||
+                                      next[kind]?.background,
+                                    elements: tBand.elements || [],
+                                  };
+                                  changed = true;
+                                }
+                              }
+                              return changed ? next : prev;
+                            });
+                          }
                         }}
                         aria-label="Preview with template"
                         className="text-xs py-1 px-2 rounded-[6px] border border-[#E5E7EB] bg-white text-[#111827] max-w-[150px] truncate outline-none focus:border-[#2563EB]"
@@ -1325,7 +1355,7 @@ export default function BrandKit() {
                 </div>
 
                 <p className="text-[11px] text-[#6B7280]">
-                  Sample preview only &mdash; choosing a layout here does not change your saved Brand Kit.
+                  Choosing a layout here sets its header &amp; footer for your brand kit when you click &ldquo;Save brand kit&rdquo;.
                 </p>
 
                 <TemplatePreview
