@@ -15,7 +15,6 @@ export const ROLE_LABELS = {
 };
 
 export function homeForRole(role) {
-  if (role === 'superadmin') return '/clients';
   return '/dashboard';
 }
 
