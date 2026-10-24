@@ -4,8 +4,7 @@ import { ArrowLeft, ShieldAlert } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { Button } from "../components/ui/button";
 
-function homeForRole(role) {
-  if (role === "superadmin") return "/clients";
+function homeForRole(_role) {
   return "/dashboard";
 }
 
