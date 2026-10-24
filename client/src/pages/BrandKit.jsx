@@ -1324,6 +1324,10 @@ export default function BrandKit() {
                   </span>
                 </div>
 
+                <p className="text-[11px] text-[#6B7280]">
+                  Sample preview only &mdash; choosing a layout here does not change your saved Brand Kit.
+                </p>
+
                 <TemplatePreview
                   eager
                   brandKit={kit}
