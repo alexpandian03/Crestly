@@ -938,7 +938,11 @@ export default function TemplateEdit({ brandLayer = false }) {
       if (imageUrl !== undefined) itemPatch.imageUrl = imageUrl;
       if (mask !== undefined) itemPatch.mask = mask;
       if (previewCount !== undefined) itemPatch.previewCount = previewCount;
-      if (align !== undefined) itemPatch.align = align;
+      if (align !== undefined) {
+        itemPatch.align = align;
+        restStyle.align = align;
+        restStyle.textAlign = align;
+      }
       if (Object.keys(restStyle).length > 0) itemPatch.style = restStyle;
       return edit(
         mapOne(itemId, (item) => patchItem(item, itemPatch, activeArea)),
@@ -956,7 +960,11 @@ export default function TemplateEdit({ brandLayer = false }) {
       if (imageUrl !== undefined) itemPatch.imageUrl = imageUrl;
       if (mask !== undefined) itemPatch.mask = mask;
       if (previewCount !== undefined) itemPatch.previewCount = previewCount;
-      if (align !== undefined) itemPatch.align = align;
+      if (align !== undefined) {
+        itemPatch.align = align;
+        restStyle.align = align;
+        restStyle.textAlign = align;
+      }
       if (Object.keys(restStyle).length > 0) itemPatch.style = restStyle;
       return edit(
         mapOne(itemId, (item) => patchItem(item, itemPatch, activeArea)),
@@ -1335,8 +1343,10 @@ export default function TemplateEdit({ brandLayer = false }) {
         variable: false,
         style: {
           fontFamily: "brand:body",
+          size: 16,
           fontSize: 16,
           color: "brand:text",
+          align: "left",
           textAlign: "left",
         },
       };
@@ -2131,7 +2141,22 @@ export default function TemplateEdit({ brandLayer = false }) {
       return false;
     }
     if (problems.length > 0) {
-      setBanner({ tone: "error", text: problems[0], more: problems.slice(1) });
+      const isMissingHeadline = problems[0] === "A template needs a headline.";
+      setBanner({
+        tone: "error",
+        text: problems[0],
+        more: problems.slice(1),
+        action: isMissingHeadline
+          ? {
+              label: "Add headline",
+              run: () => {
+                if (activeSection !== "content") switchSection("content");
+                add((list) => newFieldItem("headline", list, activeArea));
+                setBanner(null);
+              },
+            }
+          : undefined,
+      });
       return false;
     }
     setSaving(true);
@@ -2317,6 +2342,7 @@ export default function TemplateEdit({ brandLayer = false }) {
       area={activeArea}
       showFullPoster={showFullPoster}
       isContentCustom={isContentCustom}
+      brandLayer={brandLayer}
       onStyle={patchStyle}
       onStyleLive={liveStyle}
       onRect={commitRect}
@@ -2652,6 +2678,8 @@ export default function TemplateEdit({ brandLayer = false }) {
               activeSection={activeSection}
               sections={stageSections}
               sectionTabs={brandLayer ? ["header", "footer"] : null}
+              brandLayer={brandLayer}
+              onSectionChange={editSection}
               showFullPoster={showFullPoster}
               onSwitchSection={switchSection}
               onToggleShowFullPoster={() => {

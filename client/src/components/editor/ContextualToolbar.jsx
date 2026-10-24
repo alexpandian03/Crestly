@@ -25,10 +25,12 @@ import {
   FlipVertical,
 } from "lucide-react";
 import {
+  BAND_HEIGHTS,
   ELEMENT_FONTS,
   ELEMENT_LIMITS,
   IMAGE_FITS,
   IMAGE_MASKS,
+  SECTION_LIMITS,
   VARIABLE_LIMITS,
   isBrandColorToken,
   isGenericLabel,
@@ -1885,10 +1887,10 @@ function textToolGroups({ items, onSet, onLive, brandKit, surfaceBg }) {
   const bold = sharedFlag(items, (item) => Number(styleOf(item).weight) || (styleOf(item).bold ? 700 : 500) >= 700);
   const italic = sharedFlag(items, (item) => Boolean(styleOf(item).italic));
   const underline = sharedFlag(items, (item) => styleOf(item).textDecoration === "underline" || Boolean(styleOf(item).underline));
-  const strike = sharedFlag(items, (item) => styleOf(item).textDecoration === "line-through");
+  const strike = sharedFlag(items, (item) => styleOf(item).textDecoration === "line-through" || Boolean(styleOf(item).strike));
   const uppercase = sharedFlag(items, (item) => styleOf(item).textTransform === "uppercase" || Boolean(styleOf(item).uppercase));
   const fontFamily = sharedOf(items, (item) => styleOf(item).fontFamily || "brand:body");
-  const align = sharedOf(items, (item) => styleOf(item).align || "left");
+  const align = sharedOf(items, (item) => styleOf(item).align || styleOf(item).textAlign || "left");
   const color = sharedOf(items, (item) => styleOf(item).color || "brand:text");
   const weight = sharedOf(items, (item) => Number(styleOf(item).weight) || (styleOf(item).bold ? 700 : 500));
   const size = sharedOf(items, (item) => Math.round(Number(styleOf(item).size ?? styleOf(item).fontSize) || 0));
@@ -1967,7 +1969,12 @@ function textToolGroups({ items, onSet, onLive, brandKit, surfaceBg }) {
           aria-label="Words size"
           value={size === MIXED ? "" : size || ""}
           placeholder="—"
-          onChange={(e) => onSet({ size: Number(e.target.value) })}
+          onChange={(e) => {
+            const val = parseInt(e.target.value, 10);
+            if (!isNaN(val)) {
+              onSet({ size: Math.max(ELEMENT_LIMITS.fontSize.min, Math.min(ELEMENT_LIMITS.fontSize.max, val)) });
+            }
+          }}
           className="w-9 bg-transparent text-center font-mono text-xs tabular-nums text-[#111827] border-none focus:outline-none"
         />
         <button
@@ -2010,7 +2017,7 @@ function textToolGroups({ items, onSet, onLive, brandKit, surfaceBg }) {
           type="button"
           title="Bold"
           aria-pressed={any(bold)}
-          onClick={() => toggle(bold, (on) => ({ weight: on ? 700 : 400 }))}
+          onClick={() => toggle(bold, (on) => ({ weight: on ? 700 : 400, bold: on }))}
           className={`h-8 w-7 flex items-center justify-center rounded-[4px] text-xs font-bold transition-colors ${activeClass(bold)}`}
         >
           B
@@ -2018,7 +2025,10 @@ function textToolGroups({ items, onSet, onLive, brandKit, surfaceBg }) {
         <select
           aria-label="Font weight"
           value={weight === MIXED ? "" : weight}
-          onChange={(e) => onSet({ weight: Number(e.target.value) })}
+          onChange={(e) => {
+            const w = Number(e.target.value);
+            onSet({ weight: w, bold: w >= 700 });
+          }}
           className={`h-8 rounded-[4px] border border-[#E5E7EB] bg-white px-1 text-xs focus:outline-none ${
             weight === MIXED ? mixedTint : "text-[#111827]"
           }`}
@@ -2061,6 +2071,7 @@ function textToolGroups({ items, onSet, onLive, brandKit, surfaceBg }) {
           aria-pressed={any(strike)}
           onClick={() =>
             toggle(strike, (on) => ({
+              strike: on,
               textDecoration: on ? "line-through" : underline === true ? "underline" : "none",
             }))
           }
@@ -2090,7 +2101,7 @@ function textToolGroups({ items, onSet, onLive, brandKit, surfaceBg }) {
       <AlignDropdown
         align={align === MIXED ? "left" : align}
         mixed={align === MIXED}
-        onAlign={(next) => onSet({ align: next })}
+        onAlign={(next) => onSet({ align: next, textAlign: next })}
       />
     ),
   };
@@ -2193,6 +2204,7 @@ export default function ContextualToolbar({
   area,
   showFullPoster: _showFullPoster,
   isContentCustom: _isContentCustom,
+  brandLayer = false,
   onStyle,
   onStyleLive,
   onRect,
@@ -2729,7 +2741,13 @@ export default function ContextualToolbar({
 
   // When NOTHING is selected: Section settings toolbar (matching Screenshot 1)
   const currentSection = sections?.[activeSection] || {};
-  const currentHeight = currentSection.height ?? (isHeader ? 108 : isFooter ? 70 : 0);
+  const currentHeight =
+    currentSection.height ??
+    (isHeader
+      ? (brandKit?.header?.height ?? BAND_HEIGHTS.header.default)
+      : isFooter
+        ? (brandKit?.footer?.height ?? BAND_HEIGHTS.footer.default)
+        : 0);
   const currentBg = isHeader
     ? sections?.header?.background
     : isFooter
@@ -2815,11 +2833,65 @@ export default function ContextualToolbar({
 
       {/* Band Height for Header & Footer */}
       {(isHeader || isFooter) && (
-        <div className="flex items-center gap-1.5 ml-2">
+        <div className="flex items-center gap-1.5 ml-2 border-l border-slate-200 pl-3">
           <span className="text-xs font-medium text-[#6B7280]">Height</span>
-          <span className="text-xs font-bold text-[#111827] tabular-nums">
-            {currentHeight} px
-          </span>
+          {onSectionChange ? (
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                title={isHeader ? "Make header smaller" : "Make footer smaller"}
+                onClick={() => {
+                  const minH = brandLayer
+                    ? (BAND_HEIGHTS[activeSection]?.min ?? 60)
+                    : (SECTION_LIMITS[activeSection]?.minHeight ?? 60);
+                  onSectionChange(activeSection, { height: Math.max(minH, currentHeight - 10) });
+                }}
+                className="h-5 w-5 flex items-center justify-center rounded border border-[#E5E7EB] bg-white text-xs font-bold text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827] transition-colors"
+                aria-label="Decrease height"
+              >
+                −
+              </button>
+              <input
+                type="number"
+                value={currentHeight}
+                min={brandLayer ? (BAND_HEIGHTS[activeSection]?.min ?? 60) : (SECTION_LIMITS[activeSection]?.minHeight ?? 60)}
+                max={brandLayer ? (BAND_HEIGHTS[activeSection]?.max ?? 200) : (SECTION_LIMITS[activeSection]?.maxHeight ?? 260)}
+                step={10}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  const minH = brandLayer
+                    ? (BAND_HEIGHTS[activeSection]?.min ?? 60)
+                    : (SECTION_LIMITS[activeSection]?.minHeight ?? 60);
+                  const maxH = brandLayer
+                    ? (BAND_HEIGHTS[activeSection]?.max ?? 200)
+                    : (SECTION_LIMITS[activeSection]?.maxHeight ?? 260);
+                  if (!isNaN(val)) {
+                    onSectionChange(activeSection, { height: Math.max(minH, Math.min(maxH, val)) });
+                  }
+                }}
+                className="w-12 text-center font-mono text-xs tabular-nums font-semibold text-[#111827] bg-[#F9FAFB] border border-[#E5E7EB] rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#2563EB]"
+              />
+              <span className="text-[11px] text-[#9CA3AF]">px</span>
+              <button
+                type="button"
+                title={isHeader ? "Make header bigger" : "Make footer bigger"}
+                onClick={() => {
+                  const maxH = brandLayer
+                    ? (BAND_HEIGHTS[activeSection]?.max ?? 200)
+                    : (SECTION_LIMITS[activeSection]?.maxHeight ?? 260);
+                  onSectionChange(activeSection, { height: Math.min(maxH, currentHeight + 10) });
+                }}
+                className="h-5 w-5 flex items-center justify-center rounded border border-[#E5E7EB] bg-white text-xs font-bold text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827] transition-colors"
+                aria-label="Increase height"
+              >
+                +
+              </button>
+            </div>
+          ) : (
+            <span className="text-xs font-bold text-[#111827] tabular-nums">
+              {currentHeight} px
+            </span>
+          )}
         </div>
       )}
 
