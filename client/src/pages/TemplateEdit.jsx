@@ -2141,7 +2141,22 @@ export default function TemplateEdit({ brandLayer = false }) {
       return false;
     }
     if (problems.length > 0) {
-      setBanner({ tone: "error", text: problems[0], more: problems.slice(1) });
+      const isMissingHeadline = problems[0] === "A template needs a headline.";
+      setBanner({
+        tone: "error",
+        text: problems[0],
+        more: problems.slice(1),
+        action: isMissingHeadline
+          ? {
+              label: "Add headline",
+              run: () => {
+                if (activeSection !== "content") switchSection("content");
+                add((list) => newFieldItem("headline", list, activeArea));
+                setBanner(null);
+              },
+            }
+          : undefined,
+      });
       return false;
     }
     setSaving(true);
