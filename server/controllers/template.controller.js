@@ -34,7 +34,7 @@ import {
 /* The list also carries the placed items: every miniature a template is shown in draws the
    items it really stores, so a list can never disagree with the poster the editor saved. */
 const LIST_FIELDS =
-  'clientId name category eventTypes isActive isDefault version editorVersion updatedAt size layout zones page elements sections header content footer';
+  'clientId name category eventTypes isActive isDefault version editorVersion updatedAt size layout zones page elements sections header content footer brandKit';
 const LIST_SORT = { isDefault: -1, createdAt: -1 };
 const CONFLICT_MESSAGE = 'This template was changed somewhere else. Reload to continue.';
 
@@ -241,6 +241,7 @@ export async function getTemplateById(req, res, next) {
         template: {
           ...templateData,
           editorVersion: storedEditorVersion(template),
+          brandKit: template.brandKit || null,
           elements: elementsForRead(template, brandKit),
           sections,
           header: sections.header,
@@ -308,6 +309,7 @@ export async function createTemplate(req, res, next) {
       /* An unfinished blank layout is not something the team should be offered yet. */
       isActive: !startsBlank,
       isDefault: false,
+      brandKit: req.body.brandKit !== undefined ? (req.body.brandKit ? plain(req.body.brandKit) : null) : undefined,
       createdBy: req.user._id,
       /** Event types this template is designed for (empty = all types). */
       eventTypes: Array.isArray(req.body.eventTypes)
@@ -398,6 +400,9 @@ export async function updateTemplate(req, res, next) {
       if (!name) return sendBadRequest('Give the template a name.', res);
       if (await nameTaken(req.clientId, name, template._id)) return duplicateName(res);
       changes.name = name;
+    }
+    if (req.body.brandKit !== undefined) {
+      changes.brandKit = req.body.brandKit ? plain(req.body.brandKit) : null;
     }
     if (req.body.eventTypes !== undefined) {
       changes.eventTypes = Array.isArray(req.body.eventTypes)

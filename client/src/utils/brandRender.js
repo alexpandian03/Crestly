@@ -262,7 +262,9 @@ export function transformCloudinaryUrl(url, { w = 0, h = 0 } = {}) {
 }
 
 export function resolvePosterBrand(brandKit, template) {
-  const kit = isObj(brandKit) ? brandKit : {};
+  const baseKit = isObj(brandKit) ? brandKit : {};
+  const templateKit = isObj(template?.brandKit) ? template.brandKit : {};
+  const kit = { ...baseKit, ...templateKit };
   const D = BRAND_RENDER_DEFAULTS;
   const rendered = resolveTemplateRender(template);
   const zones = Array.isArray(template?.zones) ? template.zones : [];

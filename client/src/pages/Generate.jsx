@@ -580,7 +580,9 @@ export default function Generate() {
 
   /* A poster is always drawn with the look it was made with: the snapshot the server stores,
      or the design the assistant just laid out while nothing is saved yet. */
-  const drawBrandKit = designBrandKit(posterDesign, brandKit);
+  const templateBrandKit = selectedTemplate?.brandKit;
+  const activeBaseKit = templateBrandKit && typeof templateBrandKit === 'object' ? { ...brandKit, ...templateBrandKit } : brandKit;
+  const drawBrandKit = designBrandKit(posterDesign, activeBaseKit);
   const drawTemplate = designTemplate(posterDesign, selectedTemplate);
   const blanksSource = posterDesign || drawTemplate;
 

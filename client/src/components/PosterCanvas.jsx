@@ -1425,8 +1425,10 @@ export default function PosterCanvas({
   onSlotClick = null,
   isThumbnail = false,
 }) {
-  const effectiveBrandKit = content?.design?.brandKit || brandKit;
   const effectiveTemplate = template || content?.design?.template;
+  const templateBrandKit = effectiveTemplate?.brandKit;
+  const mergedBrandKit = templateBrandKit && typeof templateBrandKit === 'object' ? { ...brandKit, ...templateBrandKit } : brandKit;
+  const effectiveBrandKit = content?.design?.brandKit || mergedBrandKit;
   /* A brand kit that has laid its own bands out as items wins over the settings drawing; a kit
      nobody has touched still paints the header and footer from its settings, exactly as before. */
   const sections = useMemo(

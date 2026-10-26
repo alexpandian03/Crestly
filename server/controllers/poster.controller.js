@@ -59,6 +59,9 @@ async function generateFromRecipe(req, res, { templateId, prompt, instruction, a
     const template = templateId
       ? await Template.findOne(scopedFilter(req, { _id: templateId, isActive: true })).lean()
       : await Template.findOne(scopedFilter(req, { isActive: true })).sort({ createdAt: 1 }).lean();
+    if (template?.brandKit) {
+      brandKit = { ...brandKit, ...template.brandKit };
+    }
     const size = template?.size || brandKit.defaultPosterSize || TEMPLATE_SIZE_DEFAULT;
 
     let answer;
@@ -608,7 +611,10 @@ function posterScope(req, extra = {}) {
  * from the body except the recipe's name, arrangement and mark.
  */
 async function startingDesign(req, template, recipe, content) {
-  const brandKit = await BrandKit.findOne(scopedFilter(req)).lean();
+  let brandKit = await BrandKit.findOne(scopedFilter(req)).lean();
+  if (template?.brandKit) {
+    brandKit = { ...brandKit, ...template.brandKit };
+  }
   const built = recipe
     ? buildRecipeDesign({ recipe, content, brandKit, size: template.size })
     : template;
@@ -626,7 +632,10 @@ function plainDesign(design) {
  * kit rather than falling back to the organization's template.
  */
 async function designForPoster(req, poster, template) {
-  const brandKit = await BrandKit.findOne(scopedFilter(req)).lean();
+  let brandKit = await BrandKit.findOne(scopedFilter(req)).lean();
+  if (template?.brandKit) {
+    brandKit = { ...brandKit, ...template.brandKit };
+  }
   const stored = plainDesign(poster.design)?.template;
   const rawKey = stored?.archetype || stored?.recipeId || poster.archetype || poster.recipeId;
   if (rawKey) {

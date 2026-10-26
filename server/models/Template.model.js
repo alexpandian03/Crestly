@@ -408,6 +408,7 @@ const templateVersionSchema = new mongoose.Schema(
     content: { type: sectionContentSchema, default: undefined },
     footer: { type: sectionHeaderFooterSchema, default: undefined },
     editorVersion: { type: Number, min: 1, default: LEGACY_EDITOR_VERSION },
+    brandKit: { type: mongoose.Schema.Types.Mixed, default: undefined },
     size: {
       width: { type: Number },
       height: { type: Number },
@@ -490,6 +491,10 @@ const templateSchema = new mongoose.Schema(
       type: Number,
       default: LEGACY_EDITOR_VERSION,
       min: 1,
+    },
+    brandKit: {
+      type: mongoose.Schema.Types.Mixed,
+      default: undefined,
     },
     versions: {
       type: [templateVersionSchema],

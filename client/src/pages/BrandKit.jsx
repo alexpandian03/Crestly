@@ -176,6 +176,49 @@ function BandStrip({ band, brandKit, posterSize, posterTemplate }) {
   );
 }
 
+function kitForSelection(tpl, base) {
+  if (!tpl) return clone(base);
+  const tKit = tpl.brandKit || {};
+  const merged = {
+    ...clone(base || {}),
+    ...clone(tKit),
+    colors: { ...(base?.colors || {}), ...(tKit.colors || {}) },
+    fonts: { ...(base?.fonts || {}), ...(tKit.fonts || {}) },
+    textStyle: { ...(base?.textStyle || {}), ...(tKit.textStyle || {}) },
+    logos: Array.isArray(tKit.logos) && tKit.logos.length > 0 ? tKit.logos : (base?.logos || []),
+    orgName: tKit.orgName || base?.orgName || "",
+    content: {
+      ...(base?.content || {}),
+      ...(tKit.content || {}),
+      background:
+        tpl.sections?.content?.page?.background ||
+        tpl.page?.background ||
+        tKit.content?.background ||
+        base?.content?.background,
+    },
+    defaultPosterSize: tpl.size || tKit.defaultPosterSize || base?.defaultPosterSize,
+  };
+  if (tpl.sections?.header?.elements?.length > 0 || tpl.sections?.header?.mode === 'custom') {
+    merged.header = {
+      ...(merged.header || {}),
+      mode: 'elements',
+      height: tpl.sections.header.height ?? merged.header?.height ?? 80,
+      background: tpl.sections.header.background || merged.header?.background,
+      elements: tpl.sections.header.elements || [],
+    };
+  }
+  if (tpl.sections?.footer?.elements?.length > 0 || tpl.sections?.footer?.mode === 'custom') {
+    merged.footer = {
+      ...(merged.footer || {}),
+      mode: 'elements',
+      height: tpl.sections.footer.height ?? merged.footer?.height ?? 70,
+      background: tpl.sections.footer.background || merged.footer?.background,
+      elements: tpl.sections.footer.elements || [],
+    };
+  }
+  return merged;
+}
+
 export default function BrandKit() {
   const navigate = useNavigate();
   const { user, activeClientId } = useAuth();
@@ -186,6 +229,8 @@ export default function BrandKit() {
   const [saved, setSaved] = useState(null);
   const [templates, setTemplates] = useState([]);
   const [template, setTemplate] = useState(FALLBACK_TEMPLATE);
+  const [baseKit, setBaseKit] = useState(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [saving, setSaving] = useState(false);
   const [pendingPreset, setPendingPreset] = useState(null);
   const [presetsOpen, setPresetsOpen] = useState(false);
@@ -243,15 +288,21 @@ export default function BrandKit() {
         nextKit = kitResult.data.data.brandKit;
       }
 
+      setBaseKit(nextKit);
       const list = templatesResult?.data?.data?.templates;
       if (Array.isArray(list) && list.length > 0) {
         setTemplates(list);
-        /* The preview opens on a layout the team can actually use. */
-        setTemplate(list.find((t) => t.isActive !== false) || list[0]);
+        const initial = list.find((t) => t.isActive !== false) || list[0];
+        const initialId = templateIdOf(initial);
+        setSelectedTemplateId(initialId);
+        setTemplate(initial);
+        const initialKit = kitForSelection(initial, nextKit);
+        setKit(initialKit);
+        setSaved(clone(initialKit));
+      } else {
+        setKit(nextKit);
+        setSaved(clone(nextKit));
       }
-
-      setKit(nextKit);
-      setSaved(clone(nextKit));
       setLoading(false);
     }
 
@@ -264,8 +315,28 @@ export default function BrandKit() {
   /* All templates from the Templates page are offered for preview and choosing. */
   const previewTemplates = useMemo(() => {
     return templates || [];
-
   }, [templates]);
+
+  const selectedTemplate = useMemo(() => {
+    if (!selectedTemplateId) return null;
+    return (templates || []).find((t) => templateIdOf(t) === selectedTemplateId) || null;
+  }, [templates, selectedTemplateId]);
+
+  const handleTemplateSelect = (newId) => {
+    if (dirty) {
+      const curName = selectedTemplate ? selectedTemplate.name : "Organization default";
+      if (!window.confirm(`You have unsaved changes for ${curName}. Discard them and switch?`)) {
+        return;
+      }
+    }
+    setSelectedTemplateId(newId);
+    const nextTemplate = (templates || []).find((t) => templateIdOf(t) === newId) || null;
+    setTemplate(nextTemplate || FALLBACK_TEMPLATE);
+    const nextKit = kitForSelection(nextTemplate, baseKit);
+    setKit(nextKit);
+    setSaved(clone(nextKit));
+    setSaveError("");
+  };
 
   const dirty = useMemo(() => {
     if (!kit || !saved) return false;
@@ -404,7 +475,66 @@ export default function BrandKit() {
       setSaveError("Add the organization name before saving.");
       return;
     }
-    await persist(kit);
+    setSaving(true);
+    setSaveError("");
+    try {
+      if (selectedTemplate) {
+        const payload = {
+          expectedVersion: selectedTemplate.version,
+          brandKit: {
+            colors: kit.colors,
+            fonts: kit.fonts,
+            preset: kit.preset,
+            textStyle: kit.textStyle,
+            content: kit.content,
+            logos: kit.logos,
+            orgName: kit.orgName,
+            header: kit.header,
+            footer: kit.footer,
+          },
+          sections: {
+            ...(selectedTemplate.sections || {}),
+            header: kit.header?.elements?.length > 0 ? {
+              mode: "custom",
+              height: kit.header.height ?? selectedTemplate.sections?.header?.height ?? 80,
+              background: kit.header.background ?? selectedTemplate.sections?.header?.background,
+              elements: kit.header.elements,
+            } : (selectedTemplate.sections?.header || { mode: "brand" }),
+            footer: kit.footer?.elements?.length > 0 ? {
+              mode: "custom",
+              height: kit.footer.height ?? selectedTemplate.sections?.footer?.height ?? 70,
+              background: kit.footer.background ?? selectedTemplate.sections?.footer?.background,
+              elements: kit.footer.elements,
+            } : (selectedTemplate.sections?.footer || { mode: "brand" }),
+            content: {
+              ...(selectedTemplate.sections?.content || {}),
+              page: {
+                ...(selectedTemplate.sections?.content?.page || {}),
+                background: kit.content?.background || selectedTemplate.sections?.content?.page?.background,
+              },
+              elements: selectedTemplate.sections?.content?.elements || selectedTemplate.elements || [],
+            },
+          },
+          page: {
+            ...(selectedTemplate.page || {}),
+            background: kit.content?.background || selectedTemplate.page?.background,
+          },
+        };
+        const response = await api.put(`/templates/${templateIdOf(selectedTemplate)}`, payload);
+        if (!response.data?.success) throw new Error(response.data?.error?.message || "Failed to save template brand kit");
+        const updated = response.data.data.template;
+        setTemplates((prev) => prev.map((t) => templateIdOf(t) === templateIdOf(updated) ? updated : t));
+        setTemplate(updated);
+        setSaved(clone(kit));
+        toast.success(`Saved brand kit for ${selectedTemplate.name}.`);
+      } else {
+        await persist(kit);
+      }
+    } catch (err) {
+      setSaveError(friendlyError(err, "The brand kit could not be saved. Please try again."));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDiscard = () => {
@@ -508,11 +638,15 @@ export default function BrandKit() {
             <h1 className="text-[24px] font-semibold text-[#111827] leading-tight">
               Brand kit
             </h1>
-            <p className="text-xs sm:text-sm text-[#6B7280] mt-0.5">
-              {kit.orgName || "This organization"} · everything here is locked
-              onto every poster, so the assistant only writes the words in the
-              middle.
-            </p>
+            {selectedTemplate ? (
+              <p className="text-xs sm:text-sm text-[#6B7280] mt-0.5">
+                Customizing brand kit for <strong className="text-[#111827] font-semibold">{selectedTemplate.name}</strong>. Changes apply only to this template.
+              </p>
+            ) : (
+              <p className="text-xs sm:text-sm text-[#6B7280] mt-0.5">
+                {kit.orgName || "This organization"} · organization default locked onto posters that do not use a custom template brand kit.
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-3 shrink-0">
             {dirty ? (
@@ -541,7 +675,7 @@ export default function BrandKit() {
               disabled={saving}
               className="h-9 px-4 rounded-[6px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-medium shadow-none disabled:opacity-50"
             >
-              {saving ? "Saving…" : "Save brand kit"}
+              {saving ? "Saving…" : selectedTemplate ? `Save for ${selectedTemplate.name}` : "Save brand kit"}
             </Button>
           </div>
         </div>
@@ -995,7 +1129,11 @@ export default function BrandKit() {
                         <Button
                           type="button"
                           onClick={() =>
-                            navigate(`/brand-layer/edit?section=${card.kind}`)
+                            navigate(
+                              selectedTemplate
+                                ? `/templates/${templateIdOf(selectedTemplate)}/edit?section=${card.kind}`
+                                : `/brand-layer/edit?section=${card.kind}`
+                            )
                           }
                           disabled={dirty || saving}
                           className="h-9 px-4 rounded-[6px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-medium shadow-none disabled:opacity-50"
@@ -1037,46 +1175,12 @@ export default function BrandKit() {
                     </p>
                     {previewTemplates.length > 0 && (
                       <select
-                        value={templateIdOf(template) || ""}
-                        onChange={(e) => {
-                          const found = previewTemplates.find(
-                            (t) => templateIdOf(t) === e.target.value,
-                          );
-                          if (found) {
-                            setTemplate(found);
-                            // Apply custom header and footer from the chosen template to kit so Save persists it
-                            setKit((prev) => {
-                              if (!prev) return prev;
-                              const next = { ...prev };
-                              let changed = false;
-                              for (const kind of ["header", "footer"]) {
-                                const tBand = found.sections?.[kind];
-                                if (
-                                  tBand &&
-                                  (tBand.mode === "custom" ||
-                                    (Array.isArray(tBand.elements) &&
-                                      tBand.elements.length > 0))
-                                ) {
-                                  next[kind] = {
-                                    ...(next[kind] || {}),
-                                    mode: "elements",
-                                    height:
-                                      tBand.height ?? next[kind]?.height,
-                                    background:
-                                      tBand.background ||
-                                      next[kind]?.background,
-                                    elements: tBand.elements || [],
-                                  };
-                                  changed = true;
-                                }
-                              }
-                              return changed ? next : prev;
-                            });
-                          }
-                        }}
-                        aria-label="Preview with template"
-                        className="text-xs py-1 px-2 rounded-[6px] border border-[#E5E7EB] bg-white text-[#111827] max-w-[150px] truncate outline-none focus:border-[#2563EB]"
+                        value={selectedTemplateId}
+                        onChange={(e) => handleTemplateSelect(e.target.value)}
+                        aria-label="Choose template to customize brand kit"
+                        className="text-xs py-1 px-2 rounded-[6px] border border-[#E5E7EB] bg-white text-[#111827] max-w-[170px] truncate outline-none focus:border-[#2563EB]"
                       >
+                        <option value="">Organization default</option>
                         {previewTemplates.map((t) => (
                           <option
                             key={templateIdOf(t) || t.name}
@@ -1087,9 +1191,9 @@ export default function BrandKit() {
                         ))}
                       </select>
                     )}
-                    {templateIdOf(template) ? (
+                    {selectedTemplate && templateIdOf(selectedTemplate) ? (
                       <a
-                        href={`/templates/${templateIdOf(template)}/edit`}
+                        href={`/templates/${templateIdOf(selectedTemplate)}/edit`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 text-[11px] font-medium text-[#2563EB] hover:underline"
@@ -1106,7 +1210,9 @@ export default function BrandKit() {
                 </div>
 
                 <p className="text-[11px] text-[#6B7280]">
-                  Choosing a layout here sets its header &amp; footer for your brand kit when you click &ldquo;Save brand kit&rdquo;.
+                  {selectedTemplate
+                    ? `Editing brand kit for ${selectedTemplate.name}. Changes saved here apply only to this template.`
+                    : "Editing organization default brand kit."}
                 </p>
 
                 <TemplatePreview

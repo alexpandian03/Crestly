@@ -2597,7 +2597,9 @@ function templateCustomBand(template, kind) {
  * has to shrink to leave room between them.
  */
 export function resolveBands(brandKit, template) {
-  const kit = toPlain(brandKit) || {};
+  const templateKit = template?.brandKit && typeof template.brandKit === 'object' ? toPlain(template.brandKit) : null;
+  const baseKit = toPlain(brandKit) || {};
+  const kit = templateKit ? { ...baseKit, ...templateKit } : baseKit;
   const size = templateSizeOf(template);
   const kitDefaultHeight = templateSizeOf({ size: kit.defaultPosterSize }).height;
   const bands = {};
