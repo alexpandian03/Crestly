@@ -261,10 +261,10 @@ export default function BrandKit() {
     };
   }, [activeClientId, user?.clientId]);
 
-  /* Only the layouts a team can actually use are offered for the preview. */
+  /* All templates from the Templates page are offered for preview and choosing. */
   const previewTemplates = useMemo(() => {
-    const active = templates.filter((t) => t.isActive !== false);
-    return active.length > 0 ? active : templates;
+    return templates || [];
+
   }, [templates]);
 
   const dirty = useMemo(() => {
