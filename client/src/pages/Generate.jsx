@@ -17,10 +17,6 @@ import {
   RefreshCw,
   Edit3,
   Lock,
-  Minimize2,
-  Briefcase,
-  Calendar,
-  Image as ImageIcon,
   AlertTriangle,
   Save,
   Shuffle,
@@ -163,18 +159,6 @@ function friendlySaveError(err) {
   };
 }
 
-const REFINEMENT_BUTTONS = [
-  { label: "Regenerate", instruction: undefined, icon: RefreshCw },
-  { label: "Shorter", instruction: "shorter", icon: Minimize2 },
-  { label: "Minimal", instruction: "minimal", icon: Sparkles },
-  {
-    label: "More professional",
-    instruction: "more professional",
-    icon: Briefcase,
-  },
-  { label: "Emphasize date", instruction: "emphasize date", icon: Calendar },
-  { label: "New photo", instruction: "change image", icon: ImageIcon },
-];
 
 function SkeletonPoster() {
   return (
@@ -1717,32 +1701,6 @@ export default function Generate() {
                       <span>Try another design</span>
                     </Button>
                   )}
-                  {REFINEMENT_BUTTONS.map((btn) => {
-                    const Icon = btn.icon;
-                    const isActive =
-                      btn.instruction && activeInstruction === btn.instruction;
-                    return (
-                      <Button
-                        key={btn.label}
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={isGenerating || !description.trim()}
-                        onClick={() => {
-                          setActiveInstruction(btn.instruction || "");
-                          runGenerate(btn.instruction);
-                        }}
-                        className={`h-7 px-2.5 rounded-[6px] text-xs transition-colors ${
-                          isActive
-                            ? "bg-[#F3F4F6] text-[#111827] font-medium"
-                            : "text-[#6B7280] hover:text-[#111827] hover:bg-[#F3F4F6]"
-                        }`}
-                      >
-                        <Icon className="w-3 h-3 mr-1" />
-                        <span>{btn.label}</span>
-                      </Button>
-                    );
-                  })}
                   {canDrawPicture && (
                     <Button
                       type="button"
