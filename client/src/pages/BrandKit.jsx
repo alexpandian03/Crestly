@@ -649,7 +649,7 @@ export default function BrandKit() {
                     hint="Used whenever a poster is created without a photo."
                   />
                   <BrandImageField
-                    label="Content area background photo"
+                    label="Whole poster background photo"
                     kind="content"
                     value={content.background?.imageUrl || ""}
                     boxClass="h-40"
@@ -663,7 +663,7 @@ export default function BrandKit() {
                           : content.background?.type || "color",
                       })
                     }
-                    hint="A background photo that sits behind the middle content area of every poster."
+                    hint="A background image that covers the entire poster from top to bottom, including header, content area, and footer."
                   />
                   <div className="grid grid-cols-2 gap-4">
                     <Field label="Width (px)">
@@ -837,7 +837,7 @@ export default function BrandKit() {
                     />
                     <div className="col-span-2 pt-2 border-t border-[#E5E7EB]">
                       <BrandImageField
-                        label="Poster / content area background photo"
+                        label="Whole poster background photo"
                         kind="content"
                         value={content.background?.imageUrl || ""}
                         boxClass="h-32"
@@ -851,7 +851,7 @@ export default function BrandKit() {
                               : content.background?.type || "color",
                           })
                         }
-                        hint="A background photo that sits behind the middle content of every poster."
+                        hint="A background image that covers the entire poster from top to bottom, including header, content area, and footer."
                       />
                     </div>
                   </div>
