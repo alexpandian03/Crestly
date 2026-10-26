@@ -10,7 +10,7 @@ const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET || JWT_SECRET.length < 32) {
   throw new Error('JWT_SECRET must be set and at least 32 characters long.');
 }
-const JWT_EXPIRES_IN = '15m';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const MAX_FAILURES = 5;
 const DUMMY_PASSWORD_HASH = '$2b$12$k6GsaPWHQdYyNJPuQKVnWOHyknQmHLHvsDE23n/.uRnGmRSiFjz7S';

@@ -47,7 +47,7 @@ export function AuthProvider({ children }) {
     async function loadSession() {
       try {
         await refreshUser();
-      } catch {
+      } catch (err) {
         if (active) setUser(null);
       } finally {
         if (active) setLoading(false);
@@ -59,6 +59,28 @@ export function AuthProvider({ children }) {
       active = false;
     };
   }, [refreshUser]);
+
+  // Keep server awake and session fresh while user has tab open
+  // Render spins down free web services after 15 minutes of inactivity; pinging every 10m prevents spin-down.
+  useEffect(() => {
+    if (!user) return;
+
+    const interval = setInterval(() => {
+      api.get('/health').catch(() => {});
+    }, 10 * 60 * 1000);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        api.get('/health').catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [user]);
 
   const login = async (email, password) => {
     localStorage.removeItem('activeClientId');

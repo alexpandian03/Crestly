@@ -56,23 +56,35 @@ api.interceptors.response.use(
 
     if (isWakeUpError && originalRequest && !originalRequest._wakeUpRetry) {
       originalRequest._wakeUpRetry = true;
-      toast.loading('Server is waking up, please retry...', {
+      toast.loading('Server is waking up, please wait a moment...', {
         id: 'server-waking-up',
-        duration: 10000,
+        duration: 45000,
       });
 
-      // Wait 3 seconds before automatically retrying the first request once
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-      try {
-        const retryRes = await api(originalRequest);
-        toast.success('Server is online!', { id: 'server-waking-up', duration: 2500 });
-        return retryRes;
-      } catch (retryError) {
-        toast.error('Server is still starting up, please try again in a few moments.', {
-          id: 'server-waking-up',
-          duration: 5000,
-        });
-        return Promise.reject(retryError);
+      // Render cold starts take ~30-50s. Retry with progressive backoff over ~34s before giving up.
+      const retryDelays = [3000, 6000, 10000, 15000];
+      for (let i = 0; i < retryDelays.length; i++) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelays[i]));
+        try {
+          const retryRes = await api(originalRequest);
+          toast.success('Server is online!', { id: 'server-waking-up', duration: 2500 });
+          return retryRes;
+        } catch (retryErr) {
+          const retryStatus = retryErr.response?.status;
+          const stillWaking =
+            retryStatus === 504 ||
+            retryStatus === 502 ||
+            retryStatus === 503 ||
+            retryErr.code === 'ECONNABORTED' ||
+            retryErr.message?.includes('Network Error');
+          if (!stillWaking || i === retryDelays.length - 1) {
+            toast.error('Server is taking longer to start up. Please refresh in a moment.', {
+              id: 'server-waking-up',
+              duration: 6000,
+            });
+            return Promise.reject(retryErr);
+          }
+        }
       }
     }
 
@@ -122,7 +134,9 @@ api.interceptors.response.use(
       } catch (refreshError) {
         isRefreshing = false;
         processQueue(refreshError);
-        if (!isPublicPath) {
+        const refreshStatus = refreshError.response?.status;
+        const isAuthFailure = refreshStatus === 401 || refreshStatus === 403;
+        if (isAuthFailure && !isPublicPath) {
           localStorage.removeItem('activeClientId');
           window.location.replace('/login');
         }
