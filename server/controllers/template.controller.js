@@ -144,6 +144,7 @@ function snapshotOf(template, note, byUser) {
        keeping both would store every item of this snapshot a third time. Ten snapshots of
        that filled a document that only ever holds one design. */
     sections: plain(template.sections),
+    brandKit: plain(template.brandKit),
     editorVersion: storedEditorVersion(template),
     size: normalizeTemplateSize(template.size),
     note: sanitizeString(note || 'Edited').trim().slice(0, 120),
@@ -359,7 +360,10 @@ export async function updateTemplate(req, res, next) {
 
     /* Items that were not sent keep their stored state: renaming a template must not
        re-measure what an admin already placed. */
-    const brandKit = await brandKitFor(req);
+    const baseBrandKit = await brandKitFor(req);
+    const brandKit = req.body.brandKit !== undefined
+      ? (req.body.brandKit ? { ...baseBrandKit, ...plain(req.body.brandKit) } : baseBrandKit)
+      : (template.brandKit ? { ...baseBrandKit, ...plain(template.brandKit) } : baseBrandKit);
     const elements =
       req.body.elements !== undefined
         ? cleanItemsFor(req, req.body.elements, { brandKit, size })

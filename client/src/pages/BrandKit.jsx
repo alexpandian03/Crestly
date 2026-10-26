@@ -510,17 +510,17 @@ export default function BrandKit() {
               ...(selectedTemplate.sections?.content || {}),
               page: {
                 ...(selectedTemplate.sections?.content?.page || {}),
-                background: kit.content?.background || selectedTemplate.sections?.content?.page?.background,
+                background: kit.content?.background ? { ...kit.content.background, mode: "custom" } : selectedTemplate.sections?.content?.page?.background,
               },
               elements: selectedTemplate.sections?.content?.elements || selectedTemplate.elements || [],
             },
           },
           page: {
             ...(selectedTemplate.page || {}),
-            background: kit.content?.background || selectedTemplate.page?.background,
+            background: kit.content?.background ? { ...kit.content.background, mode: "custom" } : selectedTemplate.page?.background,
           },
         };
-        const response = await api.put(`/templates/${templateIdOf(selectedTemplate)}`, payload);
+        const response = await api.patch(`/templates/${templateIdOf(selectedTemplate)}`, payload);
         if (!response.data?.success) throw new Error(response.data?.error?.message || "Failed to save template brand kit");
         const updated = response.data.data.template;
         setTemplates((prev) => prev.map((t) => templateIdOf(t) === templateIdOf(updated) ? updated : t));

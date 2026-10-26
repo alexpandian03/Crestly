@@ -441,7 +441,8 @@ export default function Generate() {
         if (designMode === MODE_AI) {
           nextDesign = aiDesignOf(
             res.data.data.design,
-            designSizeFor(selectedTemplate, brandKit),
+            designSizeFor(selectedTemplate, activeBaseKit),
+            selectedTemplate,
           );
           if (nextDesign) {
             const id = nextDesign.template.archetype || nextDesign.template.recipeId;

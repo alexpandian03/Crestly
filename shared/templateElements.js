@@ -717,7 +717,7 @@ export function effectivePage(brandKit, template) {
   const content = kit.content || {};
   const page = tpl.page || {};
 
-  const customBg = page.background?.mode === 'custom';
+  const customBg = page.background?.mode === 'custom' || Boolean(page.background?.imageUrl) || (page.background?.type && page.background.type !== 'color');
   const customDec = page.decoration?.mode === 'custom';
   const customWatermark = page.watermark?.mode === 'custom';
   const customCard = page.infoCard?.mode === 'custom';

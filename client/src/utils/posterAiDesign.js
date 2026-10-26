@@ -100,11 +100,28 @@ export function designSizeFor(template, brandKit) {
 }
 
 /** The look an assistant-made poster is drawn with, before the server stores a snapshot. */
-export function aiDesignOf(answer, size) {
-  const items = Array.isArray(answer?.template?.elements) ? answer.template.elements : [];
+export function aiDesignOf(answer, size, sourceTemplate = null) {
+  const items = Array.isArray(answer?.template?.elements)
+    ? answer.template.elements
+    : (Array.isArray(answer?.elements) ? answer.elements : []);
   if (items.length === 0) return null;
+  const header = answer?.template?.header || answer?.sections?.header || answer?.header || sourceTemplate?.sections?.header || sourceTemplate?.header;
+  const footer = answer?.template?.footer || answer?.sections?.footer || answer?.footer || sourceTemplate?.sections?.footer || sourceTemplate?.footer;
+  const brandKit = answer?.template?.brandKit || answer?.brandKit || sourceTemplate?.brandKit;
+  const page = answer?.template?.page || answer?.page || sourceTemplate?.sections?.content?.page || sourceTemplate?.page;
+  const sections = {
+    ...(sourceTemplate?.sections || {}),
+    ...(answer?.template?.sections || answer?.sections || {}),
+    ...(header ? { header } : {}),
+    ...(footer ? { footer } : {}),
+    content: {
+      elements: items,
+      ...(page ? { page } : {}),
+    },
+  };
   return {
     capturedAt: new Date().toISOString(),
+    ...(brandKit ? { brandKit } : {}),
     template: {
       name: String(answer?.template?.name || AI_DESIGN_NAME),
       editorVersion: EDITOR_VERSION,
@@ -120,6 +137,11 @@ export function aiDesignOf(answer, size) {
         ? Number(answer.recipeVersion)
         : undefined,
       icon: answer?.icon,
+      sections,
+      header,
+      footer,
+      page,
+      ...(brandKit ? { brandKit } : {}),
     },
   };
 }

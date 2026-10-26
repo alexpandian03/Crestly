@@ -315,7 +315,7 @@ export function resolvePosterBrand(brandKit, template) {
     ? { ...template, page: template.sections.content.page }
     : template;
   const page = effectivePage(kit, normalizedTemplate);
-  const customBg = normalizedTemplate?.page?.background?.mode === 'custom';
+  const customBg = normalizedTemplate?.page?.background?.mode === 'custom' || Boolean(normalizedTemplate?.page?.background?.imageUrl) || (normalizedTemplate?.page?.background?.type && normalizedTemplate?.page?.background?.type !== 'color');
   const customDec = normalizedTemplate?.page?.decoration?.mode === 'custom';
   const customWatermark = normalizedTemplate?.page?.watermark?.mode === 'custom';
   const customCard = normalizedTemplate?.page?.infoCard?.mode === 'custom';
