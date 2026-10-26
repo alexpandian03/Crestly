@@ -116,6 +116,31 @@ export default function DesignChooser({
         })}
       </div>
 
+      {mode === "ai" && templates.length > 1 && (
+        <div className="rounded-[6px] border border-[#E5E7EB] bg-white p-3 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <label htmlFor="ai-template-select" className="text-xs font-medium text-[#111827]">
+              Brand header &amp; style
+            </label>
+            <span className="text-[11px] text-[#6B7280]">
+              From layout
+            </span>
+          </div>
+          <select
+            id="ai-template-select"
+            value={selectedTemplateId || ""}
+            onChange={(e) => onSelectTemplate(e.target.value)}
+            className="w-full text-xs rounded-[6px] border border-[#D1D5DB] bg-white px-2.5 py-1.5 text-[#111827] focus:border-[#2563EB] focus:outline-none"
+          >
+            {templates.map((t) => (
+              <option key={templateId(t)} value={templateId(t)}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {mode === "template" && (
         <div className="rounded-[6px] border border-[#E5E7EB] bg-white p-3 space-y-2.5">
           <div className="flex items-center justify-between gap-2">

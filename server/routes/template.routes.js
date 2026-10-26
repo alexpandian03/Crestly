@@ -46,6 +46,14 @@ router.get('/', requireAuth, requirePermission('templates:read'), tenantGuard, g
 router.get('/:id', requireAuth, requirePermission('templates:read'), tenantGuard, validateParams(templateParamsSchema), getTemplateById);
 
 router.post('/', adminOnly, smallBody, validateBody(createTemplateSchemaFor), createTemplate);
+router.put(
+  '/:id',
+  adminOnly,
+  validateParams(templateParamsSchema),
+  smallBody,
+  validateBody(updateTemplateSchemaFor),
+  updateTemplate
+);
 router.patch(
   '/:id',
   adminOnly,

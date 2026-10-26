@@ -3,8 +3,6 @@ import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   ExternalLink,
-  Plus,
-  Trash2,
   Wand2,
   X,
 } from "lucide-react";
@@ -18,7 +16,6 @@ import {
   Field,
   SectionCard,
   Select,
-  SOCIAL_OPTIONS,
   TextInput,
   TextStyleEditor,
   Toggle,
@@ -123,15 +120,6 @@ function blankKit() {
 const primaryLogoUrl = (kit) =>
   kit?.logos?.find((l) => l?.isPrimary)?.url || kit?.logos?.[0]?.url || "";
 
-function socialLabel(platform) {
-  const labels = {
-    x: "X",
-    whatsapp: "WhatsApp",
-    youtube: "YouTube",
-    linkedin: "LinkedIn",
-  };
-  return labels[platform] || platform;
-}
 
 const TAB_TRIGGER =
   "h-10 px-0 pb-3 text-sm font-medium text-[#6B7280] hover:text-[#111827] border-b-2 border-transparent data-[state=active]:border-[#2563EB] data-[state=active]:text-[#111827] rounded-none bg-transparent shadow-none data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-colors shrink-0";
@@ -188,6 +176,49 @@ function BandStrip({ band, brandKit, posterSize, posterTemplate }) {
   );
 }
 
+function kitForSelection(tpl, base) {
+  if (!tpl) return clone(base);
+  const tKit = tpl.brandKit || {};
+  const merged = {
+    ...clone(base || {}),
+    ...clone(tKit),
+    colors: { ...(base?.colors || {}), ...(tKit.colors || {}) },
+    fonts: { ...(base?.fonts || {}), ...(tKit.fonts || {}) },
+    textStyle: { ...(base?.textStyle || {}), ...(tKit.textStyle || {}) },
+    logos: Array.isArray(tKit.logos) && tKit.logos.length > 0 ? tKit.logos : (base?.logos || []),
+    orgName: tKit.orgName || base?.orgName || "",
+    content: {
+      ...(base?.content || {}),
+      ...(tKit.content || {}),
+      background:
+        tpl.sections?.content?.page?.background ||
+        tpl.page?.background ||
+        tKit.content?.background ||
+        base?.content?.background,
+    },
+    defaultPosterSize: tpl.size || tKit.defaultPosterSize || base?.defaultPosterSize,
+  };
+  if (tpl.sections?.header?.elements?.length > 0 || tpl.sections?.header?.mode === 'custom') {
+    merged.header = {
+      ...(merged.header || {}),
+      mode: 'elements',
+      height: tpl.sections.header.height ?? merged.header?.height ?? 80,
+      background: tpl.sections.header.background || merged.header?.background,
+      elements: tpl.sections.header.elements || [],
+    };
+  }
+  if (tpl.sections?.footer?.elements?.length > 0 || tpl.sections?.footer?.mode === 'custom') {
+    merged.footer = {
+      ...(merged.footer || {}),
+      mode: 'elements',
+      height: tpl.sections.footer.height ?? merged.footer?.height ?? 70,
+      background: tpl.sections.footer.background || merged.footer?.background,
+      elements: tpl.sections.footer.elements || [],
+    };
+  }
+  return merged;
+}
+
 export default function BrandKit() {
   const navigate = useNavigate();
   const { user, activeClientId } = useAuth();
@@ -198,6 +229,8 @@ export default function BrandKit() {
   const [saved, setSaved] = useState(null);
   const [templates, setTemplates] = useState([]);
   const [template, setTemplate] = useState(FALLBACK_TEMPLATE);
+  const [baseKit, setBaseKit] = useState(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [saving, setSaving] = useState(false);
   const [pendingPreset, setPendingPreset] = useState(null);
   const [presetsOpen, setPresetsOpen] = useState(false);
@@ -255,15 +288,21 @@ export default function BrandKit() {
         nextKit = kitResult.data.data.brandKit;
       }
 
+      setBaseKit(nextKit);
       const list = templatesResult?.data?.data?.templates;
       if (Array.isArray(list) && list.length > 0) {
         setTemplates(list);
-        /* The preview opens on a layout the team can actually use. */
-        setTemplate(list.find((t) => t.isActive !== false) || list[0]);
+        const initial = list.find((t) => t.isActive !== false) || list[0];
+        const initialId = templateIdOf(initial);
+        setSelectedTemplateId(initialId);
+        setTemplate(initial);
+        const initialKit = kitForSelection(initial, nextKit);
+        setKit(initialKit);
+        setSaved(clone(initialKit));
+      } else {
+        setKit(nextKit);
+        setSaved(clone(nextKit));
       }
-
-      setKit(nextKit);
-      setSaved(clone(nextKit));
       setLoading(false);
     }
 
@@ -273,11 +312,31 @@ export default function BrandKit() {
     };
   }, [activeClientId, user?.clientId]);
 
-  /* Only the layouts a team can actually use are offered for the preview. */
+  /* All templates from the Templates page are offered for preview and choosing. */
   const previewTemplates = useMemo(() => {
-    const active = templates.filter((t) => t.isActive !== false);
-    return active.length > 0 ? active : templates;
+    return templates || [];
   }, [templates]);
+
+  const selectedTemplate = useMemo(() => {
+    if (!selectedTemplateId) return null;
+    return (templates || []).find((t) => templateIdOf(t) === selectedTemplateId) || null;
+  }, [templates, selectedTemplateId]);
+
+  const handleTemplateSelect = (newId) => {
+    if (dirty) {
+      const curName = selectedTemplate ? selectedTemplate.name : "Organization default";
+      if (!window.confirm(`You have unsaved changes for ${curName}. Discard them and switch?`)) {
+        return;
+      }
+    }
+    setSelectedTemplateId(newId);
+    const nextTemplate = (templates || []).find((t) => templateIdOf(t) === newId) || null;
+    setTemplate(nextTemplate || FALLBACK_TEMPLATE);
+    const nextKit = kitForSelection(nextTemplate, baseKit);
+    setKit(nextKit);
+    setSaved(clone(nextKit));
+    setSaveError("");
+  };
 
   const dirty = useMemo(() => {
     if (!kit || !saved) return false;
@@ -322,16 +381,6 @@ export default function BrandKit() {
         [sub]: { ...(prev[section]?.[sub] || {}), ...over },
       },
     }));
-
-  /** Social rows are edited as a list, so always rebuild from the newest state. */
-  const updateSocial = (transform) =>
-    setKit((prev) => {
-      const rows = Array.isArray(prev.footer?.social) ? prev.footer.social : [];
-      return {
-        ...prev,
-        footer: { ...(prev.footer || {}), social: transform(rows) },
-      };
-    });
 
   /** Put one or more blocks of the form back to their saved values. */
   const resetSection = (...sections) => {
@@ -426,27 +475,66 @@ export default function BrandKit() {
       setSaveError("Add the organization name before saving.");
       return;
     }
-    const email = String(kit.footer?.email || "").trim();
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
-      setSaveError(
-        "That email address looks incomplete. Write it like name@organization.com",
-      );
-      return;
+    setSaving(true);
+    setSaveError("");
+    try {
+      if (selectedTemplate) {
+        const payload = {
+          expectedVersion: selectedTemplate.version,
+          brandKit: {
+            colors: kit.colors,
+            fonts: kit.fonts,
+            preset: kit.preset,
+            textStyle: kit.textStyle,
+            content: kit.content,
+            logos: kit.logos,
+            orgName: kit.orgName,
+            header: kit.header,
+            footer: kit.footer,
+          },
+          sections: {
+            ...(selectedTemplate.sections || {}),
+            header: kit.header?.elements?.length > 0 ? {
+              mode: "custom",
+              height: kit.header.height ?? selectedTemplate.sections?.header?.height ?? 80,
+              background: kit.header.background ?? selectedTemplate.sections?.header?.background,
+              elements: kit.header.elements,
+            } : (selectedTemplate.sections?.header || { mode: "brand" }),
+            footer: kit.footer?.elements?.length > 0 ? {
+              mode: "custom",
+              height: kit.footer.height ?? selectedTemplate.sections?.footer?.height ?? 70,
+              background: kit.footer.background ?? selectedTemplate.sections?.footer?.background,
+              elements: kit.footer.elements,
+            } : (selectedTemplate.sections?.footer || { mode: "brand" }),
+            content: {
+              ...(selectedTemplate.sections?.content || {}),
+              page: {
+                ...(selectedTemplate.sections?.content?.page || {}),
+                background: kit.content?.background ? { ...kit.content.background, mode: "custom" } : selectedTemplate.sections?.content?.page?.background,
+              },
+              elements: selectedTemplate.sections?.content?.elements || selectedTemplate.elements || [],
+            },
+          },
+          page: {
+            ...(selectedTemplate.page || {}),
+            background: kit.content?.background ? { ...kit.content.background, mode: "custom" } : selectedTemplate.page?.background,
+          },
+        };
+        const response = await api.patch(`/templates/${templateIdOf(selectedTemplate)}`, payload);
+        if (!response.data?.success) throw new Error(response.data?.error?.message || "Failed to save template brand kit");
+        const updated = response.data.data.template;
+        setTemplates((prev) => prev.map((t) => templateIdOf(t) === templateIdOf(updated) ? updated : t));
+        setTemplate(updated);
+        setSaved(clone(kit));
+        toast.success(`Saved brand kit for ${selectedTemplate.name}.`);
+      } else {
+        await persist(kit);
+      }
+    } catch (err) {
+      setSaveError(friendlyError(err, "The brand kit could not be saved. Please try again."));
+    } finally {
+      setSaving(false);
     }
-    const badSocial = (
-      Array.isArray(kit.footer?.social) ? kit.footer.social : []
-    ).some(
-      (row) =>
-        String(row?.url || "").trim() !== "" &&
-        !/^https:\/\//i.test(String(row.url).trim()),
-    );
-    if (badSocial) {
-      setSaveError(
-        "Social links must start with https:// — for example https://instagram.com/yourname",
-      );
-      return;
-    }
-    await persist(kit);
   };
 
   const handleDiscard = () => {
@@ -520,7 +608,6 @@ export default function BrandKit() {
   const content = kit.content || {};
   const footer = kit.footer || {};
   const colors = kit.colors || {};
-  const social = Array.isArray(footer.social) ? footer.social : [];
   const logoUrl = primaryLogoUrl(kit);
   const posterName = header.orgName?.text || kit.orgName || "Organization name";
 
@@ -551,11 +638,15 @@ export default function BrandKit() {
             <h1 className="text-[24px] font-semibold text-[#111827] leading-tight">
               Brand kit
             </h1>
-            <p className="text-xs sm:text-sm text-[#6B7280] mt-0.5">
-              {kit.orgName || "This organization"} · everything here is locked
-              onto every poster, so the assistant only writes the words in the
-              middle.
-            </p>
+            {selectedTemplate ? (
+              <p className="text-xs sm:text-sm text-[#6B7280] mt-0.5">
+                Customizing brand kit for <strong className="text-[#111827] font-semibold">{selectedTemplate.name}</strong>. Changes apply only to this template.
+              </p>
+            ) : (
+              <p className="text-xs sm:text-sm text-[#6B7280] mt-0.5">
+                {kit.orgName || "This organization"} · organization default locked onto posters that do not use a custom template brand kit.
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-3 shrink-0">
             {dirty ? (
@@ -584,7 +675,7 @@ export default function BrandKit() {
               disabled={saving}
               className="h-9 px-4 rounded-[6px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-medium shadow-none disabled:opacity-50"
             >
-              {saving ? "Saving…" : "Save brand kit"}
+              {saving ? "Saving…" : selectedTemplate ? `Save for ${selectedTemplate.name}` : "Save brand kit"}
             </Button>
           </div>
         </div>
@@ -623,7 +714,7 @@ export default function BrandKit() {
               className="h-10 p-0 gap-6 bg-transparent flex justify-start min-w-max border-b-0 whitespace-nowrap"
             >
               <TabsTrigger value="identity" className={TAB_TRIGGER}>
-                Identity and contact
+                Identity
               </TabsTrigger>
               <TabsTrigger value="colors-fonts" className={TAB_TRIGGER}>
                 Colours and fonts
@@ -644,7 +735,7 @@ export default function BrandKit() {
                 <SectionCard
                   title="Organization identity"
                   desc="The name and mark that appear on every poster this organization creates."
-                  onReset={() => resetSection(["orgName", "logos", "header"])}
+                  onReset={() => resetSection(["orgName", "logos"])}
                 >
                   <TextInput
                     id="orgName"
@@ -667,212 +758,6 @@ export default function BrandKit() {
                       })
                     }
                     hint="A transparent PNG works best. It is used at the top of every poster and, if you switch it on, as a faint watermark."
-                  />
-                  <BrandImageField
-                    label="Header background photo"
-                    kind="header"
-                    value={header.background?.imageUrl || ""}
-                    boxClass="h-32"
-                    onChange={(url) =>
-                      setSub("header", "background", {
-                        imageUrl: url,
-                        type: url
-                          ? "image"
-                          : header.background?.type === "image"
-                          ? "color"
-                          : header.background?.type || "color",
-                      })
-                    }
-                    hint="A background image that sits behind the logo and name at the top of every poster."
-                  />
-                  <div className="space-y-3 pt-1">
-                    <Toggle
-                      label="Show the logo"
-                      checked={header.logo?.show !== false}
-                      onChange={(next) => setSub("header", "logo", { show: next })}
-                    />
-                    <Toggle
-                      label="Show the organization name"
-                      checked={header.orgName?.show !== false}
-                      onChange={(next) =>
-                        setSub("header", "orgName", { show: next })
-                      }
-                    />
-                    <TextInput
-                      id="headerName"
-                      label="Name printed at the top of the poster"
-                      value={header.orgName?.text ?? ""}
-                      maxLength={100}
-                      placeholder={kit.orgName || "Organization name"}
-                      hint="Usually the organization name. Use a shorter form if the full name is long."
-                      onChange={(next) =>
-                        setSub("header", "orgName", { text: next })
-                      }
-                    />
-                    <Toggle
-                      label="Show a tagline under the name"
-                      checked={Boolean(header.tagline?.show)}
-                      onChange={(next) =>
-                        setSub("header", "tagline", { show: next })
-                      }
-                    />
-                    {header.tagline?.show && (
-                      <TextInput
-                        id="tagline"
-                        label="Tagline"
-                        value={header.tagline?.text ?? ""}
-                        maxLength={80}
-                        placeholder="e.g. Serving the community since 1998"
-                        onChange={(next) =>
-                          setSub("header", "tagline", { text: next })
-                        }
-                      />
-                    )}
-                  </div>
-                </SectionCard>
-
-                <SectionCard
-                  title="Contact details"
-                  desc="Only what you fill in is printed at the bottom of a poster. Empty lines are left out."
-                  onReset={() => resetSection("footer")}
-                >
-                  <TextInput
-                    id="address"
-                    label="Address"
-                    value={footer.address ?? ""}
-                    maxLength={120}
-                    placeholder="e.g. 12 Harbour Square, Bristol"
-                    onChange={(next) => setSection("footer", { address: next })}
-                  />
-                  <div className="grid grid-cols-2 gap-4">
-                    <TextInput
-                      id="phone"
-                      label="Phone"
-                      value={footer.phone ?? ""}
-                      maxLength={40}
-                      placeholder="e.g. +44 20 7946 0102"
-                      onChange={(next) => setSection("footer", { phone: next })}
-                    />
-                    <TextInput
-                      id="email"
-                      type="email"
-                      label="Email"
-                      value={footer.email ?? ""}
-                      maxLength={120}
-                      placeholder="hello@organization.com"
-                      onChange={(next) => setSection("footer", { email: next })}
-                    />
-                  </div>
-                  <TextInput
-                    id="website"
-                    label="Website"
-                    value={footer.website ?? ""}
-                    maxLength={120}
-                    placeholder="e.g. organization.com"
-                    onChange={(next) => setSection("footer", { website: next })}
-                  />
-                  <div className="pt-2 space-y-2 border-t border-[#E5E7EB]">
-                    <label className="text-[13px] font-medium text-[#111827] block">
-                      Social profiles ({social.length} of 6)
-                    </label>
-                    {social.map((row, index) => (
-                      <div key={index} className="flex items-end gap-2">
-                        <div className="w-[132px] shrink-0">
-                          <Select
-                            label={index === 0 ? "Network" : undefined}
-                            value={row.platform || "facebook"}
-                            options={SOCIAL_OPTIONS.map((item) => ({
-                              value: item,
-                              label: socialLabel(item),
-                            }))}
-                            onChange={(next) =>
-                              updateSocial((rows) =>
-                                rows.map((item, at) =>
-                                  at === index
-                                    ? { ...item, platform: next }
-                                    : item,
-                                ),
-                              )
-                            }
-                          />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <TextInput
-                            label={index === 0 ? "Profile link" : undefined}
-                            type="url"
-                            value={row.url ?? ""}
-                            maxLength={300}
-                            placeholder="https://..."
-                            onChange={(next) =>
-                              updateSocial((rows) =>
-                                rows.map((item, at) =>
-                                  at === index
-                                    ? { ...item, url: next }
-                                    : item,
-                                ),
-                              )
-                            }
-                          />
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          aria-label="Remove this social link"
-                          onClick={() =>
-                            updateSocial((rows) =>
-                              rows.filter((_, at) => at !== index),
-                            )
-                          }
-                          className="h-9 w-9 border border-[#E5E7EB] shrink-0 text-[#6B7280] hover:text-[#DC2626] mb-0.5"
-                        >
-                          <Trash2 size={14} />
-                        </Button>
-                      </div>
-                    ))}
-                    {social.length < 6 && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() =>
-                          updateSocial((rows) => [
-                            ...rows,
-                            { platform: "facebook", url: "" },
-                          ])
-                        }
-                        className="h-8 border-dashed border-[#D1D5DB] text-xs font-medium text-[#111827] hover:bg-[#F9FAFB] gap-1.5"
-                      >
-                        <Plus size={14} />
-                        <span>Add social link</span>
-                      </Button>
-                    )}
-                  </div>
-                  <TextInput
-                    id="legal"
-                    label="Fine print"
-                    value={footer.legalText ?? ""}
-                    maxLength={160}
-                    placeholder="e.g. © 2026 Northbridge Foundation. Registered charity."
-                    onChange={(next) =>
-                      setSection("footer", { legalText: next })
-                    }
-                  />
-                  <BrandImageField
-                    label="Footer background photo"
-                    kind="footer"
-                    value={footer.background?.imageUrl || ""}
-                    boxClass="h-28"
-                    onChange={(url) =>
-                      setSub("footer", "background", {
-                        imageUrl: url,
-                        type: url
-                          ? "image"
-                          : footer.background?.type === "image"
-                          ? "color"
-                          : footer.background?.type || "color",
-                      })
-                    }
-                    hint="A background image that sits behind your contact details at the bottom of every poster."
                   />
                 </SectionCard>
 
@@ -898,7 +783,7 @@ export default function BrandKit() {
                     hint="Used whenever a poster is created without a photo."
                   />
                   <BrandImageField
-                    label="Content area background photo"
+                    label="Whole poster background photo"
                     kind="content"
                     value={content.background?.imageUrl || ""}
                     boxClass="h-40"
@@ -912,7 +797,7 @@ export default function BrandKit() {
                           : content.background?.type || "color",
                       })
                     }
-                    hint="A background photo that sits behind the middle content area of every poster."
+                    hint="A background image that covers the entire poster from top to bottom, including header, content area, and footer."
                   />
                   <div className="grid grid-cols-2 gap-4">
                     <Field label="Width (px)">
@@ -1086,7 +971,7 @@ export default function BrandKit() {
                     />
                     <div className="col-span-2 pt-2 border-t border-[#E5E7EB]">
                       <BrandImageField
-                        label="Poster / content area background photo"
+                        label="Whole poster background photo"
                         kind="content"
                         value={content.background?.imageUrl || ""}
                         boxClass="h-32"
@@ -1100,7 +985,7 @@ export default function BrandKit() {
                               : content.background?.type || "color",
                           })
                         }
-                        hint="A background photo that sits behind the middle content of every poster."
+                        hint="A background image that covers the entire poster from top to bottom, including header, content area, and footer."
                       />
                     </div>
                   </div>
@@ -1244,7 +1129,11 @@ export default function BrandKit() {
                         <Button
                           type="button"
                           onClick={() =>
-                            navigate(`/brand-layer/edit?section=${card.kind}`)
+                            navigate(
+                              selectedTemplate
+                                ? `/templates/${templateIdOf(selectedTemplate)}/edit?section=${card.kind}`
+                                : `/brand-layer/edit?section=${card.kind}`
+                            )
                           }
                           disabled={dirty || saving}
                           className="h-9 px-4 rounded-[6px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-medium shadow-none disabled:opacity-50"
@@ -1286,46 +1175,12 @@ export default function BrandKit() {
                     </p>
                     {previewTemplates.length > 0 && (
                       <select
-                        value={templateIdOf(template) || ""}
-                        onChange={(e) => {
-                          const found = previewTemplates.find(
-                            (t) => templateIdOf(t) === e.target.value,
-                          );
-                          if (found) {
-                            setTemplate(found);
-                            // Apply custom header and footer from the chosen template to kit so Save persists it
-                            setKit((prev) => {
-                              if (!prev) return prev;
-                              const next = { ...prev };
-                              let changed = false;
-                              for (const kind of ["header", "footer"]) {
-                                const tBand = found.sections?.[kind];
-                                if (
-                                  tBand &&
-                                  (tBand.mode === "custom" ||
-                                    (Array.isArray(tBand.elements) &&
-                                      tBand.elements.length > 0))
-                                ) {
-                                  next[kind] = {
-                                    ...(next[kind] || {}),
-                                    mode: "elements",
-                                    height:
-                                      tBand.height ?? next[kind]?.height,
-                                    background:
-                                      tBand.background ||
-                                      next[kind]?.background,
-                                    elements: tBand.elements || [],
-                                  };
-                                  changed = true;
-                                }
-                              }
-                              return changed ? next : prev;
-                            });
-                          }
-                        }}
-                        aria-label="Preview with template"
-                        className="text-xs py-1 px-2 rounded-[6px] border border-[#E5E7EB] bg-white text-[#111827] max-w-[150px] truncate outline-none focus:border-[#2563EB]"
+                        value={selectedTemplateId}
+                        onChange={(e) => handleTemplateSelect(e.target.value)}
+                        aria-label="Choose template to customize brand kit"
+                        className="text-xs py-1 px-2 rounded-[6px] border border-[#E5E7EB] bg-white text-[#111827] max-w-[170px] truncate outline-none focus:border-[#2563EB]"
                       >
+                        <option value="">Organization default</option>
                         {previewTemplates.map((t) => (
                           <option
                             key={templateIdOf(t) || t.name}
@@ -1336,9 +1191,9 @@ export default function BrandKit() {
                         ))}
                       </select>
                     )}
-                    {templateIdOf(template) ? (
+                    {selectedTemplate && templateIdOf(selectedTemplate) ? (
                       <a
-                        href={`/templates/${templateIdOf(template)}/edit`}
+                        href={`/templates/${templateIdOf(selectedTemplate)}/edit`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 text-[11px] font-medium text-[#2563EB] hover:underline"
@@ -1355,7 +1210,9 @@ export default function BrandKit() {
                 </div>
 
                 <p className="text-[11px] text-[#6B7280]">
-                  Choosing a layout here sets its header &amp; footer for your brand kit when you click &ldquo;Save brand kit&rdquo;.
+                  {selectedTemplate
+                    ? `Editing brand kit for ${selectedTemplate.name}. Changes saved here apply only to this template.`
+                    : "Editing organization default brand kit."}
                 </p>
 
                 <TemplatePreview

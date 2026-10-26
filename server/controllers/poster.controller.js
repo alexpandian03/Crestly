@@ -31,6 +31,34 @@ import { composeDesignBatch, resolvePagedOptions, deriveNextSeed, TOTAL_PAGING_D
 import { generateAiChoices } from '../services/ai/choices.js';
 import { createRuleBasedChoices } from '../../shared/aiChoices.js';
 
+function attachTemplateContext(built, template) {
+  if (!built || !template) return;
+  if (template.sections?.header || template.header) {
+    const hdr = template.sections?.header || template.header;
+    built.sections = { ...(built.sections || {}), header: hdr };
+    built.header = hdr;
+  }
+  if (template.sections?.footer || template.footer) {
+    const ftr = template.sections?.footer || template.footer;
+    built.sections = { ...(built.sections || {}), footer: ftr };
+    built.footer = ftr;
+  }
+  if (template.brandKit) {
+    built.brandKit = template.brandKit;
+  }
+  const bg = template.page?.background || template.sections?.content?.page?.background;
+  if (bg) {
+    built.page = { ...(built.page || {}), background: bg };
+    built.sections = {
+      ...(built.sections || {}),
+      content: {
+        ...(built.sections?.content || {}),
+        page: { ...(built.sections?.content?.page || {}), background: bg },
+      },
+    };
+  }
+}
+
 /**
  * POST /api/posters/generate with mode "ai": one whole design taken from a recipe, plus the
  * words that go on it. Whether this mode is open is the organization's setting, not the user's.
@@ -59,6 +87,9 @@ async function generateFromRecipe(req, res, { templateId, prompt, instruction, a
     const template = templateId
       ? await Template.findOne(scopedFilter(req, { _id: templateId, isActive: true })).lean()
       : await Template.findOne(scopedFilter(req, { isActive: true })).sort({ createdAt: 1 }).lean();
+    if (template?.brandKit) {
+      brandKit = { ...brandKit, ...template.brandKit };
+    }
     const size = template?.size || brandKit.defaultPosterSize || TEMPLATE_SIZE_DEFAULT;
 
     let answer;
@@ -83,6 +114,7 @@ async function generateFromRecipe(req, res, { templateId, prompt, instruction, a
         brandKit,
         size,
       });
+      attachTemplateContext(built, template);
       if (content.extras) {
         const slots = variableSlotsOf(built.elements || []);
         const offered = new Set(slots.texts.map((s) => s.key));
@@ -118,7 +150,8 @@ async function generateFromRecipe(req, res, { templateId, prompt, instruction, a
           brandKit,
           size,
         });
-        if (content.extras) {
+        attachTemplateContext(built, template);
+      if (content.extras) {
           const slots = variableSlotsOf(built.elements || []);
           const offered = new Set(slots.texts.map((s) => s.key));
           const pruned = {};
@@ -608,10 +641,16 @@ function posterScope(req, extra = {}) {
  * from the body except the recipe's name, arrangement and mark.
  */
 async function startingDesign(req, template, recipe, content) {
-  const brandKit = await BrandKit.findOne(scopedFilter(req)).lean();
+  let brandKit = await BrandKit.findOne(scopedFilter(req)).lean();
+  if (template?.brandKit) {
+    brandKit = { ...brandKit, ...template.brandKit };
+  }
   const built = recipe
     ? buildRecipeDesign({ recipe, content, brandKit, size: template.size })
     : template;
+  if (recipe && template) {
+    attachTemplateContext(built, template);
+  }
   return captureDesign({ brandKit, template: built });
 }
 
@@ -626,25 +665,29 @@ function plainDesign(design) {
  * kit rather than falling back to the organization's template.
  */
 async function designForPoster(req, poster, template) {
-  const brandKit = await BrandKit.findOne(scopedFilter(req)).lean();
+  let brandKit = await BrandKit.findOne(scopedFilter(req)).lean();
+  if (template?.brandKit) {
+    brandKit = { ...brandKit, ...template.brandKit };
+  }
   const stored = plainDesign(poster.design)?.template;
   const rawKey = stored?.archetype || stored?.recipeId || poster.archetype || poster.recipeId;
   if (rawKey) {
     const canonical = designById(rawKey)?.id || rawKey;
-    return captureDesign({
+    const built = buildRecipeDesign({
+      recipe: {
+        recipeId: canonical,
+        archetype: canonical,
+        variant: stored?.variant ?? poster.variant ?? 0,
+        icon: stored?.icon ?? poster.icon,
+      },
+      content: poster.content,
       brandKit,
-      template: buildRecipeDesign({
-        recipe: {
-          recipeId: canonical,
-          archetype: canonical,
-          variant: stored?.variant ?? poster.variant ?? 0,
-          icon: stored?.icon ?? poster.icon,
-        },
-        content: poster.content,
-        brandKit,
-        size: stored?.size,
-      }),
+      size: stored?.size,
     });
+    if (template || stored) {
+      attachTemplateContext(built, template || stored);
+    }
+    return captureDesign({ brandKit, template: built });
   }
   return captureDesign({ brandKit, template: template || stored || null });
 }

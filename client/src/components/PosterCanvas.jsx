@@ -1183,7 +1183,14 @@ function HeaderBand({ brand }) {
         zIndex: 20,
       }}
     >
-      <BandBackground bg={h.bg} ink={brand.content.decorationColor} scale={brand.scale} />
+      {(() => {
+        const wholePosterBgActive = Boolean(brand?.content?.bgFullBleed && brand?.content?.bg?.imageUrl);
+        const bandHasOwnImage = h.bg?.type === 'image' && Boolean(h.bg?.imageUrl);
+        const effectiveBg = wholePosterBgActive && !bandHasOwnImage
+          ? { ...h.bg, type: 'color', color: 'transparent', overlayOpacity: 0 }
+          : h.bg;
+        return <BandBackground bg={effectiveBg} ink={brand.content.decorationColor} scale={brand.scale} />;
+      })()}
       <div style={{ position: 'relative', zIndex: 1, width: '100%', minWidth: 0 }}>{inner}</div>
     </div>
   );
@@ -1281,7 +1288,14 @@ function FooterBand({ brand }) {
         zIndex: 20,
       }}
     >
-      <BandBackground bg={f.bg} ink={brand.content.decorationColor} scale={brand.scale} />
+      {(() => {
+        const wholePosterBgActive = Boolean(brand?.content?.bgFullBleed && brand?.content?.bg?.imageUrl);
+        const bandHasOwnImage = f.bg?.type === 'image' && Boolean(f.bg?.imageUrl);
+        const effectiveBg = wholePosterBgActive && !bandHasOwnImage
+          ? { ...f.bg, type: 'color', color: 'transparent', overlayOpacity: 0 }
+          : f.bg;
+        return <BandBackground bg={effectiveBg} ink={brand.content.decorationColor} scale={brand.scale} />;
+      })()}
       <div style={{ position: 'relative', zIndex: 1, width: '100%', minWidth: 0 }}>
         <div
           style={{
@@ -1344,7 +1358,12 @@ function CustomBand({
   const bandH = band?.height ?? (isHeader ? 80 : 70);
   const bandY = isHeader ? 0 : height - bandH;
 
-  const bg = resolveBandBackground(band?.background, brandKit);
+  const rawBg = resolveBandBackground(band?.background, brandKit);
+  const wholePosterBgActive = Boolean(brand?.content?.bgFullBleed && brand?.content?.bg?.imageUrl);
+  const bandHasOwnImage = rawBg?.type === 'image' && Boolean(rawBg?.imageUrl);
+  const bg = wholePosterBgActive && !bandHasOwnImage
+    ? { ...rawBg, type: 'color', color: 'transparent', overlayOpacity: 0 }
+    : rawBg;
   const elements = (band?.elements || []).map((raw) => {
     let item = resolveStyleTokens(raw, brandKit);
     if (typeof item.text === 'string' && item.text.includes('{{')) {
@@ -1406,8 +1425,10 @@ export default function PosterCanvas({
   onSlotClick = null,
   isThumbnail = false,
 }) {
-  const effectiveBrandKit = content?.design?.brandKit || brandKit;
   const effectiveTemplate = template || content?.design?.template;
+  const templateBrandKit = effectiveTemplate?.brandKit;
+  const mergedBrandKit = templateBrandKit && typeof templateBrandKit === 'object' ? { ...brandKit, ...templateBrandKit } : brandKit;
+  const effectiveBrandKit = content?.design?.brandKit || mergedBrandKit;
   /* A brand kit that has laid its own bands out as items wins over the settings drawing; a kit
      nobody has touched still paints the header and footer from its settings, exactly as before. */
   const sections = useMemo(

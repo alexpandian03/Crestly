@@ -717,7 +717,7 @@ export function effectivePage(brandKit, template) {
   const content = kit.content || {};
   const page = tpl.page || {};
 
-  const customBg = page.background?.mode === 'custom';
+  const customBg = page.background?.mode === 'custom' || Boolean(page.background?.imageUrl) || (page.background?.type && page.background.type !== 'color');
   const customDec = page.decoration?.mode === 'custom';
   const customWatermark = page.watermark?.mode === 'custom';
   const customCard = page.infoCard?.mode === 'custom';
@@ -2597,7 +2597,9 @@ function templateCustomBand(template, kind) {
  * has to shrink to leave room between them.
  */
 export function resolveBands(brandKit, template) {
-  const kit = toPlain(brandKit) || {};
+  const templateKit = template?.brandKit && typeof template.brandKit === 'object' ? toPlain(template.brandKit) : null;
+  const baseKit = toPlain(brandKit) || {};
+  const kit = templateKit ? { ...baseKit, ...templateKit } : baseKit;
   const size = templateSizeOf(template);
   const kitDefaultHeight = templateSizeOf({ size: kit.defaultPosterSize }).height;
   const bands = {};

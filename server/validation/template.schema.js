@@ -296,6 +296,7 @@ const templateWriteSchema = (context) => ({
   header: sectionHeaderFooterSchema(context, 'header').optional(),
   footer: sectionHeaderFooterSchema(context, 'footer').optional(),
   content: sectionContentSchema(context).optional(),
+  brandKit: z.any().optional(),
   /** Event types this template is designed for. Empty array = applies to all types. */
   eventTypes: z
     .array(z.enum(EVENT_TYPE_IDS, { error: 'Unknown event type' }))
@@ -320,13 +321,14 @@ export const updateTemplateSchemaFor = (req) => {
       header: shape.header,
       footer: shape.footer,
       content: shape.content,
+      brandKit: shape.brandKit,
       eventTypes: shape.eventTypes,
       note: z.string().trim().max(120).optional(),
       expectedVersion: z.coerce.number().int().min(1, 'Invalid version number').optional(),
     })
     .refine(
       (value) =>
-        ['name', 'category', 'size', 'zones', 'layout', 'page', 'elements', 'sections', 'header', 'footer', 'content', 'eventTypes'].some(
+        ['name', 'category', 'size', 'zones', 'layout', 'page', 'elements', 'sections', 'header', 'footer', 'content', 'eventTypes', 'brandKit'].some(
           (key) => value[key] !== undefined
         ),
       { message: 'Provide at least one change' }
