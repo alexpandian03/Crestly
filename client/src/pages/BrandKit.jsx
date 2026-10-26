@@ -426,7 +426,8 @@ export default function BrandKit() {
       setSaveError("Add the organization name before saving.");
       return;
     }
-    const email = String(kit.footer?.email || "").trim();
+    if (!kitBandIsLaidOut(kit, "footer")) {
+      const email = String(kit.footer?.email || "").trim();
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
       setSaveError(
         "That email address looks incomplete. Write it like name@organization.com",
@@ -445,6 +446,7 @@ export default function BrandKit() {
         "Social links must start with https:// — for example https://instagram.com/yourname",
       );
       return;
+    }
     }
     await persist(kit);
   };
@@ -623,7 +625,9 @@ export default function BrandKit() {
               className="h-10 p-0 gap-6 bg-transparent flex justify-start min-w-max border-b-0 whitespace-nowrap"
             >
               <TabsTrigger value="identity" className={TAB_TRIGGER}>
-                Identity and contact
+                {kitBandIsLaidOut(kit, "footer")
+                  ? "Identity"
+                  : "Identity and contact"}
               </TabsTrigger>
               <TabsTrigger value="colors-fonts" className={TAB_TRIGGER}>
                 Colours and fonts
@@ -668,6 +672,23 @@ export default function BrandKit() {
                     }
                     hint="A transparent PNG works best. It is used at the top of every poster and, if you switch it on, as a faint watermark."
                   />
+                  {kitBandIsLaidOut(kit, "header") ? (
+                    <div className="mt-3 rounded-[6px] border border-[#E5E7EB] bg-[#F9FAFB] p-3 text-xs text-[#4B5563] flex items-center justify-between gap-3">
+                      <span>Header is customized in the header editor.</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          navigate("/brand-layer/edit?section=header")
+                        }
+                        className="text-[#2563EB] hover:text-[#1D4ED8] hover:bg-transparent text-xs h-7 px-2 font-medium shrink-0"
+                      >
+                        Edit header &rarr;
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
                   <BrandImageField
                     label="Header background photo"
                     kind="header"
@@ -729,13 +750,34 @@ export default function BrandKit() {
                       />
                     )}
                   </div>
+                    </>
+                  )}
                 </SectionCard>
 
-                <SectionCard
-                  title="Contact details"
-                  desc="Only what you fill in is printed at the bottom of a poster. Empty lines are left out."
-                  onReset={() => resetSection("footer")}
-                >
+                {kitBandIsLaidOut(kit, "footer") ? (
+                  <div className="rounded-[8px] border border-[#E5E7EB] bg-[#FAFAFA] p-4 text-xs text-[#4B5563] flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-[#111827]">Footer &amp; contact details</p>
+                      <p className="text-[11px] text-[#6B7280] mt-0.5">
+                        Your footer is custom arranged. Contact details, social profiles, and links are placed directly in the footer editor.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => navigate("/brand-layer/edit?section=footer")}
+                      className="text-[#2563EB] hover:text-[#1D4ED8] hover:bg-transparent text-xs h-8 px-2 font-medium shrink-0"
+                    >
+                      Edit footer &rarr;
+                    </Button>
+                  </div>
+                ) : (
+                  <SectionCard
+                    title="Contact details"
+                    desc="Only what you fill in is printed at the bottom of a poster. Empty lines are left out."
+                    onReset={() => resetSection("footer")}
+                  >
                   <TextInput
                     id="address"
                     label="Address"
@@ -874,7 +916,8 @@ export default function BrandKit() {
                     }
                     hint="A background image that sits behind your contact details at the bottom of every poster."
                   />
-                </SectionCard>
+                  </SectionCard>
+                )}
 
                 <SectionCard
                   title="Photo and poster size"
