@@ -3,8 +3,6 @@ import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   ExternalLink,
-  Plus,
-  Trash2,
   Wand2,
   X,
 } from "lucide-react";
@@ -18,7 +16,6 @@ import {
   Field,
   SectionCard,
   Select,
-  SOCIAL_OPTIONS,
   TextInput,
   TextStyleEditor,
   Toggle,
@@ -123,15 +120,6 @@ function blankKit() {
 const primaryLogoUrl = (kit) =>
   kit?.logos?.find((l) => l?.isPrimary)?.url || kit?.logos?.[0]?.url || "";
 
-function socialLabel(platform) {
-  const labels = {
-    x: "X",
-    whatsapp: "WhatsApp",
-    youtube: "YouTube",
-    linkedin: "LinkedIn",
-  };
-  return labels[platform] || platform;
-}
 
 const TAB_TRIGGER =
   "h-10 px-0 pb-3 text-sm font-medium text-[#6B7280] hover:text-[#111827] border-b-2 border-transparent data-[state=active]:border-[#2563EB] data-[state=active]:text-[#111827] rounded-none bg-transparent shadow-none data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-colors shrink-0";
@@ -323,16 +311,6 @@ export default function BrandKit() {
       },
     }));
 
-  /** Social rows are edited as a list, so always rebuild from the newest state. */
-  const updateSocial = (transform) =>
-    setKit((prev) => {
-      const rows = Array.isArray(prev.footer?.social) ? prev.footer.social : [];
-      return {
-        ...prev,
-        footer: { ...(prev.footer || {}), social: transform(rows) },
-      };
-    });
-
   /** Put one or more blocks of the form back to their saved values. */
   const resetSection = (...sections) => {
     if (!saved) return;
@@ -426,28 +404,6 @@ export default function BrandKit() {
       setSaveError("Add the organization name before saving.");
       return;
     }
-    if (!kitBandIsLaidOut(kit, "footer")) {
-      const email = String(kit.footer?.email || "").trim();
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
-      setSaveError(
-        "That email address looks incomplete. Write it like name@organization.com",
-      );
-      return;
-    }
-    const badSocial = (
-      Array.isArray(kit.footer?.social) ? kit.footer.social : []
-    ).some(
-      (row) =>
-        String(row?.url || "").trim() !== "" &&
-        !/^https:\/\//i.test(String(row.url).trim()),
-    );
-    if (badSocial) {
-      setSaveError(
-        "Social links must start with https:// — for example https://instagram.com/yourname",
-      );
-      return;
-    }
-    }
     await persist(kit);
   };
 
@@ -522,7 +478,6 @@ export default function BrandKit() {
   const content = kit.content || {};
   const footer = kit.footer || {};
   const colors = kit.colors || {};
-  const social = Array.isArray(footer.social) ? footer.social : [];
   const logoUrl = primaryLogoUrl(kit);
   const posterName = header.orgName?.text || kit.orgName || "Organization name";
 
@@ -625,9 +580,7 @@ export default function BrandKit() {
               className="h-10 p-0 gap-6 bg-transparent flex justify-start min-w-max border-b-0 whitespace-nowrap"
             >
               <TabsTrigger value="identity" className={TAB_TRIGGER}>
-                {kitBandIsLaidOut(kit, "footer")
-                  ? "Identity"
-                  : "Identity and contact"}
+                Identity
               </TabsTrigger>
               <TabsTrigger value="colors-fonts" className={TAB_TRIGGER}>
                 Colours and fonts
@@ -648,7 +601,7 @@ export default function BrandKit() {
                 <SectionCard
                   title="Organization identity"
                   desc="The name and mark that appear on every poster this organization creates."
-                  onReset={() => resetSection(["orgName", "logos", "header"])}
+                  onReset={() => resetSection(["orgName", "logos"])}
                 >
                   <TextInput
                     id="orgName"
@@ -672,252 +625,7 @@ export default function BrandKit() {
                     }
                     hint="A transparent PNG works best. It is used at the top of every poster and, if you switch it on, as a faint watermark."
                   />
-                  {kitBandIsLaidOut(kit, "header") ? (
-                    <div className="mt-3 rounded-[6px] border border-[#E5E7EB] bg-[#F9FAFB] p-3 text-xs text-[#4B5563] flex items-center justify-between gap-3">
-                      <span>Header is customized in the header editor.</span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                          navigate("/brand-layer/edit?section=header")
-                        }
-                        className="text-[#2563EB] hover:text-[#1D4ED8] hover:bg-transparent text-xs h-7 px-2 font-medium shrink-0"
-                      >
-                        Edit header &rarr;
-                      </Button>
-                    </div>
-                  ) : (
-                    <>
-                  <BrandImageField
-                    label="Header background photo"
-                    kind="header"
-                    value={header.background?.imageUrl || ""}
-                    boxClass="h-32"
-                    onChange={(url) =>
-                      setSub("header", "background", {
-                        imageUrl: url,
-                        type: url
-                          ? "image"
-                          : header.background?.type === "image"
-                          ? "color"
-                          : header.background?.type || "color",
-                      })
-                    }
-                    hint="A background image that sits behind the logo and name at the top of every poster."
-                  />
-                  <div className="space-y-3 pt-1">
-                    <Toggle
-                      label="Show the logo"
-                      checked={header.logo?.show !== false}
-                      onChange={(next) => setSub("header", "logo", { show: next })}
-                    />
-                    <Toggle
-                      label="Show the organization name"
-                      checked={header.orgName?.show !== false}
-                      onChange={(next) =>
-                        setSub("header", "orgName", { show: next })
-                      }
-                    />
-                    <TextInput
-                      id="headerName"
-                      label="Name printed at the top of the poster"
-                      value={header.orgName?.text ?? ""}
-                      maxLength={100}
-                      placeholder={kit.orgName || "Organization name"}
-                      hint="Usually the organization name. Use a shorter form if the full name is long."
-                      onChange={(next) =>
-                        setSub("header", "orgName", { text: next })
-                      }
-                    />
-                    <Toggle
-                      label="Show a tagline under the name"
-                      checked={Boolean(header.tagline?.show)}
-                      onChange={(next) =>
-                        setSub("header", "tagline", { show: next })
-                      }
-                    />
-                    {header.tagline?.show && (
-                      <TextInput
-                        id="tagline"
-                        label="Tagline"
-                        value={header.tagline?.text ?? ""}
-                        maxLength={80}
-                        placeholder="e.g. Serving the community since 1998"
-                        onChange={(next) =>
-                          setSub("header", "tagline", { text: next })
-                        }
-                      />
-                    )}
-                  </div>
-                    </>
-                  )}
                 </SectionCard>
-
-                {kitBandIsLaidOut(kit, "footer") ? (
-                  <div className="rounded-[8px] border border-[#E5E7EB] bg-[#FAFAFA] p-4 text-xs text-[#4B5563] flex items-center justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-[#111827]">Footer &amp; contact details</p>
-                      <p className="text-[11px] text-[#6B7280] mt-0.5">
-                        Your footer is custom arranged. Contact details, social profiles, and links are placed directly in the footer editor.
-                      </p>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => navigate("/brand-layer/edit?section=footer")}
-                      className="text-[#2563EB] hover:text-[#1D4ED8] hover:bg-transparent text-xs h-8 px-2 font-medium shrink-0"
-                    >
-                      Edit footer &rarr;
-                    </Button>
-                  </div>
-                ) : (
-                  <SectionCard
-                    title="Contact details"
-                    desc="Only what you fill in is printed at the bottom of a poster. Empty lines are left out."
-                    onReset={() => resetSection("footer")}
-                  >
-                  <TextInput
-                    id="address"
-                    label="Address"
-                    value={footer.address ?? ""}
-                    maxLength={120}
-                    placeholder="e.g. 12 Harbour Square, Bristol"
-                    onChange={(next) => setSection("footer", { address: next })}
-                  />
-                  <div className="grid grid-cols-2 gap-4">
-                    <TextInput
-                      id="phone"
-                      label="Phone"
-                      value={footer.phone ?? ""}
-                      maxLength={40}
-                      placeholder="e.g. +44 20 7946 0102"
-                      onChange={(next) => setSection("footer", { phone: next })}
-                    />
-                    <TextInput
-                      id="email"
-                      type="email"
-                      label="Email"
-                      value={footer.email ?? ""}
-                      maxLength={120}
-                      placeholder="hello@organization.com"
-                      onChange={(next) => setSection("footer", { email: next })}
-                    />
-                  </div>
-                  <TextInput
-                    id="website"
-                    label="Website"
-                    value={footer.website ?? ""}
-                    maxLength={120}
-                    placeholder="e.g. organization.com"
-                    onChange={(next) => setSection("footer", { website: next })}
-                  />
-                  <div className="pt-2 space-y-2 border-t border-[#E5E7EB]">
-                    <label className="text-[13px] font-medium text-[#111827] block">
-                      Social profiles ({social.length} of 6)
-                    </label>
-                    {social.map((row, index) => (
-                      <div key={index} className="flex items-end gap-2">
-                        <div className="w-[132px] shrink-0">
-                          <Select
-                            label={index === 0 ? "Network" : undefined}
-                            value={row.platform || "facebook"}
-                            options={SOCIAL_OPTIONS.map((item) => ({
-                              value: item,
-                              label: socialLabel(item),
-                            }))}
-                            onChange={(next) =>
-                              updateSocial((rows) =>
-                                rows.map((item, at) =>
-                                  at === index
-                                    ? { ...item, platform: next }
-                                    : item,
-                                ),
-                              )
-                            }
-                          />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <TextInput
-                            label={index === 0 ? "Profile link" : undefined}
-                            type="url"
-                            value={row.url ?? ""}
-                            maxLength={300}
-                            placeholder="https://..."
-                            onChange={(next) =>
-                              updateSocial((rows) =>
-                                rows.map((item, at) =>
-                                  at === index
-                                    ? { ...item, url: next }
-                                    : item,
-                                ),
-                              )
-                            }
-                          />
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          aria-label="Remove this social link"
-                          onClick={() =>
-                            updateSocial((rows) =>
-                              rows.filter((_, at) => at !== index),
-                            )
-                          }
-                          className="h-9 w-9 border border-[#E5E7EB] shrink-0 text-[#6B7280] hover:text-[#DC2626] mb-0.5"
-                        >
-                          <Trash2 size={14} />
-                        </Button>
-                      </div>
-                    ))}
-                    {social.length < 6 && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() =>
-                          updateSocial((rows) => [
-                            ...rows,
-                            { platform: "facebook", url: "" },
-                          ])
-                        }
-                        className="h-8 border-dashed border-[#D1D5DB] text-xs font-medium text-[#111827] hover:bg-[#F9FAFB] gap-1.5"
-                      >
-                        <Plus size={14} />
-                        <span>Add social link</span>
-                      </Button>
-                    )}
-                  </div>
-                  <TextInput
-                    id="legal"
-                    label="Fine print"
-                    value={footer.legalText ?? ""}
-                    maxLength={160}
-                    placeholder="e.g. © 2026 Northbridge Foundation. Registered charity."
-                    onChange={(next) =>
-                      setSection("footer", { legalText: next })
-                    }
-                  />
-                  <BrandImageField
-                    label="Footer background photo"
-                    kind="footer"
-                    value={footer.background?.imageUrl || ""}
-                    boxClass="h-28"
-                    onChange={(url) =>
-                      setSub("footer", "background", {
-                        imageUrl: url,
-                        type: url
-                          ? "image"
-                          : footer.background?.type === "image"
-                          ? "color"
-                          : footer.background?.type || "color",
-                      })
-                    }
-                    hint="A background image that sits behind your contact details at the bottom of every poster."
-                  />
-                  </SectionCard>
-                )}
 
                 <SectionCard
                   title="Photo and poster size"
