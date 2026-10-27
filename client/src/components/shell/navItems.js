@@ -69,8 +69,8 @@ export function navGroups(user) {
     if (item.to === '/dashboard') return can(user, 'settings:read');
     if (item.to === '/create') return can(user, 'posters:create');
     if (item.to === '/posters') return can(user, 'posters:read:own');
-    if (item.to === '/brand-kit') return can(user, 'brandkit:write');
-    if (item.to === '/templates') return can(user, 'templates:write');
+    if (item.to === '/brand-kit') return can(user, 'brandkit:read') || can(user, 'brandkit:write');
+    if (item.to === '/templates') return can(user, 'templates:read') || can(user, 'templates:write');
     if (item.to === '/team') return can(user, 'users:read');
     return false;
   });
