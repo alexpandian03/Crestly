@@ -43,8 +43,7 @@ const PreviewTestPage = import.meta.env.DEV
 
 function RootRoute() {
   const { user, isAuthenticated, loading } = useAuth();
-  if (loading) return null;
-  if (isAuthenticated && user) {
+  if (!loading && isAuthenticated && user) {
     return <Navigate to={homeForRole(user.role)} replace />;
   }
   return <Home />;
@@ -52,8 +51,7 @@ function RootRoute() {
 
 function CatchAllRoute() {
   const { user, isAuthenticated, loading } = useAuth();
-  if (loading) return null;
-  if (isAuthenticated && user) {
+  if (!loading && isAuthenticated && user) {
     return <Navigate to={homeForRole(user.role)} replace />;
   }
   return <Navigate to="/" replace />;
