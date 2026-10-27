@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
@@ -148,29 +148,48 @@ function Readout({ foreground, background, large = false }) {
  * shows only the band's own part of it, so this preview cannot disagree with the poster.
  */
 function BandStrip({ band, brandKit, posterSize, posterTemplate }) {
+  const containerRef = useRef(null);
+  const [stripWidth, setStripWidth] = useState(BAND_STRIP_WIDTH);
+
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const measure = () => {
+      const w = el.clientWidth;
+      if (w > 0) setStripWidth(Math.min(BAND_STRIP_WIDTH, w));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   if (!band || !posterSize?.width) return null;
-  const scale = BAND_STRIP_WIDTH / posterSize.width;
+  const currentWidth = stripWidth || BAND_STRIP_WIDTH;
+  const scale = currentWidth / posterSize.width;
   const stripHeight = Math.max(8, Math.round(band.height * scale));
   return (
-    <div
-      className="relative overflow-hidden rounded-[6px] border border-[#E5E7EB] bg-white"
-      style={{ width: `${BAND_STRIP_WIDTH}px`, height: `${stripHeight}px` }}
-      aria-hidden="true"
-    >
+    <div ref={containerRef} className="w-full max-w-[360px] overflow-hidden">
       <div
-        className="absolute left-0"
-        style={{
-          top: `${-(band.y || 0) * scale}px`,
-          width: `${BAND_STRIP_WIDTH}px`,
-        }}
+        className="relative overflow-hidden rounded-[6px] border border-[#E5E7EB] bg-white max-w-full"
+        style={{ width: `${currentWidth}px`, height: `${stripHeight}px` }}
+        aria-hidden="true"
       >
-        <TemplatePreview
-          eager
-          size={BAND_STRIP_WIDTH}
-          brandKit={brandKit}
-          template={posterTemplate}
-          sample={SAMPLE_CONTENT}
-        />
+        <div
+          className="absolute left-0"
+          style={{
+            top: `${-(band.y || 0) * scale}px`,
+            width: `${currentWidth}px`,
+          }}
+        >
+          <TemplatePreview
+            eager
+            size={currentWidth}
+            brandKit={brandKit}
+            template={posterTemplate}
+            sample={SAMPLE_CONTENT}
+          />
+        </div>
       </div>
     </div>
   );
@@ -580,11 +599,11 @@ export default function BrandKit() {
 
   if (loading || !kit || !resolved || !bands) {
     return (
-      <div className="bg-white min-h-[calc(100vh-56px)]">
+      <div className="bg-white min-h-[calc(100vh-56px)] w-full max-w-full overflow-x-hidden">
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
           <div className="space-y-2">
             <Skeleton className="h-7 w-48 rounded-[6px]" />
-            <Skeleton className="h-4 w-96 rounded-[6px]" />
+            <Skeleton className="h-4 w-full max-w-sm rounded-[6px]" />
           </div>
           <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_380px]">
             <div className="min-w-0 space-y-6">
@@ -631,24 +650,24 @@ export default function BrandKit() {
   ];
 
   return (
-    <div className="bg-white min-h-[calc(100vh-56px)]">
-      <div className="sticky top-0 z-30 bg-white border-b border-[#E5E7EB] px-4 sm:px-6 py-3.5">
-        <div className="max-w-[1400px] mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-[24px] font-semibold text-[#111827] leading-tight">
+    <div className="bg-white min-h-[calc(100vh-56px)] w-full max-w-full overflow-x-hidden">
+      <div className="sticky top-0 z-30 bg-white border-b border-[#E5E7EB] px-3 sm:px-6 py-3 w-full max-w-full">
+        <div className="max-w-[1400px] mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+          <div className="min-w-0">
+            <h1 className="text-[20px] sm:text-[24px] font-semibold text-[#111827] leading-tight">
               Brand kit
             </h1>
             {selectedTemplate ? (
-              <p className="text-xs sm:text-sm text-[#6B7280] mt-0.5">
-                Customizing brand kit for <strong className="text-[#111827] font-semibold">{selectedTemplate.name}</strong>. Changes apply only to this template.
+              <p className="text-xs sm:text-sm text-[#6B7280] mt-0.5 truncate">
+                Customizing brand kit for <strong className="text-[#111827] font-semibold">{selectedTemplate.name}</strong>.
               </p>
             ) : (
-              <p className="text-xs sm:text-sm text-[#6B7280] mt-0.5">
-                {kit.orgName || "This organization"} · organization default locked onto posters that do not use a custom template brand kit.
+              <p className="text-xs sm:text-sm text-[#6B7280] mt-0.5 truncate">
+                {kit.orgName || "This organization"} · organization default locked onto posters
               </p>
             )}
           </div>
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2.5 w-full sm:w-auto">
             {dirty ? (
               <span className="inline-flex items-center gap-1.5 text-xs text-[#F59E0B] font-medium shrink-0">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#F59E0B]" />
@@ -660,28 +679,30 @@ export default function BrandKit() {
                 All changes saved
               </span>
             )}
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleDiscard}
-              disabled={!dirty || saving}
-              className="h-9 px-3 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-50"
-            >
-              Discard changes
-            </Button>
-            <Button
-              type="button"
-              onClick={handleSave}
-              disabled={saving}
-              className="h-9 px-4 rounded-[6px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-medium shadow-none disabled:opacity-50"
-            >
-              {saving ? "Saving…" : selectedTemplate ? `Save for ${selectedTemplate.name}` : "Save brand kit"}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleDiscard}
+                disabled={!dirty || saving}
+                className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-50"
+              >
+                Discard
+              </Button>
+              <Button
+                type="button"
+                onClick={handleSave}
+                disabled={saving}
+                className="h-8 sm:h-9 px-3 sm:px-4 rounded-[6px] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-medium shadow-none disabled:opacity-50 truncate max-w-[200px] sm:max-w-none"
+              >
+                {saving ? "Saving…" : selectedTemplate ? `Save for ${selectedTemplate.name}` : "Save brand kit"}
+              </Button>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6 space-y-6">
+      <div className="max-w-[1400px] mx-auto px-3 sm:px-6 py-6 space-y-6 w-full min-w-0">
         {(saveError || loadNote) && (
           <div className="flex items-start justify-between gap-3 rounded-[8px] border border-[#E5E7EB] bg-[#FAFAFA] p-3">
             <p

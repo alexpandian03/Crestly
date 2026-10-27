@@ -70,7 +70,7 @@ export default function AppShell({ children }) {
   const flatItems = !isAuthenticated ? guestNavItems : memberNavItems;
 
   return (
-    <div className="flex min-h-screen bg-white font-sans text-[#111827]">
+    <div className="flex min-h-screen bg-white font-sans text-[#111827] overflow-x-hidden w-full max-w-full">
       {/* 240px wide sidebar on the left for authenticated users */}
       {sidebar && (
         <SideBar
@@ -83,7 +83,7 @@ export default function AppShell({ children }) {
       )}
 
       {/* Main content column with 56px top bar */}
-      <div className="flex flex-1 flex-col min-w-0">
+      <div className="flex flex-1 flex-col min-w-0 max-w-full overflow-x-hidden">
         {sidebar ? (
           <div className="sticky top-0 z-40 bg-white">
             <TopBar
@@ -104,7 +104,7 @@ export default function AppShell({ children }) {
           </div>
         )}
 
-        <main className="min-w-0 flex-1">{children}</main>
+        <main className="min-w-0 flex-1 max-w-full">{children}</main>
 
         {!sidebar && <Footer />}
       </div>
