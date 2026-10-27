@@ -1547,12 +1547,12 @@ export default function Generate() {
               </div>
             </div>
 
-            <div className="rounded-[8px] bg-[#FAFAFA] border border-[#E5E7EB] p-4 sm:p-6 min-h-[460px] flex flex-col items-center justify-center">
+            <div className="rounded-[8px] bg-[#FAFAFA] border border-[#E5E7EB] p-3 sm:p-6 min-h-[460px] flex flex-col items-center justify-center w-full max-w-full overflow-hidden">
               {loadingInitial || isGenerating ? (
                 <SkeletonPoster />
               ) : ready ? (
                 <div
-                  className={`${STAGE_WIDTH} rounded-[8px] overflow-hidden bg-white border border-[#E5E7EB]`}
+                  className={`${STAGE_WIDTH} w-full max-w-full rounded-[8px] overflow-hidden bg-white border border-[#E5E7EB]`}
                 >
                   <Suspense fallback={<SkeletonPoster />}>
                     <EditablePoster

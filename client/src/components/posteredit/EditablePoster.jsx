@@ -439,7 +439,7 @@ export default function EditablePoster({
   };
 
   return (
-    <div ref={wrapRef} className={`relative w-full ${className}`}>
+    <div ref={wrapRef} className={`relative w-full max-w-full overflow-hidden ${className}`}>
       <PosterPreview
         brandKit={brandKit}
         template={template}

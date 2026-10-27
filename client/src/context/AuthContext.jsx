@@ -7,12 +7,13 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [activeClientId, setActiveClientId] = useState(() => localStorage.getItem('activeClientId') || '');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => Boolean(localStorage.getItem('hasSession')));
 
   const logout = useCallback(async () => {
     try {
       await api.post('/auth/logout');
     } catch {}
+    localStorage.removeItem('hasSession');
     setUser(null);
     setActiveClientId('');
     localStorage.removeItem('activeClientId');
@@ -22,6 +23,7 @@ export function AuthProvider({ children }) {
     try {
       await api.post('/auth/logout-all');
     } catch {}
+    localStorage.removeItem('hasSession');
     setUser(null);
     setActiveClientId('');
     localStorage.removeItem('activeClientId');
@@ -37,6 +39,7 @@ export function AuthProvider({ children }) {
       localStorage.removeItem('activeClientId');
       setActiveClientId('');
     }
+    localStorage.setItem('hasSession', 'true');
     setUser(nextUser);
     return nextUser;
   }, []);
@@ -45,10 +48,19 @@ export function AuthProvider({ children }) {
     let active = true;
 
     async function loadSession() {
+      // If user has no active session flag, don't stall the UI with an unnecessary remote network call
+      if (!localStorage.getItem('hasSession')) {
+        if (active) setLoading(false);
+        return;
+      }
+
       try {
         await refreshUser();
       } catch (err) {
-        if (active) setUser(null);
+        if (active) {
+          localStorage.removeItem('hasSession');
+          setUser(null);
+        }
       } finally {
         if (active) setLoading(false);
       }
@@ -91,6 +103,7 @@ export function AuthProvider({ children }) {
       throw new Error(response.data?.error?.message || 'Login failed');
     }
 
+    localStorage.setItem('hasSession', 'true');
     setUser(authData.user);
     return authData.user;
   };
