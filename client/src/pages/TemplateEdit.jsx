@@ -2374,59 +2374,66 @@ export default function TemplateEdit({ brandLayer = false }) {
   ) : null;
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-[#F3F4F6] select-none">
+    <div className="flex h-screen w-full max-w-full flex-col overflow-hidden bg-[#F3F4F6] select-none">
       {/* ------------------------------------------------------ top bar */}
-      <header className="flex h-11 shrink-0 items-center justify-between bg-[#2563EB] px-4 text-white z-30 select-none relative shadow-sm">
+      <header className="relative flex h-11 shrink-0 items-center justify-between gap-2 bg-[#2563EB] px-3 sm:px-4 text-white z-30 select-none shadow-sm">
         {/* Far left: Back, Editing menu, Undo & Redo, Saved status */}
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0 min-w-0">
           <button
             type="button"
             onClick={goBack}
-            className="flex items-center gap-1.5 rounded-[6px] border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-white/20 transition-colors"
+            className="flex items-center gap-1 sm:gap-1.5 rounded-[6px] border border-white/20 bg-white/10 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-white/20 transition-colors shrink-0"
           >
-            <ArrowLeft className="h-3.5 w-3.5" />{" "}
-            {brandLayer ? "Back to Brand Kit" : "Back"}
+            <ArrowLeft className="h-3.5 w-3.5 shrink-0" />{" "}
+            <span className="hidden sm:inline">
+              {brandLayer ? "Back to Brand Kit" : "Back"}
+            </span>
+            <span className="sm:hidden">
+              {brandLayer ? "Brand Kit" : "Back"}
+            </span>
           </button>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className="flex items-center gap-1 rounded-[6px] px-2 py-1.5 text-xs font-semibold text-white hover:bg-white/10 transition-colors"
-              >
-                <span>Editing</span>
-                <ChevronDown className="h-3 w-3 text-white/80" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-48 text-xs">
-              {!brandLayer && (
-                <DropdownMenuItem onClick={() => setDetailsOpen(true)}>
-                  <Sliders className="mr-2 h-3.5 w-3.5" /> Template details
+          <div className="hidden md:block">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex items-center gap-1 rounded-[6px] px-2 py-1.5 text-xs font-semibold text-white hover:bg-white/10 transition-colors"
+                >
+                  <span>Editing</span>
+                  <ChevronDown className="h-3 w-3 text-white/80" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-48 text-xs">
+                {!brandLayer && (
+                  <DropdownMenuItem onClick={() => setDetailsOpen(true)}>
+                    <Sliders className="mr-2 h-3.5 w-3.5" /> Template details
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onClick={() => setRulersOn((on) => !on)}>
+                  <Grid className="mr-2 h-3.5 w-3.5" /> {rulersOn ? "Hide rulers" : "Show rulers"}
                 </DropdownMenuItem>
-              )}
-              <DropdownMenuItem onClick={() => setRulersOn((on) => !on)}>
-                <Grid className="mr-2 h-3.5 w-3.5" /> {rulersOn ? "Hide rulers" : "Show rulers"}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setGridOn((on) => !on)}>
-                <Grid className="mr-2 h-3.5 w-3.5" /> {gridOn ? "Hide grid" : "Show grid"}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setGuidesOn((on) => !on)}>
-                <Eye className="mr-2 h-3.5 w-3.5" /> {guidesOn ? "Hide guides" : "Show guides"}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={!dirty}
-                onClick={resetToSaved}
-                className="text-red-600 focus:text-red-600 focus:bg-red-50 disabled:opacity-40"
-              >
-                <RotateCcw className="mr-2 h-3.5 w-3.5" /> Undo everything
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setKeyboardOpen(true)}>
-                <Keyboard className="mr-2 h-3.5 w-3.5" /> Keyboard shortcuts
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                <DropdownMenuItem onClick={() => setGridOn((on) => !on)}>
+                  <Grid className="mr-2 h-3.5 w-3.5" /> {gridOn ? "Hide grid" : "Show grid"}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setGuidesOn((on) => !on)}>
+                  <Eye className="mr-2 h-3.5 w-3.5" /> {guidesOn ? "Hide guides" : "Show guides"}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={!dirty}
+                  onClick={resetToSaved}
+                  className="text-red-600 focus:text-red-600 focus:bg-red-50 disabled:opacity-40"
+                >
+                  <RotateCcw className="mr-2 h-3.5 w-3.5" /> Undo everything
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setKeyboardOpen(true)}>
+                  <Keyboard className="mr-2 h-3.5 w-3.5" /> Keyboard shortcuts
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
 
-          <div className="flex items-center gap-1 text-xs text-white">
+          <div className="hidden lg:flex items-center gap-1 text-xs text-white">
             <button
               type="button"
               onClick={() => dispatch({ type: "undo" })}
@@ -2448,20 +2455,25 @@ export default function TemplateEdit({ brandLayer = false }) {
             </button>
           </div>
 
-          <div className="flex items-center gap-1.5 text-xs font-medium text-white/90">
+          <div
+            className="flex items-center gap-1.5 text-xs font-medium text-white/90 shrink-0"
+            title={saving ? "Saving..." : dirty ? "Unsaved changes" : "Saved"}
+          >
             <span
-              className={`h-2 w-2 rounded-full ${
+              className={`h-2 w-2 rounded-full shrink-0 ${
                 dirty ? "bg-amber-300" : "bg-emerald-300"
               }`}
             />
-            <span>{saving ? "Saving..." : dirty ? "Unsaved changes" : "Saved"}</span>
+            <span className="hidden sm:inline">
+              {saving ? "Saving..." : dirty ? "Unsaved changes" : "Saved"}
+            </span>
           </div>
         </div>
 
-        {/* Center: Template name centred */}
-        <div className="absolute left-1/2 -translate-x-1/2 flex items-center justify-center pointer-events-auto">
+        {/* Center: Template name */}
+        <div className="flex-1 min-w-0 flex items-center justify-center px-1 sm:px-2 lg:absolute lg:left-1/2 lg:-translate-x-1/2 lg:max-w-[420px] pointer-events-auto">
           {brandLayer ? (
-            <p className="truncate text-center text-sm md:text-[15px] font-semibold text-white">
+            <p className="truncate text-center text-xs sm:text-sm md:text-[15px] font-semibold text-white">
               Organization header and footer
             </p>
           ) : (
@@ -2469,7 +2481,7 @@ export default function TemplateEdit({ brandLayer = false }) {
               type="button"
               onClick={() => setDetailsOpen(true)}
               title="Click to rename or view details"
-              className="max-w-[180px] sm:max-w-[280px] md:max-w-[420px] truncate text-center text-sm md:text-[15px] font-semibold text-white hover:underline focus:outline-none"
+              className="truncate text-center text-xs sm:text-sm md:text-[15px] font-semibold text-white hover:underline focus:outline-none"
             >
               {name || "Untitled Template"}
             </button>
@@ -2477,7 +2489,7 @@ export default function TemplateEdit({ brandLayer = false }) {
         </div>
 
         {/* Far right: Edit/Preview, Versions and Save */}
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
           <div
             role="group"
             aria-label="Edit or preview"
@@ -2513,9 +2525,11 @@ export default function TemplateEdit({ brandLayer = false }) {
             <button
               type="button"
               onClick={() => setDrawerOpen(true)}
-              className="flex items-center gap-1.5 rounded-[6px] border border-white/30 bg-transparent px-3 py-1.5 text-xs font-medium text-white hover:bg-white/10 transition-colors"
+              title="Versions"
+              className="flex items-center gap-1 sm:gap-1.5 rounded-[6px] border border-white/30 bg-transparent px-2 sm:px-3 py-1.5 text-xs font-medium text-white hover:bg-white/10 transition-colors"
             >
-              <HistoryIcon className="h-3.5 w-3.5" /> Versions
+              <HistoryIcon className="h-3.5 w-3.5 shrink-0" />
+              <span className="hidden sm:inline">Versions</span>
             </button>
           )}
 
@@ -2523,14 +2537,14 @@ export default function TemplateEdit({ brandLayer = false }) {
             type="button"
             onClick={save}
             disabled={saving}
-            className="flex items-center gap-1.5 rounded-[6px] bg-white px-4 py-1.5 text-xs font-semibold text-[#2563EB] shadow-xs hover:bg-blue-50 disabled:opacity-60 transition-colors"
+            className="flex items-center gap-1 sm:gap-1.5 rounded-[6px] bg-white px-2.5 sm:px-4 py-1.5 text-xs font-semibold text-[#2563EB] shadow-xs hover:bg-blue-50 disabled:opacity-60 transition-colors shrink-0"
           >
             {saving ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
             ) : (
-              <Save className="h-3.5 w-3.5" />
+              <Save className="h-3.5 w-3.5 shrink-0" />
             )}
-            Save
+            <span>Save</span>
           </button>
         </div>
       </header>
