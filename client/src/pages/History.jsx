@@ -9,12 +9,10 @@ import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   AlertCircle,
-  ChevronDown,
   Loader2,
   Plus,
   RefreshCw,
   Search,
-  SlidersHorizontal,
   Sparkles,
   Trash2,
   X,
@@ -37,13 +35,6 @@ import PosterDetailDrawer from "../components/PosterDetailDrawer";
 const PAGE_SIZE = 12;
 const SEARCH_DEBOUNCE_MS = 300;
 
-const STATUS_OPTIONS = [
-  { value: "", label: "Any status" },
-  { value: "draft", label: "Draft" },
-  { value: "pending", label: "Waiting for review" },
-  { value: "approved", label: "Approved" },
-];
-
 function idOf(poster) {
   return String(poster?._id || poster?.id || "");
 }
@@ -52,13 +43,6 @@ function friendlyListError(err) {
   const status = err.response?.status;
   if (status === 404) return "We could not find these posters. Please refresh.";
   return "We could not load your posters. Please try again.";
-}
-
-function dateParam(value, endOfDay) {
-  if (!value) return "";
-  const time = endOfDay ? "T23:59:59.999" : "T00:00:00";
-  const parsed = new Date(`${value}${time}`);
-  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString();
 }
 
 export default function History() {
@@ -75,11 +59,6 @@ export default function History() {
 
   const [searchText, setSearchText] = useState("");
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("");
-  const [status, setStatus] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [showFilters, setShowFilters] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
 
   const [templates, setTemplates] = useState([]);
@@ -157,15 +136,9 @@ export default function History() {
     (targetPage) => {
       const params = { page: targetPage, limit: PAGE_SIZE };
       if (query) params.q = query;
-      if (category) params.category = category;
-      if (status) params.status = status;
-      const fromParam = dateParam(from, false);
-      const toParam = dateParam(to, true);
-      if (fromParam) params.from = fromParam;
-      if (toParam) params.to = toParam;
       return params;
     },
-    [query, category, status, from, to],
+    [query],
   );
 
   useEffect(() => {
@@ -201,20 +174,6 @@ export default function History() {
       active = false;
     };
   }, [buildParams, activeClientId, reloadToken]);
-
-  const filtersActive = Boolean(query || category || status || from || to);
-  const activeFilterCount = [query, category, status, from || to].filter(
-    Boolean,
-  ).length;
-
-  const categories = useMemo(() => {
-    const set = new Set();
-    templates.forEach((template) => {
-      const value = (template.category || "").trim();
-      if (value) set.add(value);
-    });
-    return [...set].sort();
-  }, [templates]);
 
   const templatesById = useMemo(() => {
     const map = new Map();
@@ -330,15 +289,6 @@ export default function History() {
 
   const openInEditor = (poster) => navigate(`/create?poster=${idOf(poster)}`);
 
-  const clearFilters = () => {
-    setSearchText("");
-    setQuery("");
-    setCategory("");
-    setStatus("");
-    setFrom("");
-    setTo("");
-  };
-
   const openPoster = useMemo(
     () => items.find((item) => idOf(item) === openId) || null,
     [items, openId],
@@ -371,134 +321,33 @@ export default function History() {
         </div>
 
         {/* Toolbar */}
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="relative flex-1 min-w-[240px] max-w-sm">
-              <Search className="w-4 h-4 text-[#6B7280] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <Input
-                type="search"
-                value={searchText}
-                onChange={(event) => setSearchText(event.target.value)}
-                placeholder="Search by headline or description"
-                className="h-9 pl-9 pr-8 rounded-[6px] border-[#E5E7EB] bg-white text-sm text-[#111827] placeholder:text-[#9CA3AF] focus-visible:border-[#2563EB] focus-visible:ring-1 focus-visible:ring-[#2563EB]"
-                aria-label="Search posters"
-              />
-              {searchText && (
-                <button
-                  type="button"
-                  onClick={() => setSearchText("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#111827]"
-                  title="Clear search"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-
-            <div className="flex items-center gap-3">
-              {!loading && !listError && items.length > 0 && (
-                <span className="text-xs text-[#6B7280]">
-                  Showing {items.length} of {total} poster{total === 1 ? "" : "s"}
-                </span>
-              )}
-
-              <Button
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="relative flex-1 min-w-[240px] max-w-sm">
+            <Search className="w-4 h-4 text-[#6B7280] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <Input
+              type="search"
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+              placeholder="Search by headline or description"
+              className="h-9 pl-9 pr-8 rounded-[6px] border-[#E5E7EB] bg-white text-sm text-[#111827] placeholder:text-[#9CA3AF] focus-visible:border-[#2563EB] focus-visible:ring-1 focus-visible:ring-[#2563EB]"
+              aria-label="Search posters"
+            />
+            {searchText && (
+              <button
                 type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setShowFilters((open) => !open)}
-                className={`h-9 px-3 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium ${
-                  showFilters || category || status || from || to
-                    ? "text-[#2563EB] border-[#2563EB]"
-                    : "text-[#111827] hover:bg-[#F9FAFB]"
-                }`}
-                aria-expanded={showFilters}
+                onClick={() => setSearchText("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#111827]"
+                title="Clear search"
               >
-                <SlidersHorizontal className="w-3.5 h-3.5 mr-1.5" />
-                <span>Filters</span>
-                {filtersActive && (
-                  <span className="ml-1.5 rounded-[4px] bg-[#EFF6FF] text-[#2563EB] px-1.5 py-0.5 text-[11px] font-semibold">
-                    {activeFilterCount}
-                  </span>
-                )}
-                <ChevronDown
-                  className={`w-3.5 h-3.5 ml-1 transition-transform ${
-                    showFilters ? "rotate-180" : ""
-                  }`}
-                />
-              </Button>
-            </div>
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
-          {showFilters && (
-            <div className="rounded-[8px] border border-[#E5E7EB] bg-[#FAFAFA] p-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              <label className="block text-xs">
-                <span className="font-medium text-[#6B7280]">Type</span>
-                <select
-                  value={category}
-                  onChange={(event) => setCategory(event.target.value)}
-                  className="mt-1 w-full h-9 rounded-[6px] border border-[#E5E7EB] bg-white px-2.5 text-xs text-[#111827] outline-none focus:border-[#2563EB]"
-                >
-                  <option value="">Any type</option>
-                  {categories.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="block text-xs">
-                <span className="font-medium text-[#6B7280]">Status</span>
-                <select
-                  value={status}
-                  onChange={(event) => setStatus(event.target.value)}
-                  className="mt-1 w-full h-9 rounded-[6px] border border-[#E5E7EB] bg-white px-2.5 text-xs text-[#111827] outline-none focus:border-[#2563EB]"
-                >
-                  {STATUS_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="block text-xs">
-                <span className="font-medium text-[#6B7280]">Changed from</span>
-                <input
-                  type="date"
-                  value={from}
-                  max={to || undefined}
-                  onChange={(event) => setFrom(event.target.value)}
-                  className="mt-1 w-full h-9 rounded-[6px] border border-[#E5E7EB] bg-white px-2.5 text-xs text-[#111827] outline-none focus:border-[#2563EB]"
-                />
-              </label>
-
-              <label className="block text-xs">
-                <span className="font-medium text-[#6B7280]">Changed until</span>
-                <input
-                  type="date"
-                  value={to}
-                  min={from || undefined}
-                  onChange={(event) => setTo(event.target.value)}
-                  className="mt-1 w-full h-9 rounded-[6px] border border-[#E5E7EB] bg-white px-2.5 text-xs text-[#111827] outline-none focus:border-[#2563EB]"
-                />
-              </label>
-
-              {filtersActive && (
-                <div className="sm:col-span-2 lg:col-span-4 pt-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={clearFilters}
-                    className="h-7 px-2 text-xs text-[#6B7280] hover:text-[#111827] hover:bg-white rounded-[4px]"
-                  >
-                    <X className="w-3.5 h-3.5 mr-1" /> Clear all filters
-                  </Button>
-                </div>
-              )}
-            </div>
+          {!loading && !listError && items.length > 0 && (
+            <span className="text-xs text-[#6B7280]">
+              Showing {items.length} of {total} poster{total === 1 ? "" : "s"}
+            </span>
           )}
         </div>
 
@@ -545,25 +394,23 @@ export default function History() {
             </div>
             <div>
               <h2 className="text-base font-semibold text-[#111827]">
-                {filtersActive
-                  ? "No posters match these filters"
-                  : "No posters yet"}
+                {query ? "No posters match your search" : "No posters yet"}
               </h2>
               <p className="text-xs text-[#6B7280] mt-1 max-w-xs mx-auto leading-relaxed">
-                {filtersActive
-                  ? "Try a different word, or clear the filters to see everything."
+                {query
+                  ? "Try searching for a different word or clear your search to see all posters."
                   : "Describe what you need and we will write the words for your poster."}
               </p>
             </div>
-            {filtersActive ? (
+            {query ? (
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={clearFilters}
+                onClick={() => setSearchText("")}
                 className="h-8 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB]"
               >
-                <X className="w-3.5 h-3.5 mr-1 text-[#6B7280]" /> Clear filters
+                <X className="w-3.5 h-3.5 mr-1 text-[#6B7280]" /> Clear search
               </Button>
             ) : (
               <Button
