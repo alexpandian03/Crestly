@@ -1,3 +1,5 @@
+import { isAllowedOrigin } from '../utils/originPolicy.js';
+
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 export function csrfProtection(req, res, next) {
@@ -21,31 +23,11 @@ export function csrfProtection(req, res, next) {
   }
 
   const origin = req.headers.origin;
-  if (origin) {
-    const host = req.headers.host;
-    let isAllowed = false;
-
-    try {
-      const originUrl = new URL(origin);
-      if (originUrl.host === host) {
-        isAllowed = true;
-      } else if (originUrl.hostname === 'localhost' || originUrl.hostname === '127.0.0.1') {
-        isAllowed = true;
-      } else if (process.env.CLIENT_URL && originUrl.origin === new URL(process.env.CLIENT_URL).origin) {
-        isAllowed = true;
-      } else if (process.env.VERCEL_URL && originUrl.host === process.env.VERCEL_URL) {
-        isAllowed = true;
-      }
-    } catch {
-      isAllowed = false;
-    }
-
-    if (!isAllowed) {
-      return res.status(403).json({
-        success: false,
-        error: { message: 'CSRF protection: untrusted origin', status: 403 },
-      });
-    }
+  if (origin && !isAllowedOrigin(origin, req)) {
+    return res.status(403).json({
+      success: false,
+      error: { message: 'CSRF protection: untrusted origin', status: 403 },
+    });
   }
 
   return next();
