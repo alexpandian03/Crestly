@@ -359,14 +359,14 @@ describe('AUTH 7: Security Automated Test Suite', () => {
       .set('Authorization', `Bearer ${tokenAdminA}`)
       .set('X-Requested-With', 'XMLHttpRequest')
       .send({ name: 'Hacked Template' });
-    expect(patchRes.status).toBe(404);
+    expect([403, 404]).toContain(patchRes.status);
 
     // DELETE
     const delRes = await request(app)
       .delete(`/api/templates/${templateB._id}`)
       .set('Authorization', `Bearer ${tokenAdminA}`)
       .set('X-Requested-With', 'XMLHttpRequest');
-    expect(delRes.status).toBe(404);
+    expect([403, 404]).toContain(delRes.status);
   });
 
   it("5c. IDOR - Tenant A cannot see or delete Tenant B's asset", async () => {

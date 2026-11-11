@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import Navbar from '../Navbar';
-import Footer from '../Footer';
 import SideBar, { MobileMenu } from './SideBar';
 import TopBar from './TopBar';
 import { OrgBar, OrgPicker } from './OrgBar';
@@ -23,9 +22,8 @@ export default function AppShell({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const isTemplateEditor = /^\/templates\/[^/]+\/edit$/.test(location.pathname);
   const sidebar = isAuthenticated && hasSidebar(user);
-  const showOrgBar = isAuthenticated && user?.role === 'superadmin' && !isTemplateEditor;
+  const showOrgBar = isAuthenticated && user?.role === 'superadmin';
   const org = useClientOptions(showOrgBar);
 
   const [collapsed, setCollapsed] = useState(readCollapsed);
@@ -51,10 +49,6 @@ export default function AppShell({ children }) {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [drawer]);
 
-  if (isTemplateEditor) {
-    return <main className="min-w-0 flex-1 h-screen w-screen overflow-hidden bg-[#F3F4F6]">{children}</main>;
-  }
-
   const toggleCollapsed = () =>
     setCollapsed((value) => {
       writeCollapsed(!value);
@@ -70,7 +64,7 @@ export default function AppShell({ children }) {
   const flatItems = !isAuthenticated ? guestNavItems : memberNavItems;
 
   return (
-    <div className="flex h-screen w-full max-w-full overflow-hidden bg-white font-sans text-[#111827]">
+    <div className="flex min-h-screen bg-white font-sans text-[#111827]">
       {/* 240px wide sidebar on the left for authenticated users */}
       {sidebar && (
         <SideBar
@@ -83,9 +77,9 @@ export default function AppShell({ children }) {
       )}
 
       {/* Main content column with 56px top bar */}
-      <div className="flex flex-1 flex-col min-w-0 h-full overflow-hidden">
+      <div className="flex flex-1 flex-col min-w-0">
         {sidebar ? (
-          <div className="shrink-0 z-40 bg-white">
+          <div className="sticky top-0 z-40 bg-white">
             <TopBar
               title={title}
               onToggleMenu={() => setDrawer((value) => !value)}
@@ -94,7 +88,7 @@ export default function AppShell({ children }) {
             {showOrgBar && <OrgBar selected={org.selected} onChange={askForClient} />}
           </div>
         ) : (
-          <div className="shrink-0 z-40 bg-white">
+          <div className="sticky top-0 z-40 bg-white">
             <Navbar
               menuOpen={drawer}
               onToggleMenu={() => setDrawer((value) => !value)}
@@ -104,11 +98,9 @@ export default function AppShell({ children }) {
           </div>
         )}
 
-        <main className="min-w-0 flex-1 max-w-full overflow-y-auto">
-          {children}
-          {!sidebar && <Footer />}
-        </main>
-      </div>
+        <main className="min-w-0 flex-1">{children}</main>
+
+              </div>
 
       {/* Mobile drawer for small screens */}
       <MobileMenu

@@ -9,6 +9,7 @@ import {
   TEMPLATE_CATEGORIES,
 } from '../services/template/zones.js';
 import {
+  BRAND_STYLE_TOKENS,
   CARD_LIST_LIMITS,
   ELEMENT_FIELDS,
   ELEMENT_KINDS,
@@ -238,7 +239,7 @@ export function templateElementsSchema(context = {}) {
     });
 }
 
-const sectionHeaderFooterSchema = (_context = {}, sectionName = 'header') =>
+const sectionHeaderFooterSchema = (context = {}, sectionName = 'header') =>
   z.object({
     mode: z.enum(['brand', 'custom'], { error: `${sectionName} mode must be brand or custom` }).default('brand'),
     height: z
@@ -296,7 +297,6 @@ const templateWriteSchema = (context) => ({
   header: sectionHeaderFooterSchema(context, 'header').optional(),
   footer: sectionHeaderFooterSchema(context, 'footer').optional(),
   content: sectionContentSchema(context).optional(),
-  brandKit: z.any().optional(),
   /** Event types this template is designed for. Empty array = applies to all types. */
   eventTypes: z
     .array(z.enum(EVENT_TYPE_IDS, { error: 'Unknown event type' }))
@@ -321,14 +321,15 @@ export const updateTemplateSchemaFor = (req) => {
       header: shape.header,
       footer: shape.footer,
       content: shape.content,
-      brandKit: shape.brandKit,
       eventTypes: shape.eventTypes,
+      isDefault: z.boolean().optional(),
+      isActive: z.boolean().optional(),
       note: z.string().trim().max(120).optional(),
       expectedVersion: z.coerce.number().int().min(1, 'Invalid version number').optional(),
     })
     .refine(
       (value) =>
-        ['name', 'category', 'size', 'zones', 'layout', 'page', 'elements', 'sections', 'header', 'footer', 'content', 'eventTypes', 'brandKit'].some(
+        ['name', 'category', 'size', 'zones', 'layout', 'page', 'elements', 'sections', 'header', 'footer', 'content', 'eventTypes', 'isDefault', 'isActive'].some(
           (key) => value[key] !== undefined
         ),
       { message: 'Provide at least one change' }

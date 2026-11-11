@@ -1,7 +1,6 @@
 import React, { useRef, useState, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { Calendar, Clock, MapPin } from 'lucide-react';
 import useGoogleFonts from '../hooks/useGoogleFonts';
-import SocialIcon from './SocialIcon';
 import { alpha, gradientCss, patternLayer, resolvePosterBrand, transformCloudinaryUrl } from '../utils/brandRender';
 import { withKitBands } from '../utils/brandBands';
 import { pickReadableColor } from '../utils/contrast';
@@ -13,6 +12,7 @@ import {
 } from '../utils/templateRender';
 import {
   isBrandColorToken,
+  isSamplePlaceholder,
   legacyToSections,
   resolveBrandText,
   resolveColorToken,
@@ -27,7 +27,6 @@ import {
   tamilCssOverrides,
   tamilFontStack,
 } from '../../../shared/textScripts.js';
-import PosterElementLayer, { isSamplePlaceholder } from './PosterElementLayer';
 
 /* ------------------------------------------------------------------ *
  * Design reference: content zone 940 x 1080 (default 1080x1350 poster,
@@ -1105,12 +1104,15 @@ function HeaderBand({ brand }) {
   const h = brand.header;
   if (!h.present) return null;
 
+  const hasBannerImage = h.bg?.type === 'image' && Boolean(h.bg?.imageUrl);
+  const bg = hasBannerImage ? { ...h.bg, overlayOpacity: 0 } : h.bg;
+
   const toAlign = { left: 'flex-start', center: 'center', right: 'flex-end' };
   const justify = toAlign[h.alignment];
   const vertical = h.logo.position === 'top' || h.logo.position === 'bottom';
   const textStackAlign = vertical ? justify : h.alignment;
 
-  const logo = h.logo.show ? (
+  const logo = !hasBannerImage && h.logo.show ? (
     <img
       src={h.logo.url}
       alt={h.orgName.text || 'Logo'}
@@ -1126,7 +1128,7 @@ function HeaderBand({ brand }) {
     />
   ) : null;
 
-  const texts = (
+  const texts = !hasBannerImage ? (
     <div
       style={{
         display: 'flex',
@@ -1144,10 +1146,10 @@ function HeaderBand({ brand }) {
         <BrandText style={h.tagline.style} text={h.tagline.text} extra={{ maxWidth: '100%', opacity: 0.92 }} />
       )}
     </div>
-  );
+  ) : null;
 
   const before = h.logo.position === 'bottom' || h.logo.position === 'right';
-  const inner = (
+  const inner = !hasBannerImage ? (
     <div
       style={{
         display: 'flex',
@@ -1163,7 +1165,7 @@ function HeaderBand({ brand }) {
       {texts}
       {logo && !before ? <React.Fragment>{logo}</React.Fragment> : null}
     </div>
-  );
+  ) : null;
 
   return (
     <div
@@ -1183,15 +1185,8 @@ function HeaderBand({ brand }) {
         zIndex: 20,
       }}
     >
-      {(() => {
-        const wholePosterBgActive = Boolean(brand?.content?.bgFullBleed && brand?.content?.bg?.imageUrl);
-        const bandHasOwnImage = h.bg?.type === 'image' && Boolean(h.bg?.imageUrl);
-        const effectiveBg = wholePosterBgActive && !bandHasOwnImage
-          ? { ...h.bg, type: 'color', color: 'transparent', overlayOpacity: 0 }
-          : h.bg;
-        return <BandBackground bg={effectiveBg} ink={brand.content.decorationColor} scale={brand.scale} />;
-      })()}
-      <div style={{ position: 'relative', zIndex: 1, width: '100%', minWidth: 0 }}>{inner}</div>
+      <BandBackground bg={bg} ink={brand.content.decorationColor} scale={brand.scale} />
+      {inner && <div style={{ position: 'relative', zIndex: 1, width: '100%', minWidth: 0 }}>{inner}</div>}
     </div>
   );
 }
@@ -1202,42 +1197,32 @@ function FooterBand({ brand }) {
   const f = brand.footer;
   if (!f.present) return null;
 
+  const hasBannerImage = f.bg?.type === 'image' && Boolean(f.bg?.imageUrl);
+  const bg = hasBannerImage ? { ...f.bg, overlayOpacity: 0 } : f.bg;
+
   const footerFontSize = Math.max(20, Math.round(f.style.size || 20));
-  const footerSurface = f.bg?.type === 'color' ? f.bg.color : (brand.canvas.color || '#ffffff');
+  const footerSurface = bg?.type === 'color' ? bg.color : (brand.canvas.color || '#ffffff');
   const safeColor = pickReadableColor([f.style.color, '#ffffff', '#0b0f17'], footerSurface, 4.5) || f.style.color;
-  /* One read of the whole band: a single Tamil contact line sets the rules for all of it. */
-  const footerWords = [f.address, f.phone, f.email, f.website, f.legalText, f.legacyContact, ...f.legacySocials]
+  const footerWords = [f.address, f.phone, f.email, f.website, f.legalText]
     .filter(Boolean)
     .join(' ');
   const typography = textStyleCss({ ...f.style, size: footerFontSize, color: safeColor }, {}, footerWords);
-  const iconSize = Math.max(20, Math.round(footerFontSize * 1.15));
   const cellGap = Math.max(8, Math.round(footerFontSize * 0.45));
 
-  const socialIcons = f.social.length ? (
+  const socialIcons = !hasBannerImage && f.social.length ? (
     <div key="socials" style={{ display: 'flex', alignItems: 'center', gap: `${Math.round(footerFontSize * 0.9)}px`, color: f.linkColor, flexShrink: 0 }}>
       {f.social.map((s) => (
-        <SocialIcon key={`${s.platform}-${s.url}`} platform={s.platform} size={iconSize} />
+        <span key={`${s.platform}-${s.url}`} style={{ textTransform: 'capitalize' }}>
+          {s.platform}
+        </span>
       ))}
     </div>
   ) : null;
 
-  const legacySocialText = !f.social.length && f.legacySocials.length ? (
-    <div key="legacy-socials" style={{ display: 'flex', alignItems: 'center', gap: `${f.gap}px`, opacity: 0.72 }}>
-      {f.legacySocials.map((s) => (
-        <span key={s}>{s}</span>
-      ))}
-    </div>
-  ) : null;
-
-  const website = f.website ? <span key="site" style={{ color: f.linkColor, fontWeight: 600 }}>{f.website}</span> : null;
+  const website = !hasBannerImage && f.website ? <span key="site" style={{ color: f.linkColor, fontWeight: 600 }}>{f.website}</span> : null;
 
   const columns = [];
-  if (f.legacyPresentation) {
-    /* Pre-style kits kept the single contact line plus written handles. */
-    const left = [website, f.legacyContact ? <span key="contact">{f.legacyContact}</span> : null].filter(Boolean);
-    if (left.length) columns.push(left);
-    if (legacySocialText) columns.push([legacySocialText]);
-  } else {
+  if (!hasBannerImage) {
     const groups = [
       f.address ? [<span key="addr">{f.address}</span>] : null,
       f.phone || f.email ? [<span key="reach">{[f.phone, f.email].filter(Boolean).join('  ·  ')}</span>] : null,
@@ -1252,7 +1237,7 @@ function FooterBand({ brand }) {
     }
   }
 
-  const legal = f.legalText ? (
+  const legal = !hasBannerImage && f.legalText ? (
     <div
       style={{
         ...textStyleCss({ ...f.style, size: Math.max(20, Math.round(footerFontSize * 0.9)), color: safeColor }, {}, f.legalText),
@@ -1288,117 +1273,40 @@ function FooterBand({ brand }) {
         zIndex: 20,
       }}
     >
-      {(() => {
-        const wholePosterBgActive = Boolean(brand?.content?.bgFullBleed && brand?.content?.bg?.imageUrl);
-        const bandHasOwnImage = f.bg?.type === 'image' && Boolean(f.bg?.imageUrl);
-        const effectiveBg = wholePosterBgActive && !bandHasOwnImage
-          ? { ...f.bg, type: 'color', color: 'transparent', overlayOpacity: 0 }
-          : f.bg;
-        return <BandBackground bg={effectiveBg} ink={brand.content.decorationColor} scale={brand.scale} />;
-      })()}
-      <div style={{ position: 'relative', zIndex: 1, width: '100%', minWidth: 0 }}>
-        <div
-          style={{
-            ...typography,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: columns.length > 1 ? 'space-between' : 'center',
-            gap: `${f.gap}px`,
-            width: '100%',
-            minWidth: 0,
-          }}
-        >
-          {columns.map((cells, index) => (
-            <div
-              key={index}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: `${cellGap}px`,
-                minWidth: 0,
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              {cells}
-            </div>
-          ))}
-        </div>
-        {legal}
-      </div>
-    </div>
-  );
-}
-
-function resolveBandBackground(bg, brandKit) {
-  if (!bg || typeof bg !== 'object') return { type: 'color', color: '#0b0f17' };
-  const out = { ...bg };
-  if (isBrandColorToken(out.color)) out.color = resolveColorToken(out.color, brandKit);
-  if (isBrandColorToken(out.gradientFrom)) out.gradientFrom = resolveColorToken(out.gradientFrom, brandKit);
-  if (isBrandColorToken(out.gradientTo)) out.gradientTo = resolveColorToken(out.gradientTo, brandKit);
-  if (isBrandColorToken(out.overlayColor)) out.overlayColor = resolveColorToken(out.overlayColor, brandKit);
-  return out;
-}
-
-function CustomBand({
-  section,
-  band,
-  width,
-  height,
-  brand,
-  brandKit,
-  contentForCanvas,
-  photoUrl,
-  fontsReady,
-  isEditor,
-  onImageFail,
-}) {
-  const isHeader = section === 'header';
-  const bandH = band?.height ?? (isHeader ? 80 : 70);
-  const bandY = isHeader ? 0 : height - bandH;
-
-  const rawBg = resolveBandBackground(band?.background, brandKit);
-  const wholePosterBgActive = Boolean(brand?.content?.bgFullBleed && brand?.content?.bg?.imageUrl);
-  const bandHasOwnImage = rawBg?.type === 'image' && Boolean(rawBg?.imageUrl);
-  const bg = wholePosterBgActive && !bandHasOwnImage
-    ? { ...rawBg, type: 'color', color: 'transparent', overlayOpacity: 0 }
-    : rawBg;
-  const elements = (band?.elements || []).map((raw) => {
-    let item = resolveStyleTokens(raw, brandKit);
-    if (typeof item.text === 'string' && item.text.includes('{{')) {
-      item = { ...item, text: resolveBrandText(item.text, brandKit) };
-    }
-    if (!isHeader && item.y >= bandY) {
-      item = { ...item, y: item.y - bandY };
-    }
-    return item;
-  });
-
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        left: 0,
-        top: `${bandY}px`,
-        width: `${width}px`,
-        height: `${bandH}px`,
-        boxSizing: 'border-box',
-        overflow: 'hidden',
-        zIndex: 20,
-      }}
-    >
       <BandBackground bg={bg} ink={brand.content.decorationColor} scale={brand.scale} />
-      <div style={{ position: 'relative', zIndex: 1, width: '100%', height: '100%', pointerEvents: 'none' }}>
-        <PosterElementLayer
-          elements={elements}
-          content={contentForCanvas}
-          photoUrl={photoUrl}
-          fontsReady={fontsReady}
-          isEditor={isEditor}
-          onImageFail={onImageFail}
-        />
-      </div>
+      {!hasBannerImage && (columns.length > 0 || legal) && (
+        <div style={{ position: 'relative', zIndex: 1, width: '100%', minWidth: 0 }}>
+          <div
+            style={{
+              ...typography,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: columns.length > 1 ? 'space-between' : 'center',
+              gap: `${f.gap}px`,
+              width: '100%',
+              minWidth: 0,
+            }}
+          >
+            {columns.map((cells, index) => (
+              <div
+                key={index}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: `${cellGap}px`,
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  whiteSpace: 'nowrap',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {cells}
+              </div>
+            ))}
+          </div>
+          {legal}
+        </div>
+      )}
     </div>
   );
 }
@@ -1425,10 +1333,8 @@ export default function PosterCanvas({
   onSlotClick = null,
   isThumbnail = false,
 }) {
+  const effectiveBrandKit = content?.design?.brandKit || brandKit;
   const effectiveTemplate = template || content?.design?.template;
-  const templateBrandKit = effectiveTemplate?.brandKit;
-  const mergedBrandKit = templateBrandKit && typeof templateBrandKit === 'object' ? { ...brandKit, ...templateBrandKit } : brandKit;
-  const effectiveBrandKit = content?.design?.brandKit || mergedBrandKit;
   /* A brand kit that has laid its own bands out as items wins over the settings drawing; a kit
      nobody has touched still paints the header and footer from its settings, exactly as before. */
   const sections = useMemo(
@@ -1640,6 +1546,7 @@ export default function PosterCanvas({
   /* The brand's photo takes the poster over when the content has none. */
   const photoUrl = (content?.imageUrl || content?.image || '').trim() || brand.content.defaultImageUrl;
   const contentForCanvas = photoUrl === (content?.imageUrl || content?.image || '').trim() ? content : { ...content, imageUrl: photoUrl };
+  const hasImageElement = Array.isArray(items) && items.some((it) => it.kind === 'image' || it.field === 'photo');
 
   const outline = (color) =>
     showZoneBorders
@@ -1728,23 +1635,7 @@ export default function PosterCanvas({
           transition: 'opacity 200ms ease-out',
         }}
       >
-        {sections.header.mode === 'custom' ? (
-          <CustomBand
-            section="header"
-            band={sections.header}
-            width={width}
-            height={height}
-            brand={brand}
-            brandKit={effectiveBrandKit}
-            contentForCanvas={contentForCanvas}
-            photoUrl={photoUrl}
-            fontsReady={fontsReady}
-            isEditor={isEditor}
-            onImageFail={onImageFail}
-          />
-        ) : (
-          <HeaderBand brand={brand} />
-        )}
+        <HeaderBand brand={brand} />
       </div>
 
       <div
@@ -1770,6 +1661,82 @@ export default function PosterCanvas({
             <BandBackground bg={brand.content.bg} ink={brand.content.decorationColor} scale={brand.scale} />
           )}
 
+          {photoUrl ? (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                zIndex: 10,
+                overflow: 'hidden',
+              }}
+            >
+              <img
+                src={photoUrl}
+                alt=""
+                crossOrigin="anonymous"
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  display: 'block',
+                }}
+              />
+            </div>
+          ) : null}
+
+          {photoUrl && (content?.date || content?.time || content?.venue || (content?.details && content.details.length > 0)) ? (
+            <div
+              style={{
+                position: 'absolute',
+                bottom: '24px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 15,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '8px',
+                maxWidth: '92%',
+                background: 'rgba(15, 23, 42, 0.85)',
+                backdropFilter: 'blur(10px)',
+                padding: '12px 28px',
+                borderRadius: '16px',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+                textAlign: 'center',
+                pointerEvents: 'none',
+              }}
+            >
+              {(content.date || content.time || content.venue) && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                  {content.date && (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#ffffff', fontSize: '20px', fontWeight: 600 }}>
+                      <Calendar size={18} color="#F59E0B" />
+                      {content.date}
+                    </span>
+                  )}
+                  {content.time && (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#ffffff', fontSize: '20px', fontWeight: 600 }}>
+                      <Clock size={18} color="#F59E0B" />
+                      {content.time}
+                    </span>
+                  )}
+                  {content.venue && (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#ffffff', fontSize: '20px', fontWeight: 600 }}>
+                      <MapPin size={18} color="#F59E0B" />
+                      {content.venue}
+                    </span>
+                  )}
+                </div>
+              )}
+              {content.details && (Array.isArray(content.details) ? content.details.length > 0 : Boolean(content.details)) && (
+                <p style={{ color: '#E2E8F0', fontSize: '15px', margin: 0, fontWeight: 400 }}>
+                  {Array.isArray(content.details) ? content.details.join(' • ') : content.details}
+                </p>
+              )}
+            </div>
+          ) : null}
+
           {brand.content.watermark.show && (
             <img
               src={brand.content.watermark.url}
@@ -1791,7 +1758,7 @@ export default function PosterCanvas({
             />
           )}
 
-          {!items && (
+          {!photoUrl && isEditor && !items && (
             <div style={{ position: 'relative', zIndex: 1 }}>
               <ContentZone
                 zoneW={brand.content.w}
@@ -1812,48 +1779,6 @@ export default function PosterCanvas({
             </div>
           )}
         </div>
-
-        {items && (
-          <div
-            style={{
-              position: 'absolute',
-              left: `${brand.content.x}px`,
-              top: `${brand.content.y}px`,
-              width: `${brand.content.w}px`,
-              height: `${brand.content.h}px`,
-              overflow: 'hidden',
-              zIndex: 11,
-              pointerEvents: onSlotClick ? 'auto' : 'none',
-            }}
-          >
-            <div
-              style={{
-                position: 'absolute',
-                left: `${-brand.content.x}px`,
-                top: `${-brand.content.y}px`,
-                width: `${width}px`,
-                height: `${height}px`,
-                pointerEvents: onSlotClick ? 'auto' : 'none',
-              }}
-            >
-              <PosterElementLayer
-                elements={items}
-                content={contentForCanvas}
-                photoUrl={photoUrl}
-                fontsReady={fontsReady}
-                onOverflow={handleItemOverflow}
-                onFitted={handleItemFitted}
-                isEditor={isEditor}
-                onImageFail={onImageFail}
-                isExporting={isExporting}
-                showPlaceholders={showPlaceholders}
-                highlightSlotKey={highlightSlotKey}
-                onSlotClick={onSlotClick}
-                isThumbnail={isThumbnail}
-              />
-            </div>
-          </div>
-        )}
 
         {!items && imageAbsolute && photoUrl && !outsideImageFailed && (
           <div
@@ -1892,23 +1817,7 @@ export default function PosterCanvas({
           transition: 'opacity 200ms ease-out',
         }}
       >
-        {sections.footer.mode === 'custom' ? (
-          <CustomBand
-            section="footer"
-            band={sections.footer}
-            width={width}
-            height={height}
-            brand={brand}
-            brandKit={effectiveBrandKit}
-            contentForCanvas={contentForCanvas}
-            photoUrl={photoUrl}
-            fontsReady={fontsReady}
-            isEditor={isEditor}
-            onImageFail={onImageFail}
-          />
-        ) : (
-          <FooterBand brand={brand} />
-        )}
+        <FooterBand brand={brand} />
       </div>
 
       {showZoneBorders && (

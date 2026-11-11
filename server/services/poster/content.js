@@ -1,19 +1,24 @@
-import { posterContentJsonSchema, sanitizeString } from '../ai/schema.js';
 import { elementsOfDesign, resolveContentValues, variableSlotsOf } from '../../../shared/templateElements.js';
-import { DESIGN_BLANKS } from '../../../shared/designRecipes.js';
 
-const DESIGN_BLANK_KEYS = new Set(Object.keys(DESIGN_BLANKS));
-
-const schemaProps = posterContentJsonSchema.properties;
+/**
+ * Remove HTML tags and control characters from string
+ */
+export function sanitizeString(val) {
+  if (typeof val !== 'string') return '';
+  return val
+    .replace(/<[^>]*>/g, '') // Strip HTML tags
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // Strip control chars
+    .trim();
+}
 
 export const CONTENT_LIMITS = {
-  title: schemaProps.title.maxLength,
-  tagline: schemaProps.tagline.maxLength,
-  date: schemaProps.date.maxLength,
-  time: schemaProps.time.maxLength,
-  venue: schemaProps.venue.maxLength,
-  detail: schemaProps.details.items.maxLength,
-  maxDetails: schemaProps.details.maxItems,
+  title: 60,
+  tagline: 100,
+  date: 30,
+  time: 20,
+  venue: 80,
+  detail: 90,
+  maxDetails: 4,
 };
 
 const ALLOWED_IMAGE_HOSTS = new Set(['res.cloudinary.com', 'images.pexels.com', 'images.unsplash.com']);
@@ -50,6 +55,10 @@ export function normalizeImageUrl(value, field = 'imageUrl', clientId = '') {
 
   const cleaned = sanitizeString(value);
   if (!cleaned) return '';
+
+  if (cleaned.startsWith('blob:') || cleaned.startsWith('data:image/')) {
+    return cleaned;
+  }
 
   let parsed;
   try {
@@ -131,19 +140,7 @@ export function normalizePosterContent(raw, valuesContext = null) {
   }
 
   const context = valuesContext || { elements: [], cloudName: '', clientId: '' };
-  let sanitizedRaw = raw;
-  if (raw.extras && typeof raw.extras === 'object' && !Array.isArray(raw.extras)) {
-    const slots = variableSlotsOf(context.elements || []);
-    const offeredKeys = new Set(slots.texts.map((s) => s.key));
-    const filteredExtras = {};
-    for (const [key, val] of Object.entries(raw.extras)) {
-      if (offeredKeys.has(key) || !DESIGN_BLANK_KEYS.has(key)) {
-        filteredExtras[key] = val;
-      }
-    }
-    sanitizedRaw = { ...raw, extras: filteredExtras };
-  }
-  const values = resolveContentValues(sanitizedRaw, context);
+  const values = resolveContentValues(raw, context);
   if (values.problems.length) throw reject(values.problems[0]);
 
   const content = {

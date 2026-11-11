@@ -1,9 +1,7 @@
 import React from 'react';
-import { AlertCircle } from 'lucide-react';
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
-import { AuthProvider, useAuth } from './context/AuthContext';
-import { homeForRole } from './components/shell/navItems';
+import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import AppShell from './components/shell/AppShell';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -11,8 +9,6 @@ import AccessDenied from './pages/AccessDenied';
 import Clients from './pages/Clients';
 import Dashboard from './pages/Dashboard';
 import Generate from './pages/Generate';
-import Home from './pages/Home';
-import HowItWorks from './pages/HowItWorks';
 import Login from './pages/Login';
 import Users from './pages/Users';
 import ForgotPassword from './pages/ForgotPassword';
@@ -22,40 +18,9 @@ import VerifyEmail from './pages/VerifyEmail';
 
 const History = React.lazy(() => import('./pages/History'));
 const Security = React.lazy(() => import('./pages/Security'));
+const CompanySetup = React.lazy(() => import('./pages/CompanySetup'));
 const BrandKit = React.lazy(() => import('./pages/BrandKit'));
-const Templates = React.lazy(() => import('./pages/Templates'));
-const TemplateBuilder = React.lazy(() => import('./pages/TemplateBuilder'));
-const TemplateEdit = React.lazy(() => import('./pages/TemplateEdit'));
-/* The renderer harness exists in development only: the route below is guarded by the same
-   flag, so the production build drops this branch and never ships the page at all. */
-const PosterStudioTest = import.meta.env.DEV
-  ? React.lazy(() => import('./pages/PosterStudioTest'))
-  : null;
-const ExportTestPage = import.meta.env.DEV
-  ? React.lazy(() => import('./pages/ExportTestPage'))
-  : null;
-const CatalogDevPage = import.meta.env.DEV
-  ? React.lazy(() => import('./pages/CatalogDevPage'))
-  : null;
-const PreviewTestPage = import.meta.env.DEV
-  ? React.lazy(() => import('./pages/PreviewTestPage'))
-  : null;
 
-function RootRoute() {
-  const { user, isAuthenticated, loading } = useAuth();
-  if (!loading && isAuthenticated && user) {
-    return <Navigate to={homeForRole(user.role)} replace />;
-  }
-  return <Home />;
-}
-
-function CatchAllRoute() {
-  const { user, isAuthenticated, loading } = useAuth();
-  if (!loading && isAuthenticated && user) {
-    return <Navigate to={homeForRole(user.role)} replace />;
-  }
-  return <Navigate to="/" replace />;
-}
 
 function PageFallback() {
   return (
@@ -80,48 +45,7 @@ function PageFallback() {
   );
 }
 
-function FriendlyPageError({
-  title = 'Something went wrong',
-  message = 'We ran into an unexpected problem loading this page. Please try refreshing, or head back to your previous page.',
-  returnTo = '/templates',
-  returnLabel = 'Back to templates',
-}) {
-  return (
-    <div className="min-h-screen bg-[#F9FAFB] flex flex-col items-center justify-center p-6 text-center select-none">
-      <div className="max-w-md w-full p-8 rounded-[8px] border border-[#E5E7EB] bg-white shadow-sm space-y-4 text-center">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 text-[#2563EB]">
-          <AlertCircle className="h-6 w-6" />
-        </div>
-        <div className="space-y-1.5">
-          <h1 className="text-base font-semibold text-[#111827]">{title}</h1>
-          <p className="text-xs text-[#6B7280] leading-relaxed">{message}</p>
-        </div>
-        <div className="flex items-center justify-center gap-2 pt-2">
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            className="inline-flex items-center justify-center h-8 px-4 rounded-[6px] bg-[#2563EB] text-white text-xs font-semibold hover:bg-[#1D4ED8] transition-colors shadow-xs"
-          >
-            Reload page
-          </button>
-          <a
-            href={returnTo}
-            className="inline-flex items-center justify-center h-8 px-4 rounded-[6px] border border-[#E5E7EB] bg-white text-[#374151] text-xs font-semibold hover:bg-[#F9FAFB] transition-colors shadow-xs"
-          >
-            {returnLabel}
-          </a>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
-  const location = useLocation();
-  /* Both editors take the whole screen: a template's layout, or the organization's own
-     header and footer placed with the same tools. */
-  const isFullScreenEditor = /^\/(templates\/[^/]+|brand-layer)\/edit$/.test(location.pathname);
-
   return (
     <AuthProvider>
       <Toaster
@@ -137,163 +61,86 @@ export default function App() {
           error: { iconTheme: { primary: 'var(--color-danger)', secondary: 'var(--color-canvas)' } },
         }}
       />
-      {isFullScreenEditor ? (
+      <AppShell>
         <ErrorBoundary
           fallback={
-            <FriendlyPageError
-              title="Unable to open editor"
-              message="We had trouble loading the editor for this page. Refresh to try again or return to your templates."
-              returnTo="/templates"
-              returnLabel="Back to templates"
-            />
+            <div className="p-8 text-center text-sm text-[#6B7280]">
+              Something went wrong loading this page. Please refresh to try again.
+            </div>
           }
         >
           <Routes>
+            <Route path="/" element={<Login />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/invite" element={<AcceptInvite />} />
+            <Route path="/verify-email" element={<VerifyEmail />} />
+            <Route path="/access-denied" element={<ProtectedRoute><AccessDenied /></ProtectedRoute>} />
+
+            <Route path="/dashboard" element={<ProtectedRoute allowedRoles={['superadmin']}><Dashboard /></ProtectedRoute>} />
             <Route
-              path="/templates/:id/edit"
+              path="/company-setup"
               element={
-                <ProtectedRoute allowedRoles={['superadmin', 'clientadmin']} requireActiveClient>
+                <ProtectedRoute allowedRoles={['superadmin']}>
                   <React.Suspense fallback={<PageFallback />}>
-                    <TemplateEdit />
+                    <CompanySetup />
                   </React.Suspense>
                 </ProtectedRoute>
               }
             />
             <Route
-              path="/brand-layer/edit"
+              path="/clients/:id/setup"
               element={
-                <ProtectedRoute allowedRoles={['superadmin', 'clientadmin']} requireActiveClient>
+                <ProtectedRoute allowedRoles={['superadmin']}>
                   <React.Suspense fallback={<PageFallback />}>
-                    <TemplateEdit brandLayer />
+                    <CompanySetup />
                   </React.Suspense>
                 </ProtectedRoute>
               }
             />
+            <Route path="/clients" element={<ProtectedRoute allowedRoles={['superadmin']}><Clients /></ProtectedRoute>} />
+            <Route path="/users" element={<ProtectedRoute allowedRoles={['superadmin']}><Users /></ProtectedRoute>} />
+            <Route path="/team" element={<ProtectedRoute allowedRoles={['clientadmin']}><Users /></ProtectedRoute>} />
+            <Route
+              path="/security"
+              element={
+                <ProtectedRoute allowedRoles={['superadmin', 'clientadmin', 'user']}>
+                  <React.Suspense fallback={<PageFallback />}>
+                    <Security />
+                  </React.Suspense>
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/brand-kit"
+              element={
+                <ProtectedRoute allowedRoles={['superadmin']} requireActiveClient>
+                  <React.Suspense fallback={<PageFallback />}>
+                    <BrandKit />
+                  </React.Suspense>
+                </ProtectedRoute>
+              }
+            />            <Route path="/create" element={<ProtectedRoute allowedRoles={['superadmin', 'clientadmin', 'user']} requireActiveClient><Generate /></ProtectedRoute>} />
+            <Route
+              path="/posters"
+              element={
+                <ProtectedRoute allowedRoles={['superadmin', 'clientadmin', 'user']} requireActiveClient>
+                  <React.Suspense fallback={<PageFallback />}>
+                    <History />
+                  </React.Suspense>
+                </ProtectedRoute>
+              }
+            />
+
+            
+            <Route path="/history" element={<Navigate to="/posters" replace />} />
+            <Route path="/generate" element={<Navigate to="/create" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </ErrorBoundary>
-      ) : (
-        <AppShell>
-          <ErrorBoundary
-            fallback={
-              <FriendlyPageError
-                title="Page unavailable"
-                message="We encountered an issue loading this section. Refresh to try again or return to your dashboard."
-                returnTo="/dashboard"
-                returnLabel="Back to dashboard"
-              />
-            }
-          >
-            <Routes>
-              <Route path="/" element={<RootRoute />} />
-              <Route path="/how-it-works" element={<HowItWorks />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/forgot-password" element={<ForgotPassword />} />
-              <Route path="/reset-password" element={<ResetPassword />} />
-              <Route path="/invite" element={<AcceptInvite />} />
-              <Route path="/verify-email" element={<VerifyEmail />} />
-              <Route path="/access-denied" element={<ProtectedRoute><AccessDenied /></ProtectedRoute>} />
-
-              <Route path="/dashboard" element={<ProtectedRoute allowedRoles={['superadmin', 'clientadmin', 'user']}><Dashboard /></ProtectedRoute>} />
-              <Route path="/clients" element={<ProtectedRoute allowedRoles={['superadmin']}><Clients /></ProtectedRoute>} />
-              <Route path="/users" element={<ProtectedRoute allowedRoles={['superadmin']}><Users /></ProtectedRoute>} />
-              <Route path="/team" element={<ProtectedRoute allowedRoles={['clientadmin']}><Users /></ProtectedRoute>} />
-              <Route
-                path="/security"
-                element={
-                  <ProtectedRoute allowedRoles={['superadmin', 'clientadmin', 'user']}>
-                    <React.Suspense fallback={<PageFallback />}>
-                      <Security />
-                    </React.Suspense>
-                  </ProtectedRoute>
-                }
-              />
-
-              <Route
-                path="/brand-kit"
-                element={
-                  <ProtectedRoute allowedRoles={['superadmin', 'clientadmin']} requireActiveClient>
-                    <React.Suspense fallback={<PageFallback />}>
-                      <BrandKit />
-                    </React.Suspense>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/templates"
-                element={
-                  <ProtectedRoute allowedRoles={['superadmin', 'clientadmin']} requireActiveClient>
-                    <React.Suspense fallback={<PageFallback />}>
-                      <Templates />
-                    </React.Suspense>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/templates/builder"
-                element={
-                  <ProtectedRoute allowedRoles={['superadmin', 'clientadmin']} requireActiveClient>
-                    <React.Suspense fallback={<PageFallback />}>
-                      <TemplateBuilder />
-                    </React.Suspense>
-                  </ProtectedRoute>
-                }
-              />
-              <Route path="/create" element={<ProtectedRoute allowedRoles={['superadmin', 'clientadmin', 'user']} requireActiveClient><Generate /></ProtectedRoute>} />
-          <Route
-            path="/posters"
-            element={
-              <ProtectedRoute allowedRoles={['superadmin', 'clientadmin', 'user']} requireActiveClient>
-                <React.Suspense fallback={<PageFallback />}>
-                  <History />
-                </React.Suspense>
-              </ProtectedRoute>
-            }
-          />
-
-          {import.meta.env.DEV ? (
-            <>
-              <Route
-                path="/studio-test"
-                element={
-                  <React.Suspense fallback={<PageFallback />}>
-                    <PosterStudioTest />
-                  </React.Suspense>
-                }
-              />
-              <Route
-                path="/export-test"
-                element={
-                  <React.Suspense fallback={<PageFallback />}>
-                    <ExportTestPage />
-                  </React.Suspense>
-                }
-              />
-              <Route
-                path="/catalog-dev"
-                element={
-                  <React.Suspense fallback={<PageFallback />}>
-                    <CatalogDevPage />
-                  </React.Suspense>
-                }
-              />
-              <Route
-                path="/preview-test"
-                element={
-                  <React.Suspense fallback={<PageFallback />}>
-                    <PreviewTestPage />
-                  </React.Suspense>
-                }
-              />
-            </>
-          ) : null}
-
-          <Route path="/history" element={<Navigate to="/posters" replace />} />
-          <Route path="/generate" element={<Navigate to="/create" replace />} />
-          <Route path="*" element={<CatchAllRoute />} />
-        </Routes>
-      </ErrorBoundary>
-    </AppShell>
-      )}
+      </AppShell>
     </AuthProvider>
   );
 }

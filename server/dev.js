@@ -1,10 +1,15 @@
+import path from 'path';
+import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-dotenv.config();
 
-import app from './app.js';
-import { connectDB } from './config/db.js';
-import { llmProviderName } from './services/ai/index.js';
-import { imageSearchProviderName } from './services/images.js';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
+const [{ default: app }, { connectDB }, { getHuggingFaceConfig }] = await Promise.all([
+  import('./app.js'),
+  import('./config/db.js'),
+  import('./controllers/huggingFace.controller.js'),
+]);
 
 const PORT = process.env.PORT || 5000;
 
@@ -16,20 +21,16 @@ async function startLocalServer() {
     } else {
       console.log('ℹ️ Running in local development mode without DATABASE_URL / MONGODB_URI.');
     }
-
   } catch (err) {
     console.warn('⚠️ MongoDB connection could not be established at startup:', err.message);
   }
 
-  const llm = llmProviderName();
-  const imageSearch = imageSearchProviderName();
-
+  const { provider, model } = getHuggingFaceConfig();
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 [DEV SERVER] Express running locally at: http://localhost:${PORT} (http://127.0.0.1:${PORT})`);
-    console.log(`🔌 Active providers: LLM: ${llm}, image search: ${imageSearch}`);
+    console.log(`🔌 Active AI provider: ${provider} (${model})`);
     console.log(`📡 Health Check: http://localhost:${PORT}/api/health`);
   });
 }
-
 
 startLocalServer();

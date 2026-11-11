@@ -5,35 +5,36 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   AlertCircle,
+  ChevronDown,
   Loader2,
   Plus,
   RefreshCw,
   Search,
+  SlidersHorizontal,
   Sparkles,
-  Trash2,
   X,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "../components/ui/dialog";
 import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import PosterCard, { PosterCardSkeleton } from "../components/PosterCard";
 import PosterDetailDrawer from "../components/PosterDetailDrawer";
+import { downloadSavedPoster } from "../utils/posterDownload";
 
 const PAGE_SIZE = 12;
 const SEARCH_DEBOUNCE_MS = 300;
+
+const STATUS_OPTIONS = [
+  { value: "", label: "Any status" },
+  { value: "draft", label: "Draft" },
+  { value: "pending", label: "Waiting for review" },
+  { value: "approved", label: "Approved" },
+];
 
 function idOf(poster) {
   return String(poster?._id || poster?.id || "");
@@ -45,8 +46,14 @@ function friendlyListError(err) {
   return "We could not load your posters. Please try again.";
 }
 
+function dateParam(value, endOfDay) {
+  if (!value) return "";
+  const time = endOfDay ? "T23:59:59.999" : "T00:00:00";
+  const parsed = new Date(`${value}${time}`);
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString();
+}
+
 export default function History() {
-  const navigate = useNavigate();
   const { user, role, activeClientId, can } = useAuth();
 
   const [items, setItems] = useState([]);
@@ -59,6 +66,11 @@ export default function History() {
 
   const [searchText, setSearchText] = useState("");
   const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("");
+  const [status, setStatus] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
 
   const [templates, setTemplates] = useState([]);
@@ -66,8 +78,6 @@ export default function History() {
   const [namesById, setNamesById] = useState({});
 
   const [busyIds, setBusyIds] = useState(() => new Set());
-  const [posterToDelete, setPosterToDelete] = useState(null);
-  const [deletingPoster, setDeletingPoster] = useState(false);
   const [openId, setOpenId] = useState("");
 
   const requestSeqRef = useRef(0);
@@ -136,9 +146,15 @@ export default function History() {
     (targetPage) => {
       const params = { page: targetPage, limit: PAGE_SIZE };
       if (query) params.q = query;
+      if (category) params.category = category;
+      if (status) params.status = status;
+      const fromParam = dateParam(from, false);
+      const toParam = dateParam(to, true);
+      if (fromParam) params.from = fromParam;
+      if (toParam) params.to = toParam;
       return params;
     },
-    [query],
+    [query, category, status, from, to],
   );
 
   useEffect(() => {
@@ -174,6 +190,20 @@ export default function History() {
       active = false;
     };
   }, [buildParams, activeClientId, reloadToken]);
+
+  const filtersActive = Boolean(query || category || status || from || to);
+  const activeFilterCount = [query, category, status, from || to].filter(
+    Boolean,
+  ).length;
+
+  const categories = useMemo(() => {
+    const set = new Set();
+    templates.forEach((template) => {
+      const value = (template.category || "").trim();
+      if (value) set.add(value);
+    });
+    return [...set].sort();
+  }, [templates]);
 
   const templatesById = useMemo(() => {
     const map = new Map();
@@ -222,14 +252,14 @@ export default function History() {
     }
   }
 
-  function handleDelete(poster) {
-    setPosterToDelete(poster);
-  }
+  async function handleDelete(poster) {
+    const id = idOf(poster);
+    const label = poster.title || "this poster";
+    const ok = window.confirm(
+      `Delete “${label}”?\n\nIt will be removed from your list.`,
+    );
+    if (!ok) return;
 
-  async function confirmDeletePoster() {
-    if (!posterToDelete) return;
-    const id = idOf(posterToDelete);
-    setDeletingPoster(true);
     setBusy(id, true);
     try {
       const response = await api.delete(`/posters/${id}`);
@@ -238,7 +268,6 @@ export default function History() {
       setTotal((prev) => Math.max(0, prev - 1));
       if (openId === id) setOpenId("");
       toast.success("Poster deleted");
-      setPosterToDelete(null);
     } catch (err) {
       toast.error(
         err.response?.status === 404
@@ -247,7 +276,6 @@ export default function History() {
       );
     } finally {
       setBusy(id, false);
-      setDeletingPoster(false);
     }
   }
 
@@ -287,7 +315,37 @@ export default function History() {
     );
   }, []);
 
-  const openInEditor = (poster) => navigate(`/create?poster=${idOf(poster)}`);
+  async function handleDownload(poster) {
+    const id = idOf(poster);
+    setBusy(id, true);
+    try {
+      const template = templatesById.get(String(poster.templateId || "")) || null;
+      const result = await downloadSavedPoster(id, {
+        fallbackPoster: poster,
+        fallbackBrandKit: brandKit,
+        fallbackTemplate: template,
+        format: "png",
+      });
+      if (result.warnings?.length > 0) {
+        result.warnings.forEach((w) => toast(w, { icon: "⚠️", duration: 5000 }));
+      } else {
+        toast.success("Poster downloaded");
+      }
+    } catch (err) {
+      toast.error(err.message || "We could not download this poster. Please try again.");
+    } finally {
+      setBusy(id, false);
+    }
+  }
+
+  const clearFilters = () => {
+    setSearchText("");
+    setQuery("");
+    setCategory("");
+    setStatus("");
+    setFrom("");
+    setTo("");
+  };
 
   const openPoster = useMemo(
     () => items.find((item) => idOf(item) === openId) || null,
@@ -321,34 +379,39 @@ export default function History() {
         </div>
 
         {/* Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="relative flex-1 min-w-[240px] max-w-sm">
-            <Search className="w-4 h-4 text-[#6B7280] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <Input
-              type="search"
-              value={searchText}
-              onChange={(event) => setSearchText(event.target.value)}
-              placeholder="Search by headline or description"
-              className="h-9 pl-9 pr-8 rounded-[6px] border-[#E5E7EB] bg-white text-sm text-[#111827] placeholder:text-[#9CA3AF] focus-visible:border-[#2563EB] focus-visible:ring-1 focus-visible:ring-[#2563EB]"
-              aria-label="Search posters"
-            />
-            {searchText && (
-              <button
-                type="button"
-                onClick={() => setSearchText("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#111827]"
-                title="Clear search"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="relative flex-1 min-w-[240px] max-w-sm">
+              <Search className="w-4 h-4 text-[#6B7280] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Input
+                type="search"
+                value={searchText}
+                onChange={(event) => setSearchText(event.target.value)}
+                placeholder="Search by headline or description"
+                className="h-9 pl-9 pr-8 rounded-[6px] border-[#E5E7EB] bg-white text-sm text-[#111827] placeholder:text-[#9CA3AF] focus-visible:border-[#2563EB] focus-visible:ring-1 focus-visible:ring-[#2563EB]"
+                aria-label="Search posters"
+              />
+              {searchText && (
+                <button
+                  type="button"
+                  onClick={() => setSearchText("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#111827]"
+                  title="Clear search"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
 
-          {!loading && !listError && items.length > 0 && (
-            <span className="text-xs text-[#6B7280]">
-              Showing {items.length} of {total} poster{total === 1 ? "" : "s"}
-            </span>
-          )}
+            <div className="flex items-center gap-3">
+              {!loading && !listError && items.length > 0 && (
+                <span className="text-xs text-[#6B7280]">
+                  Showing {items.length} of {total} poster{total === 1 ? "" : "s"}
+                </span>
+              )}
+
+            </div>
+          </div>
         </div>
 
         {listError && (
@@ -394,23 +457,25 @@ export default function History() {
             </div>
             <div>
               <h2 className="text-base font-semibold text-[#111827]">
-                {query ? "No posters match your search" : "No posters yet"}
+                {filtersActive
+                  ? "No posters match these filters"
+                  : "No posters yet"}
               </h2>
               <p className="text-xs text-[#6B7280] mt-1 max-w-xs mx-auto leading-relaxed">
-                {query
-                  ? "Try searching for a different word or clear your search to see all posters."
+                {filtersActive
+                  ? "Try a different word, or clear the filters to see everything."
                   : "Describe what you need and we will write the words for your poster."}
               </p>
             </div>
-            {query ? (
+            {filtersActive ? (
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => setSearchText("")}
+                onClick={clearFilters}
                 className="h-8 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB]"
               >
-                <X className="w-3.5 h-3.5 mr-1 text-[#6B7280]" /> Clear search
+                <X className="w-3.5 h-3.5 mr-1 text-[#6B7280]" /> Clear filters
               </Button>
             ) : (
               <Button
@@ -447,7 +512,7 @@ export default function History() {
                     }
                     busy={busyIds.has(idOf(poster))}
                     onOpenDetail={(item) => setOpenId(idOf(item))}
-                    onOpenInEditor={openInEditor}
+                    onDownload={handleDownload}
                     onDuplicate={handleDuplicate}
                     onDelete={handleDelete}
                   />
@@ -493,54 +558,6 @@ export default function History() {
           />
         )}
       </div>
-    
-        {/* Delete poster confirmation modal */}
-        <Dialog
-          open={Boolean(posterToDelete)}
-          onOpenChange={(open) => {
-            if (!open && !deletingPoster) setPosterToDelete(null);
-          }}
-        >
-          <DialogContent className="sm:max-w-md rounded-[8px] border border-[#E5E7EB] bg-white p-6 shadow-md">
-            <DialogHeader>
-              <DialogTitle className="text-base font-semibold text-[#111827]">
-                Delete poster
-              </DialogTitle>
-              <DialogDescription className="text-xs text-[#6B7280] mt-1 leading-relaxed">
-                Are you sure you want to delete{" "}
-                <strong className="font-semibold text-[#111827]">
-                  {posterToDelete?.title ? `“${posterToDelete.title}”` : "this poster"}
-                </strong>
-                ? It will be removed from your list.
-              </DialogDescription>
-            </DialogHeader>
-
-            <DialogFooter className="pt-4 gap-2 sm:gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={deletingPoster}
-                onClick={() => setPosterToDelete(null)}
-                className="h-8 rounded-[6px] border-[#E5E7EB] text-xs font-medium text-[#374151] hover:bg-[#F3F4F6]"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                disabled={deletingPoster}
-                onClick={confirmDeletePoster}
-                className="h-8 rounded-[6px] bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-medium inline-flex items-center gap-1.5 shadow-none disabled:opacity-50"
-              >
-                {deletingPoster ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Trash2 className="w-3.5 h-3.5" />
-                )}
-                <span>{deletingPoster ? "Deleting..." : "Delete"}</span>
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-</div>
+    </div>
   );
 }

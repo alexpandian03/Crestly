@@ -95,7 +95,10 @@ export async function updateBrandKit(req, res, next) {
 
     const updated = await BrandKit.findOneAndUpdate(
       scopedFilter(req),
-      { $set: { ...seeded, clientId, orgName: seeded.orgName || 'Organization' } },
+      {
+        $set: (function() { const s = { ...seeded, clientId, orgName: seeded.orgName || 'Organization' }; delete s.version; return s; })(),
+        $inc: { version: 1 },
+      },
       { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
     );
 

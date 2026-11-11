@@ -1,10 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import ReactDOM from 'react-dom';
 import toast from 'react-hot-toast';
 import { ChevronDown, Download, Loader2 } from 'lucide-react';
-import PosterCanvas from './PosterCanvas';
-import { exportPoster } from '../utils/exportPoster';
-import { canvasBaseColor } from '../utils/brandRender';
+import { exportPosterDocument } from '../utils/posterDownload';
 
 const FORMATS = [
   { id: 'png', label: 'PNG' },
@@ -16,12 +13,6 @@ export default function PosterExportButtons({ brandKit, template, content, orgNa
   const [exporting, setExporting] = useState(null);
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
-
-  const effectiveBrandKit = content?.design?.brandKit || brandKit;
-  const effectiveTemplate = template || content?.design?.template;
-  const width = effectiveTemplate?.size?.width || 1080;
-  const height = effectiveTemplate?.size?.height || 1350;
-  const bgColor = canvasBaseColor(effectiveBrandKit, effectiveTemplate);
 
   useEffect(() => {
     const onDoc = (e) => {
@@ -36,54 +27,15 @@ export default function PosterExportButtons({ brandKit, template, content, orgNa
     setExporting(format);
     setOpen(false);
 
-    const org = (orgName || effectiveBrandKit?.orgName || 'poster').replace(/[^a-z0-9]/gi, '-').toLowerCase();
-    const title = (content?.title || 'poster').replace(/[^a-z0-9]/gi, '-').toLowerCase();
-    const filename = `${org}-${title}`.replace(/-+/g, '-').slice(0, 60);
-
-    const container = document.createElement('div');
-    container.style.cssText = `
-      position: fixed;
-      left: -10000px;
-      top: 0;
-      width: ${width}px;
-      height: ${height}px;
-      overflow: hidden;
-      z-index: -1;
-      pointer-events: none;
-    `;
-    document.body.appendChild(container);
-
-    let settleResolve;
-    const settled = new Promise((resolve) => {
-      settleResolve = resolve;
-    });
-
     try {
-      await new Promise((resolve) => {
-        ReactDOM.render(
-          <PosterCanvas
-            brandKit={effectiveBrandKit}
-            template={effectiveTemplate}
-            content={content}
-            view={view}
-            isExporting={true}
-            onLayoutSettled={settleResolve}
-          />,
-          container,
-          resolve
-        );
+      const result = await exportPosterDocument({
+        brandKit,
+        template,
+        content,
+        orgName,
+        format,
+        view,
       });
-
-      await Promise.race([settled, new Promise((r) => setTimeout(r, 3500))]);
-
-      const node = container.firstElementChild;
-      const imgs = node ? Array.from(node.querySelectorAll('img')) : [];
-      await Promise.all(
-        imgs.map((img) => (typeof img.decode === 'function' ? img.decode().catch(() => {}) : Promise.resolve()))
-      );
-      await new Promise((r) => setTimeout(r, 200));
-
-      const result = await exportPoster(node, format, filename, { width, height }, bgColor);
 
       if (result.warnings?.length > 0) {
         result.warnings.forEach((w) => toast(w, { icon: '⚠️', duration: 5000 }));
@@ -93,8 +45,6 @@ export default function PosterExportButtons({ brandKit, template, content, orgNa
     } catch (err) {
       toast.error(err.message || "We couldn't create the file. Please try again.");
     } finally {
-      ReactDOM.unmountComponentAtNode(container);
-      document.body.removeChild(container);
       setExporting(null);
     }
   };

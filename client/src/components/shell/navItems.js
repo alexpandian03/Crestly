@@ -1,5 +1,6 @@
 import {
   Building2,
+  CheckSquare,
   Images,
   LayoutDashboard,
   LayoutTemplate,
@@ -7,6 +8,7 @@ import {
   Sparkles,
   Users,
 } from 'lucide-react';
+import { can } from '../../../../shared/permissions.js';
 
 export const ROLE_LABELS = {
   superadmin: 'Super admin',
@@ -15,13 +17,12 @@ export const ROLE_LABELS = {
 };
 
 export function homeForRole(role) {
-  return '/dashboard';
+  if (role === 'superadmin') return '/clients';
+  if (role === 'clientadmin') return '/create';
+  return '/create';
 }
 
-export const guestNavItems = [
-  { href: '/#templates', label: 'Templates' },
-  { href: '/how-it-works', label: 'How it works' },
-];
+export const guestNavItems = [];
 
 export const memberNavItems = [
   { to: '/create', label: 'Create' },
@@ -34,11 +35,8 @@ export const defaultNavItems = [
   { to: '/create', label: 'Create', icon: Sparkles },
   { to: '/posters', label: 'Posters', icon: Images },
   { to: '/brand-kit', label: 'Brand kit', icon: Palette },
-  { to: '/templates', label: 'Templates', icon: LayoutTemplate },
   { to: '/team', label: 'Team', icon: Users },
 ];
-
-import { can } from '../../../../shared/permissions.js';
 
 export function navGroups(user) {
   if (!user) return [];
@@ -55,29 +53,34 @@ export function navGroups(user) {
       {
         needsClient: true,
         items: [
+          { to: '/company-setup', label: 'Company setup', icon: CheckSquare },
           can(user, 'posters:create') ? { to: '/create', label: 'Create', icon: Sparkles } : null,
           can(user, 'posters:read:own') ? { to: '/posters', label: 'Posters', icon: Images } : null,
           can(user, 'brandkit:read') ? { to: '/brand-kit', label: 'Brand kit', icon: Palette } : null,
-          can(user, 'templates:read') ? { to: '/templates', label: 'Templates', icon: LayoutTemplate } : null,
         ].filter(Boolean),
       },
     ];
   }
 
-  // Filter default items based on permissions
-  const availableItems = defaultNavItems.filter((item) => {
-    if (item.to === '/dashboard') return can(user, 'settings:read');
-    if (item.to === '/create') return can(user, 'posters:create');
-    if (item.to === '/posters') return can(user, 'posters:read:own');
-    if (item.to === '/brand-kit') return can(user, 'brandkit:read') || can(user, 'brandkit:write');
-    if (item.to === '/templates') return can(user, 'templates:read') || can(user, 'templates:write');
-    if (item.to === '/team') return can(user, 'users:read');
-    return false;
-  });
+  if (user?.role === 'clientadmin') {
+    return [
+      {
+        items: [
+          can(user, 'posters:create') ? { to: '/create', label: 'Create', icon: Sparkles } : null,
+          can(user, 'posters:read:own') ? { to: '/posters', label: 'Posters', icon: Images } : null,
+          can(user, 'users:read') ? { to: '/team', label: 'Team', icon: Users } : null,
+        ].filter(Boolean),
+      },
+    ];
+  }
 
+  // Regular user (Member)
   return [
     {
-      items: availableItems,
+      items: [
+        can(user, 'posters:create') ? { to: '/create', label: 'Create', icon: Sparkles } : null,
+        can(user, 'posters:read:own') ? { to: '/posters', label: 'Posters', icon: Images } : null,
+      ].filter(Boolean),
     },
   ];
 }
@@ -91,14 +94,12 @@ export function titleForPath(pathname) {
   if (pathname === '/create') return 'Create';
   if (pathname === '/posters') return 'Posters';
   if (pathname === '/brand-kit') return 'Brand kit';
-  if (pathname === '/templates') return 'Templates';
+    if (pathname === '/company-setup') return 'Company setup';
   if (pathname === '/team') return 'Team';
   if (pathname === '/security') return 'Security';
   if (pathname === '/clients') return 'Organizations';
   if (pathname === '/users') return 'Users';
-  if (pathname.startsWith('/templates/') && pathname.endsWith('/edit')) return 'Edit template';
-  if (pathname === '/how-it-works') return 'How it works';
-  if (pathname === '/access-denied') return 'Access denied';
+      if (pathname === '/access-denied') return 'Access denied';
   return 'Brandframe';
 }
 

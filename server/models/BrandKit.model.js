@@ -188,6 +188,11 @@ const brandKitSchema = new mongoose.Schema(
       width: { type: Number, default: 1080 },
       height: { type: Number, default: 1350 }, // 4:5 portrait standard
     },
+    version: {
+      type: Number,
+      default: 1,
+      min: 1,
+    },
   },
   {
     timestamps: true,

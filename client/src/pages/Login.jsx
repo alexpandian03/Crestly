@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { AlertCircle, Eye, EyeOff, Loader2 } from "lucide-react";
+import { AlertCircle, Eye, EyeOff, Info, Loader2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import Logo from "../components/Logo";
 import { Button } from "../components/ui/button";
@@ -10,7 +10,8 @@ import { sanitizeRedirect } from "../../../shared/redirect.js";
 
 function landingForRole(role) {
   if (role === "superadmin") return "/clients";
-  return "/dashboard";
+  if (role === "clientadmin") return "/create";
+  return "/create";
 }
 
 /* A page that asked for an account keeps its own address or "next" parameter; only same-origin relative paths are allowed. */
@@ -19,9 +20,6 @@ function afterLogin(from, role, search = "") {
   const nextParam = query.get("next");
   const fallback = landingForRole(role);
   const candidate = nextParam || (from?.pathname ? `${from.pathname}${from.search || ""}` : "");
-  if (!candidate || candidate === "/" || candidate.startsWith("/login")) {
-    return fallback;
-  }
   return sanitizeRedirect(candidate, fallback);
 }
 
@@ -34,6 +32,11 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [sessionMessage] = useState(() => {
+    const message = sessionStorage.getItem("authMessage") || "";
+    sessionStorage.removeItem("authMessage");
+    return message;
+  });
 
   useEffect(() => {
     if (isAuthenticated && user)
@@ -73,6 +76,15 @@ export default function Login() {
           </p>
         </div>
 
+        {sessionMessage && (
+          <p
+            role="status"
+            className="flex items-center gap-1.5 text-xs text-[#2563EB]"
+          >
+            <Info className="h-3.5 w-3.5 shrink-0" />
+            <span>{sessionMessage}</span>
+          </p>
+        )}
 
         <form onSubmit={handleLogin} className="space-y-4">
           <div className="space-y-1.5">

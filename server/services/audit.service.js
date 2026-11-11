@@ -94,7 +94,8 @@ export async function audit(req, action, target = null, options = {}) {
       req?.user?.clientId?._id ||
       req?.user?.clientId ||
       null;
-    if (!clientId && target && typeof target === 'object' && target.clientId) {
+    if (!clientId && target && typeof target === 'object') {
+      clientId = target.clientId?._id || target.clientId || (target.constructor?.modelName === 'Client' ? target._id : null);
       clientId = target.clientId?._id || target.clientId;
     }
 

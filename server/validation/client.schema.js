@@ -14,6 +14,7 @@ export const updateClientSchema = z
     name: z.string().trim().min(2).max(120).optional(),
     plan: z.enum(['free', 'starter', 'pro', 'enterprise']).optional(),
     isActive: z.boolean().optional(),
+    allowExtraLayouts: z.boolean().optional(),
     /* Which ways of making posters this organization may use. */
     designModes: z
       .object({

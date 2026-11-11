@@ -1,0 +1,11 @@
+{
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch dev.js",
+    "start": "node dev.js"
+  },
+  "dependencies": {
+    "@gradio/client": "^2.7.2",
+    "@huggingface/inference": "^4.13.32"
+  }
+}

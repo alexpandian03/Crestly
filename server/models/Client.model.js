@@ -29,6 +29,10 @@ const clientSchema = new mongoose.Schema(
         default: true,
       },
     },
+    allowExtraLayouts: {
+      type: Boolean,
+      default: false,
+    },
     /* Variety setting for AI palette generation: strict, balanced (default), expressive. */
     designPalette: {
       type: String,

@@ -47,11 +47,11 @@ api.interceptors.response.use(
 
     // Render free-tier cold start handler:
     // When sleeping, Render may take ~30-50s or return 504 / 502 / network timeout.
+    // Do not retry heavy poster AI generation routes on 503 quota/service JSON responses.
+    const isGenerateRoute = originalRequest?.url?.includes('/posters/generate');
     const isWakeUpError =
-      status === 504 ||
-      status === 502 ||
-      status === 503 ||
-      error.code === 'ECONNABORTED' ||
+      (!isGenerateRoute && (status === 504 || status === 502 || status === 503)) ||
+      (!isGenerateRoute && error.code === 'ECONNABORTED') ||
       error.message?.includes('Network Error');
 
     if (isWakeUpError && originalRequest && !originalRequest._wakeUpRetry) {
