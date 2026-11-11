@@ -15,10 +15,13 @@ describe('Hugging Face Poster Generation API (/api/posters/generate)', () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    process.env.IMAGE_PROVIDER = 'huggingface';
+    process.env.HF_IMAGE_MODEL = 'black-forest-labs/FLUX.1-schnell';
   });
 
   afterEach(() => {
-    process.env.HF_API_KEY = originalEnv;
+    if (originalEnv === undefined) delete process.env.HF_API_KEY;
+    else process.env.HF_API_KEY = originalEnv;
     if (originalProvider === undefined) delete process.env.IMAGE_PROVIDER;
     else process.env.IMAGE_PROVIDER = originalProvider;
     if (originalModel === undefined) delete process.env.HF_IMAGE_MODEL;

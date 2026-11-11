@@ -5,7 +5,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   AlertCircle,
@@ -24,6 +24,7 @@ import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import PosterCard, { PosterCardSkeleton } from "../components/PosterCard";
 import PosterDetailDrawer from "../components/PosterDetailDrawer";
+import { downloadSavedPoster } from "../utils/posterDownload";
 
 const PAGE_SIZE = 12;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -53,7 +54,6 @@ function dateParam(value, endOfDay) {
 }
 
 export default function History() {
-  const navigate = useNavigate();
   const { user, role, activeClientId, can } = useAuth();
 
   const [items, setItems] = useState([]);
@@ -315,7 +315,28 @@ export default function History() {
     );
   }, []);
 
-  const openInEditor = (poster) => navigate(`/create?poster=${idOf(poster)}`);
+  async function handleDownload(poster) {
+    const id = idOf(poster);
+    setBusy(id, true);
+    try {
+      const template = templatesById.get(String(poster.templateId || "")) || null;
+      const result = await downloadSavedPoster(id, {
+        fallbackPoster: poster,
+        fallbackBrandKit: brandKit,
+        fallbackTemplate: template,
+        format: "png",
+      });
+      if (result.warnings?.length > 0) {
+        result.warnings.forEach((w) => toast(w, { icon: "⚠️", duration: 5000 }));
+      } else {
+        toast.success("Poster downloaded");
+      }
+    } catch (err) {
+      toast.error(err.message || "We could not download this poster. Please try again.");
+    } finally {
+      setBusy(id, false);
+    }
+  }
 
   const clearFilters = () => {
     setSearchText("");
@@ -491,7 +512,7 @@ export default function History() {
                     }
                     busy={busyIds.has(idOf(poster))}
                     onOpenDetail={(item) => setOpenId(idOf(item))}
-                    onOpenInEditor={openInEditor}
+                    onDownload={handleDownload}
                     onDuplicate={handleDuplicate}
                     onDelete={handleDelete}
                   />

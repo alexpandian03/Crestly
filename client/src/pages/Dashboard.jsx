@@ -6,6 +6,7 @@ import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import PosterCard, { PosterCardSkeleton } from "../components/PosterCard";
 import { Button } from "../components/ui/button";
+import { downloadSavedPoster } from "../utils/posterDownload";
 
 function idOf(poster) {
   return String(poster?._id || poster?.id || "");
@@ -16,6 +17,7 @@ export default function Dashboard() {
   const { user, activeClientId } = useAuth();
   const [posters, setPosters] = useState([]);
   const [templates, setTemplates] = useState([]);
+  const [brandKit, setBrandKit] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busyIds, setBusyIds] = useState(() => new Set());
   const [healthStatus, setHealthStatus] = useState("API OK · Database connected");
@@ -26,9 +28,10 @@ export default function Dashboard() {
     async function loadData() {
       setLoading(true);
       try {
-        const [postersRes, templatesRes, healthRes] = await Promise.all([
+        const [postersRes, templatesRes, brandKitRes, healthRes] = await Promise.all([
           api.get("/posters", { params: { page: 1, limit: 4 } }).catch(() => null),
           api.get("/templates").catch(() => null),
+          api.get("/brand-kit").catch(() => null),
           api.get("/health").catch(() => null),
         ]);
 
@@ -39,6 +42,9 @@ export default function Dashboard() {
         }
         if (templatesRes?.data?.success) {
           setTemplates(templatesRes.data.data?.templates || []);
+        }
+        if (brandKitRes?.data?.success && brandKitRes.data.data?.brandKit) {
+          setBrandKit(brandKitRes.data.data.brandKit);
         }
         if (healthRes?.data?.status === "ok" || healthRes?.data?.db === "connected") {
           setHealthStatus("API OK · Database connected");
@@ -63,6 +69,29 @@ export default function Dashboard() {
       else next.delete(id);
       return next;
     });
+  };
+
+  const handleDownload = async (poster) => {
+    const id = idOf(poster);
+    setBusy(id, true);
+    try {
+      const template = templates.find((t) => String(t._id || t.id) === String(poster.templateId || "")) || null;
+      const result = await downloadSavedPoster(id, {
+        fallbackPoster: poster,
+        fallbackBrandKit: brandKit,
+        fallbackTemplate: template,
+        format: "png",
+      });
+      if (result.warnings?.length > 0) {
+        result.warnings.forEach((w) => toast(w, { icon: "⚠️", duration: 5000 }));
+      } else {
+        toast.success("Poster downloaded");
+      }
+    } catch (err) {
+      toast.error(err.message || "We could not download this poster. Please try again.");
+    } finally {
+      setBusy(id, false);
+    }
   };
 
   const handleDuplicate = async (poster) => {
@@ -162,7 +191,7 @@ export default function Dashboard() {
                   aspectRatio={0.8}
                   busy={busyIds.has(idOf(poster))}
                   onOpenDetail={(item) => navigate(`/create?poster=${idOf(item)}`)}
-                  onOpenInEditor={(item) => navigate(`/create?poster=${idOf(item)}`)}
+                  onDownload={handleDownload}
                   onDuplicate={handleDuplicate}
                   onDelete={handleDelete}
                 />

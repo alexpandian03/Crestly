@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Copy, ImageIcon, MoreVertical, PenLine, Trash2 } from "lucide-react";
+import { Copy, Download, ImageIcon, MoreVertical, Trash2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -57,7 +57,7 @@ export default function PosterCard({
   aspectRatio = 0.8,
   busy = false,
   onOpenDetail,
-  onOpenInEditor,
+  onDownload,
   onDuplicate,
   onDelete,
 }) {
@@ -111,7 +111,7 @@ export default function PosterCard({
 
         {/* Three-dot menu on hover (top-right of the thumbnail) */}
         <div
-          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity z-10"
           onClick={(e) => e.stopPropagation()}
         >
           <DropdownMenu>
@@ -129,13 +129,16 @@ export default function PosterCard({
               align="end"
               className="w-36 rounded-[6px] border border-[#E5E7EB] bg-white p-1 shadow-md z-30"
             >
-              <DropdownMenuItem
-                onClick={() => onOpenInEditor(poster)}
-                className="cursor-pointer text-xs rounded-[4px] px-2.5 py-1.5 text-[#111827] hover:bg-[#F9FAFB]"
-              >
-                <PenLine className="w-3.5 h-3.5 mr-2 text-[#6B7280]" />
-                <span>Open</span>
-              </DropdownMenuItem>
+              {onDownload && (
+                <DropdownMenuItem
+                  disabled={busy}
+                  onClick={() => onDownload(poster)}
+                  className="cursor-pointer text-xs rounded-[4px] px-2.5 py-1.5 text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-50"
+                >
+                  <Download className="w-3.5 h-3.5 mr-2 text-[#6B7280]" />
+                  <span>Download</span>
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem
                 disabled={busy}
                 onClick={() => onDuplicate(poster)}
