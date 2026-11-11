@@ -73,4 +73,18 @@ describe('PosterCanvas locked header and footer bands', () => {
     expect(screen.queryByText('linkedin.com/company/brand')).not.toBeInTheDocument();
     expect(screen.queryByText('© All rights reserved.')).not.toBeInTheDocument();
   });
+
+  it('ignores stale per-template brandKit overrides so locked brand kit banners render', () => {
+    const templateWithStaleKit = { ...template, brandKit: settingsKit };
+    const { container } = render(
+      <PosterCanvas brandKit={bannerKit} template={templateWithStaleKit} content={{}} />
+    );
+    const headerImg = container.querySelector('[data-section="header"] img[src="https://example.com/header-banner.png"]');
+    const footerImg = container.querySelector('[data-section="footer"] img[src="https://example.com/footer-banner.png"]');
+    expect(headerImg).toBeInTheDocument();
+    expect(footerImg).toBeInTheDocument();
+    expect(screen.queryByText('Water Aid Trust')).not.toBeInTheDocument();
+    expect(screen.queryByText('+91 90000 00000')).not.toBeInTheDocument();
+    expect(screen.queryByText('© All rights reserved.')).not.toBeInTheDocument();
+  });
 });
