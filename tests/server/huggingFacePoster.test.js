@@ -8,15 +8,23 @@ import {
   getHuggingFaceConfig,
   STYLE_DIRECTIONS,
 } from '../../server/controllers/huggingFace.controller.js';
+import {
+  CF_FLUX_MODEL,
+  generateImage as generateCloudflareImage,
+  resetCloudflareShapeLogForTest,
+} from '../../server/services/cloudflareImage.js';
 
-describe('Hugging Face Poster Generation API (/api/posters/generate)', () => {
+describe('Poster Image Generation API (/api/posters/generate)', () => {
   const originalEnv = process.env.HF_API_KEY;
   const originalProvider = process.env.IMAGE_PROVIDER;
   const originalModel = process.env.HF_IMAGE_MODEL;
+  const originalCfAccount = process.env.CF_ACCOUNT_ID;
+  const originalCfToken = process.env.CF_API_TOKEN;
   const originalFetch = global.fetch;
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    resetCloudflareShapeLogForTest();
     process.env.IMAGE_PROVIDER = 'huggingface';
     process.env.HF_IMAGE_MODEL = 'black-forest-labs/FLUX.1-schnell';
   });
@@ -28,6 +36,10 @@ describe('Hugging Face Poster Generation API (/api/posters/generate)', () => {
     else process.env.IMAGE_PROVIDER = originalProvider;
     if (originalModel === undefined) delete process.env.HF_IMAGE_MODEL;
     else process.env.HF_IMAGE_MODEL = originalModel;
+    if (originalCfAccount === undefined) delete process.env.CF_ACCOUNT_ID;
+    else process.env.CF_ACCOUNT_ID = originalCfAccount;
+    if (originalCfToken === undefined) delete process.env.CF_API_TOKEN;
+    else process.env.CF_API_TOKEN = originalCfToken;
     global.fetch = originalFetch;
   });
 
@@ -157,24 +169,146 @@ describe('Hugging Face Poster Generation API (/api/posters/generate)', () => {
     expect(capturedPrompts[0]).not.toEqual(capturedPrompts[1]);
   });
 
-  it('uses configured IMAGE_PROVIDER and HF_IMAGE_MODEL dynamically and rejects non-huggingface provider', async () => {
+  it('supports mock, huggingface, and cloudflare IMAGE_PROVIDER values and rejects unsupported ones', async () => {
     process.env.IMAGE_PROVIDER = 'huggingface';
     process.env.HF_IMAGE_MODEL = 'black-forest-labs/FLUX.1-schnell';
-    process.env.HF_API_KEY = 'hf_test_valid_token_key_12345';
 
-    const cfg = getHuggingFaceConfig();
-    expect(cfg.provider).toBe('huggingface');
-    expect(cfg.model).toBe('black-forest-labs/FLUX.1-schnell');
-    expect(cfg.routerUrl).toContain('black-forest-labs/FLUX.1-schnell');
+    const hfCfg = getHuggingFaceConfig();
+    expect(hfCfg.provider).toBe('huggingface');
+    expect(hfCfg.model).toBe('black-forest-labs/FLUX.1-schnell');
+    expect(hfCfg.routerUrl).toContain('black-forest-labs/FLUX.1-schnell');
 
     process.env.IMAGE_PROVIDER = 'mock';
-    const res = await request(app)
+    const mockRes = await request(app)
       .post('/api/posters/generate')
       .send({ prompt: 'Annual sports day poster' });
 
-    expect(res.status).toBe(400);
-    expect(res.body.success).toBe(false);
-    expect(res.body.error.message).toContain('IMAGE_PROVIDER=huggingface');
+    expect(mockRes.status).toBe(200);
+    expect(mockRes.headers['content-type']).toContain('image/png');
+    expect(mockRes.headers['x-poster-model']).toBe('mock');
+
+    process.env.IMAGE_PROVIDER = 'unsupported-engine';
+    const badRes = await request(app)
+      .post('/api/posters/generate')
+      .send({ prompt: 'Annual sports day poster' });
+
+    expect(badRes.status).toBe(400);
+    expect(badRes.body.success).toBe(false);
+    expect(badRes.body.error.message).toContain('mock, huggingface, cloudflare');
+  });
+
+  it('calls Cloudflare Workers AI FLUX.1-schnell via generateImage and parses result.image', async () => {
+    process.env.CF_ACCOUNT_ID = 'cf-account-test';
+    process.env.CF_API_TOKEN = 'cf-secret-token-test';
+
+    const sampleJpegBytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46]);
+    const b64 = sampleJpegBytes.toString('base64');
+
+    let calledUrl = '';
+    let calledHeaders = null;
+    let calledBody = null;
+
+    global.fetch = vi.fn().mockImplementation(async (url, opts) => {
+      calledUrl = url;
+      calledHeaders = opts.headers;
+      calledBody = JSON.parse(opts.body);
+      return new Response(JSON.stringify({ success: true, result: { image: b64 } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    const dataUrl = await generateCloudflareImage('Environment day flat vector poster');
+    expect(calledUrl).toBe(
+      `https://api.cloudflare.com/client/v4/accounts/cf-account-test/ai/run/${CF_FLUX_MODEL}`
+    );
+    expect(calledHeaders.Authorization).toBe('Bearer cf-secret-token-test');
+    expect(calledHeaders['Content-Type']).toBe('application/json');
+    expect(calledBody).toEqual({ prompt: 'Environment day flat vector poster', steps: 4 });
+    expect(dataUrl).toBe(`data:image/jpeg;base64,${b64}`);
+  });
+
+  it('logs alternate Cloudflare response shape once and throws clearly when no image exists', async () => {
+    process.env.CF_ACCOUNT_ID = 'cf-account-test';
+    process.env.CF_API_TOKEN = 'cf-secret-token-test';
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const b64 = Buffer.from([0xff, 0xd8, 0xff, 0xe0]).toString('base64');
+    global.fetch = vi.fn().mockImplementation(async () =>
+      new Response(JSON.stringify({ success: true, result: { image_base64: b64 } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    expect(await generateCloudflareImage('First')).toBe(`data:image/jpeg;base64,${b64}`);
+    expect(await generateCloudflareImage('Second')).toBe(`data:image/jpeg;base64,${b64}`);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+
+    global.fetch = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({ success: true, result: {} }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    await expect(generateCloudflareImage('Missing image')).rejects.toThrow(/did not include an image/i);
+  });
+
+  it('generates binary JPEG from /api/posters/generate when IMAGE_PROVIDER=cloudflare and maps 429/quota errors cleanly', async () => {
+    process.env.IMAGE_PROVIDER = 'cloudflare';
+    process.env.CF_ACCOUNT_ID = 'cf-account-test';
+    process.env.CF_API_TOKEN = 'cf-secret-token-test';
+
+    const jpegBytes = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(600, 1)]);
+    global.fetch = vi.fn().mockImplementation(async (url) => {
+      if (String(url).includes('api.cloudflare.com')) {
+        return new Response(JSON.stringify({ success: true, result: { image: jpegBytes.toString('base64') } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    const okRes = await request(app)
+      .post('/api/posters/generate')
+      .send({ prompt: 'Road safety awareness helmet poster' });
+
+    expect(okRes.status).toBe(200);
+    expect(okRes.headers['content-type']).toContain('image/jpeg');
+    expect(okRes.headers['x-poster-model']).toBe(CF_FLUX_MODEL);
+    expect(Buffer.isBuffer(okRes.body)).toBe(true);
+    expect(okRes.body.length).toBe(jpegBytes.length);
+
+    global.fetch = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({ success: false, errors: [{ message: 'Daily neuron limit reached' }] }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    const quotaRes = await request(app)
+      .post('/api/posters/generate')
+      .send({ prompt: 'Road safety awareness' });
+
+    expect(quotaRes.status).toBe(429);
+    expect(quotaRes.body.success).toBe(false);
+    expect(quotaRes.body.error.message).toBe('Image quota reached. Try again later.');
+
+    global.fetch = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({ success: false, errors: [{ message: 'Upstream failure' }] }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    const errRes = await request(app)
+      .post('/api/posters/generate')
+      .send({ prompt: 'Road safety awareness' });
+
+    expect(errRes.status).toBe(500);
+    expect(errRes.body.success).toBe(false);
+    expect(errRes.body.error.message).toContain('Upstream failure');
   });
 
   it('declares Hugging Face runtime packages in root package.json for Render/Vercel installs', async () => {

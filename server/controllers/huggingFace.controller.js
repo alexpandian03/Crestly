@@ -1,23 +1,31 @@
 import storageService from '../services/storage.js';
+import { CF_FLUX_MODEL, generateImage as generateCloudflareImage } from '../services/cloudflareImage.js';
 
 /**
- * Hugging Face Inference Controller
- * Generates high-quality commercial event poster artwork using Hugging Face FLUX.1.
- * Respects IMAGE_PROVIDER=huggingface and HF_IMAGE_MODEL (default: black-forest-labs/FLUX.1-schnell).
+ * AI Image Generation Controller
+ * Supports IMAGE_PROVIDER=mock | huggingface | cloudflare.
  */
 
 const HF_BASE_URL = 'https://huggingface.co';
 const DEFAULT_HF_MODEL = 'black-forest-labs/FLUX.1-schnell';
+export const SUPPORTED_IMAGE_PROVIDERS = ['mock', 'huggingface', 'cloudflare'];
+
+const MOCK_POSTER_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+  'base64'
+);
 
 export function getHuggingFaceConfig() {
   const provider = String(process.env.IMAGE_PROVIDER || 'huggingface').trim().toLowerCase();
-  const model = String(process.env.HF_IMAGE_MODEL || DEFAULT_HF_MODEL).trim() || DEFAULT_HF_MODEL;
+  const hfModel = String(process.env.HF_IMAGE_MODEL || DEFAULT_HF_MODEL).trim() || DEFAULT_HF_MODEL;
+  const model = provider === 'cloudflare' ? CF_FLUX_MODEL : provider === 'mock' ? 'mock' : hfModel;
   return {
     provider,
     model,
-    routerUrl: `https://router.huggingface.co/hf-inference/models/${model}`,
-    directUrl: `https://api-inference.huggingface.co/models/${model}`,
-    modelEndpoint: `${HF_BASE_URL}/${model}`,
+    hfModel,
+    routerUrl: `https://router.huggingface.co/hf-inference/models/${hfModel}`,
+    directUrl: `https://api-inference.huggingface.co/models/${hfModel}`,
+    modelEndpoint: `${HF_BASE_URL}/${hfModel}`,
   };
 }
 
@@ -242,10 +250,194 @@ export function formatFluxEnglishPrompt(userPrompt, options = {}) {
   return `Vibrant illustrated graphic design event poster for ${subjectContext}, ${style.composition}, using ${style.lettering} and ${theme.headlineColors} reading "${cleanTitle}" cleanly in English across ${theme.canvas}, ${theme.scene}, ${style.palette}, cheerful daylight colors, flat modern vector poster art, clean minimal advertising poster style, clear breathing room near the bottom edge.`;
 }
 
+function detectImageContentType(buffer, fallback = 'image/png') {
+  if (buffer.slice(0, 4).toString() === 'RIFF' && buffer.slice(8, 12).toString() === 'WEBP') {
+    return 'image/webp';
+  }
+  if (buffer[0] === 0xff && buffer[1] === 0xd8) {
+    return 'image/jpeg';
+  }
+  if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
+    return 'image/png';
+  }
+  return fallback;
+}
+
+function parseDataUrlToImage(dataUrl) {
+  const match = /^data:(image\/[a-z0-9.+-]+);base64,([\s\S]+)$/i.exec(String(dataUrl || '').trim());
+  if (!match) {
+    throw new Error('Image provider returned an invalid image format.');
+  }
+  const buffer = Buffer.from(match[2], 'base64');
+  if (buffer.length === 0) {
+    throw new Error('Image provider returned empty image data.');
+  }
+  return {
+    buffer,
+    contentType: match[1].toLowerCase(),
+  };
+}
+
+function sendGenerationError(res, err, fallbackMessage = 'Failed to generate image.') {
+  const message = err?.message || fallbackMessage;
+  if (err?.status === 429 || /\b429\b|quota|limit/i.test(message)) {
+    return res.status(429).json({
+      success: false,
+      error: { message: 'Image quota reached. Try again later.', status: 429 },
+    });
+  }
+  return res.status(500).json({
+    success: false,
+    error: { message, status: 500 },
+  });
+}
+
+async function streamPosterImage({ req, res, buffer, modelName, preferredContentType = 'image/png' }) {
+  const contentType = detectImageContentType(buffer, preferredContentType);
+  const ext = contentType.split('/')[1] || 'png';
+  let cloudUrl = '';
+  try {
+    const clientId = req.clientId || 'generic';
+    const folder = `ai-posters/tenants/${clientId}/poster-images`;
+    const uploadRes = await storageService.uploadBuffer(buffer, {
+      folder,
+      filename: `flux_${Date.now()}.${ext}`,
+      mimetype: contentType,
+    });
+    cloudUrl = uploadRes?.secure_url || uploadRes?.url || '';
+  } catch (upErr) {
+    console.warn('[Poster Storage Upload Warning]:', upErr.message);
+  }
+
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Content-Length', buffer.length);
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('X-Poster-Model', modelName);
+  if (cloudUrl) {
+    res.setHeader('X-Poster-Image-Url', cloudUrl);
+    res.setHeader('Access-Control-Expose-Headers', 'X-Poster-Image-Url, X-Poster-Model');
+  } else {
+    res.setHeader('Access-Control-Expose-Headers', 'X-Poster-Model');
+  }
+
+  return res.status(200).send(buffer);
+}
+
+async function generateWithHuggingFace({ enhancedPrompt, hfModel, routerUrl, apiKey }) {
+  let buffer = null;
+  let lastError = null;
+  const endpoint = process.env.HF_API_URL || routerUrl;
+
+  try {
+    const hfResponse = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        Accept: 'image/png',
+      },
+      body: JSON.stringify({ inputs: enhancedPrompt }),
+    });
+
+    if (hfResponse.ok) {
+      const arrayBuffer = await hfResponse.arrayBuffer();
+      const candidate = Buffer.from(arrayBuffer);
+      if (candidate.length > 500) {
+        buffer = candidate;
+      }
+    }
+  } catch {
+    // Direct router fetch failed or mocked network error; continue to Inference Providers / Space
+  }
+
+  const isSchnell = hfModel.toLowerCase().includes('schnell');
+  if ((!buffer || buffer.length <= 500) && !process.env.HF_API_URL) {
+    try {
+      const { InferenceClient } = await import('@huggingface/inference');
+      const hfClient = new InferenceClient(apiKey);
+      const blob = await hfClient.textToImage({
+        provider: 'auto',
+        model: hfModel,
+        inputs: enhancedPrompt,
+        parameters: isSchnell
+          ? { width: 1024, height: 1024, num_inference_steps: 4 }
+          : { width: 1024, height: 1024, guidance_scale: 3.5, num_inference_steps: 20 },
+      });
+      if (blob) {
+        const arrayBuffer = await blob.arrayBuffer();
+        const candidate = Buffer.from(arrayBuffer);
+        if (candidate.length > 500) {
+          buffer = candidate;
+        }
+      }
+    } catch (inferErr) {
+      console.warn(`[Hugging Face InferenceClient ${hfModel} notice]:`, inferErr.message);
+      lastError = inferErr;
+    }
+  }
+
+  if (!buffer || buffer.length <= 500) {
+    try {
+      const { Client } = await import('@gradio/client');
+      const gradioClient = await Client.connect(hfModel, { token: apiKey });
+      const inferParams = isSchnell
+        ? {
+            prompt: enhancedPrompt,
+            seed: Math.floor(Math.random() * 1000000),
+            randomize_seed: true,
+            width: 1024,
+            height: 1024,
+            num_inference_steps: 4,
+          }
+        : {
+            prompt: enhancedPrompt,
+            seed: Math.floor(Math.random() * 1000000),
+            randomize_seed: true,
+            width: 1024,
+            height: 1024,
+            guidance_scale: 3.5,
+            num_inference_steps: 20,
+          };
+
+      const result = await gradioClient.predict('/infer', inferParams);
+      const imgUrl = result?.data?.[0]?.url;
+      if (imgUrl) {
+        const imgRes = await fetch(imgUrl);
+        if (imgRes.ok) {
+          const arrayBuffer = await imgRes.arrayBuffer();
+          const candidate = Buffer.from(arrayBuffer);
+          if (candidate.length > 500) {
+            buffer = candidate;
+          }
+        }
+      }
+    } catch (spaceErr) {
+      console.warn(`[Hugging Face Space ${hfModel} notice]:`, spaceErr.message);
+      lastError = spaceErr;
+    }
+  }
+
+  if (buffer && buffer.length > 500) {
+    return buffer;
+  }
+
+  let errorMessage = `Hugging Face model ${hfModel} is temporarily busy. Please try again shortly.`;
+  if (lastError?.message?.includes('ZeroGPU')) {
+    errorMessage = `Hugging Face ZeroGPU quota exceeded for ${hfModel}. Wait for quota reset or upgrade to Hugging Face PRO / add Inference credits.`;
+  } else if (/pre-paid credits|Inference Providers|402/i.test(lastError?.message || '')) {
+    errorMessage = `Hugging Face Inference credits are required for ${hfModel}. Add Inference credits or subscribe to Hugging Face PRO.`;
+  } else if (lastError?.message) {
+    errorMessage = `Hugging Face (${hfModel}) notice: ${lastError.message}`;
+  }
+  const err = new Error(errorMessage);
+  if (lastError?.status) err.status = lastError.status;
+  throw err;
+}
+
 /**
- * Active Express backend route handler for FLUX.1 on Hugging Face.
- * Accepts { prompt } in req.body, generates poster artwork with Hugging Face,
- * saves to storage, and streams binary image data.
+ * Active Express backend route handler for poster artwork generation.
+ * Accepts { prompt } in req.body, generates poster artwork via the configured
+ * IMAGE_PROVIDER (mock | huggingface | cloudflare), saves to storage, and streams binary image data.
  */
 export async function generateHuggingFacePoster(req, res, next) {
   try {
@@ -258,183 +450,82 @@ export async function generateHuggingFacePoster(req, res, next) {
       });
     }
 
-    const { provider, model: hfModel, routerUrl } = getHuggingFaceConfig();
-    if (provider !== 'huggingface') {
+    const { provider, hfModel, routerUrl } = getHuggingFaceConfig();
+    if (!SUPPORTED_IMAGE_PROVIDERS.includes(provider)) {
       return res.status(400).json({
         success: false,
         error: {
-          message: `Unsupported IMAGE_PROVIDER "${provider}". Set IMAGE_PROVIDER=huggingface to use ${hfModel}.`,
+          message: `Unsupported IMAGE_PROVIDER "${provider}". Supported providers: ${SUPPORTED_IMAGE_PROVIDERS.join(', ')}.`,
           status: 400,
         },
       });
     }
 
-    // 1. Read key from process.env.HF_API_KEY
-    const apiKey = process.env.HF_API_KEY;
-
-    if (!apiKey || apiKey === 'YOUR_HUGGINGFACE_KEY_HERE') {
-      return res.status(400).json({
-        success: false,
-        error: {
-          message:
-            'Hugging Face API key is not configured. Please set HF_API_KEY in your root .env file.',
-          status: 400,
-        },
-      });
-    }
-
-    // Format prompt with a fresh non-repeating creative style direction and clean English typography
     const styleIndex = pickNextStyleIndex(req.body?.variation);
     const enhancedPrompt = formatFluxEnglishPrompt(prompt, { styleIndex });
 
-    // 2. Direct endpoint / router HTTP fetch (also used when HF_API_URL or fetch is mocked in tests)
-    let buffer = null;
-    let lastError = null;
-    const endpoint = process.env.HF_API_URL || routerUrl;
-    const headers = {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      Accept: 'image/png',
-    };
-
-    try {
-      const hfResponse = await fetch(endpoint, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ inputs: enhancedPrompt }),
-      });
-
-      if (hfResponse.ok) {
-        const arrayBuffer = await hfResponse.arrayBuffer();
-        const candidate = Buffer.from(arrayBuffer);
-        if (candidate.length > 500) {
-          buffer = candidate;
-        }
-      }
-    } catch {
-      // Direct router fetch failed or mocked network error; continue to Inference Providers / Space
-    }
-
-    // 3. Official @huggingface/inference providers API for the configured HF_IMAGE_MODEL
-    const isSchnell = hfModel.toLowerCase().includes('schnell');
-    if ((!buffer || buffer.length <= 500) && !process.env.HF_API_URL) {
-      try {
-        const { InferenceClient } = await import('@huggingface/inference');
-        const hfClient = new InferenceClient(apiKey);
-        const blob = await hfClient.textToImage({
-          provider: 'auto',
-          model: hfModel,
-          inputs: enhancedPrompt,
-          parameters: isSchnell
-            ? { width: 1024, height: 1024, num_inference_steps: 4 }
-            : { width: 1024, height: 1024, guidance_scale: 3.5, num_inference_steps: 20 },
-        });
-        if (blob) {
-          const arrayBuffer = await blob.arrayBuffer();
-          const candidate = Buffer.from(arrayBuffer);
-          if (candidate.length > 500) {
-            buffer = candidate;
-          }
-        }
-      } catch (inferErr) {
-        console.warn(`[Hugging Face InferenceClient ${hfModel} notice]:`, inferErr.message);
-        lastError = inferErr;
-      }
-    }
-
-    // 4. Official Gradio Space strictly for the configured HF_IMAGE_MODEL
-    if (!buffer || buffer.length <= 500) {
-      try {
-        const { Client } = await import('@gradio/client');
-        const gradioClient = await Client.connect(hfModel, {
-          token: apiKey,
+    switch (provider) {
+      case 'mock':
+        return streamPosterImage({
+          req,
+          res,
+          buffer: MOCK_POSTER_PNG,
+          modelName: 'mock',
+          preferredContentType: 'image/png',
         });
 
-        const inferParams = isSchnell
-          ? {
-              prompt: enhancedPrompt,
-              seed: Math.floor(Math.random() * 1000000),
-              randomize_seed: true,
-              width: 1024,
-              height: 1024,
-              num_inference_steps: 4,
-            }
-          : {
-              prompt: enhancedPrompt,
-              seed: Math.floor(Math.random() * 1000000),
-              randomize_seed: true,
-              width: 1024,
-              height: 1024,
-              guidance_scale: 3.5,
-              num_inference_steps: 20,
-            };
-
-        const result = await gradioClient.predict('/infer', inferParams);
-        const imgUrl = result?.data?.[0]?.url;
-        if (imgUrl) {
-          const imgRes = await fetch(imgUrl);
-          if (imgRes.ok) {
-            const arrayBuffer = await imgRes.arrayBuffer();
-            const candidate = Buffer.from(arrayBuffer);
-            if (candidate.length > 500) {
-              buffer = candidate;
-            }
-          }
+      case 'cloudflare': {
+        try {
+          const dataUrl = await generateCloudflareImage(enhancedPrompt);
+          const { buffer, contentType } = parseDataUrlToImage(dataUrl);
+          return streamPosterImage({
+            req,
+            res,
+            buffer,
+            modelName: CF_FLUX_MODEL,
+            preferredContentType: contentType,
+          });
+        } catch (cfErr) {
+          return sendGenerationError(res, cfErr);
         }
-      } catch (spaceErr) {
-        console.warn(`[Hugging Face Space ${hfModel} notice]:`, spaceErr.message);
-        lastError = spaceErr;
       }
-    }
 
-    // 5. Return generated poster image
-    if (buffer && buffer.length > 500) {
-      let cloudUrl = '';
-      try {
-        const clientId = req.clientId || 'generic';
-        const folder = `ai-posters/tenants/${clientId}/poster-images`;
-        const uploadRes = await storageService.uploadBuffer(buffer, {
-          folder,
-          filename: `flux_${Date.now()}`,
-          mimetype: 'image/png',
+      case 'huggingface': {
+        const apiKey = process.env.HF_API_KEY;
+        if (!apiKey || apiKey === 'YOUR_HUGGINGFACE_KEY_HERE') {
+          return res.status(400).json({
+            success: false,
+            error: {
+              message:
+                'Hugging Face API key is not configured. Please set HF_API_KEY in your root .env file.',
+              status: 400,
+            },
+          });
+        }
+
+        try {
+          const buffer = await generateWithHuggingFace({ enhancedPrompt, hfModel, routerUrl, apiKey });
+          return streamPosterImage({
+            req,
+            res,
+            buffer,
+            modelName: hfModel,
+            preferredContentType: 'image/png',
+          });
+        } catch (hfErr) {
+          return sendGenerationError(res, hfErr);
+        }
+      }
+
+      default:
+        return res.status(400).json({
+          success: false,
+          error: {
+            message: `Unsupported IMAGE_PROVIDER "${provider}". Supported providers: ${SUPPORTED_IMAGE_PROVIDERS.join(', ')}.`,
+            status: 400,
+          },
         });
-        cloudUrl = uploadRes?.secure_url || uploadRes?.url || '';
-      } catch (upErr) {
-        console.warn('[Poster Storage Upload Warning]:', upErr.message);
-      }
-
-      const isWebp =
-        buffer.slice(0, 4).toString() === 'RIFF' && buffer.slice(8, 12).toString() === 'WEBP';
-      const contentType = isWebp ? 'image/webp' : 'image/png';
-
-      res.setHeader('Content-Type', contentType);
-      res.setHeader('Content-Length', buffer.length);
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-      res.setHeader('X-Poster-Model', hfModel);
-      if (cloudUrl) {
-        res.setHeader('X-Poster-Image-Url', cloudUrl);
-        res.setHeader('Access-Control-Expose-Headers', 'X-Poster-Image-Url, X-Poster-Model');
-      } else {
-        res.setHeader('Access-Control-Expose-Headers', 'X-Poster-Model');
-      }
-
-      return res.status(200).send(buffer);
     }
-
-    // 6. Friendly error handling when model quota or credits are exhausted
-    let errorMessage = `Hugging Face model ${hfModel} is temporarily busy. Please try again shortly.`;
-    if (lastError?.message?.includes('ZeroGPU')) {
-      errorMessage = `Hugging Face ZeroGPU quota exceeded for ${hfModel}. Wait for quota reset or upgrade to Hugging Face PRO / add Inference credits.`;
-    } else if (/pre-paid credits|Inference Providers|402/i.test(lastError?.message || '')) {
-      errorMessage = `Hugging Face Inference credits are required for ${hfModel}. Add Inference credits or subscribe to Hugging Face PRO.`;
-    } else if (lastError?.message) {
-      errorMessage = `Hugging Face (${hfModel}) notice: ${lastError.message}`;
-    }
-
-    return res.status(503).json({
-      success: false,
-      error: { message: errorMessage, status: 503 },
-    });
   } catch (err) {
     return next(err);
   }
