@@ -1,6 +1,6 @@
 import multer from 'multer';
 
-// Memory storage ensures no file is ever saved to local disk (Vercel serverless rule)
+// Memory storage ensures no file is ever saved to local disk (ephemeral disk safety for Render and cloud hosting)
 const storage = multer.memoryStorage();
 
 const allowedMimetypes = [
@@ -46,7 +46,7 @@ export const uploadPosterImageMiddleware = multer({
 }).single('image');
 
 const thumbnailMimetypes = ['image/jpeg', 'image/webp'];
-export const THUMBNAIL_MAX_BYTES = 300 * 1024;
+const THUMBNAIL_MAX_BYTES = 300 * 1024;
 
 const thumbnailFilter = (req, file, cb) => {
   if (thumbnailMimetypes.includes(file.mimetype)) {

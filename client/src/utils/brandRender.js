@@ -262,7 +262,9 @@ export function transformCloudinaryUrl(url, { w = 0, h = 0 } = {}) {
 }
 
 export function resolvePosterBrand(brandKit, template) {
-  const kit = isObj(brandKit) ? brandKit : {};
+  const baseKit = isObj(brandKit) ? brandKit : {};
+  const templateKit = isObj(template?.brandKit) ? template.brandKit : {};
+  const kit = { ...baseKit, ...templateKit };
   const D = BRAND_RENDER_DEFAULTS;
   const rendered = resolveTemplateRender(template);
   const zones = Array.isArray(template?.zones) ? template.zones : [];
@@ -313,7 +315,7 @@ export function resolvePosterBrand(brandKit, template) {
     ? { ...template, page: template.sections.content.page }
     : template;
   const page = effectivePage(kit, normalizedTemplate);
-  const customBg = normalizedTemplate?.page?.background?.mode === 'custom';
+  const customBg = normalizedTemplate?.page?.background?.mode === 'custom' || Boolean(normalizedTemplate?.page?.background?.imageUrl) || (normalizedTemplate?.page?.background?.type && normalizedTemplate?.page?.background?.type !== 'color');
   const customDec = normalizedTemplate?.page?.decoration?.mode === 'custom';
   const customWatermark = normalizedTemplate?.page?.watermark?.mode === 'custom';
   const customCard = normalizedTemplate?.page?.infoCard?.mode === 'custom';

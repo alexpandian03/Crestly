@@ -1,7 +1,11 @@
 /* The look a poster was saved with, and whether the brand has moved on since then. */
 
 export function designBrandKit(design, fallback) {
-  return design?.brandKit || fallback || null;
+  const designKit = design?.brandKit || design?.template?.brandKit;
+  if (designKit && fallback) {
+    return { ...fallback, ...designKit };
+  }
+  return designKit || fallback || null;
 }
 
 export function designTemplate(design, fallback) {

@@ -43,7 +43,7 @@ export async function sendEmail({ to, subject, html, text }) {
   return data;
 }
 
-export function getAppUrl() {
+function getAppUrl() {
   return (
     process.env.APP_URL?.trim() ||
     process.env.CLIENT_URL?.trim() ||

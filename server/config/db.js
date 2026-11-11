@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 /**
  * Global is used here to maintain a cached connection across hot reloads
- * in development and across serverless function invocations on Vercel.
+ * in development and across worker restarts in production (Render).
  */
 let cached = global.__mongoose;
 

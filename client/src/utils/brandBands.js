@@ -9,6 +9,7 @@
 import {
   BAND_HEIGHTS,
   BRAND_BAND_KINDS,
+  DEFAULT_PAGE_BACKGROUND,
   EDITOR_VERSION,
   brandBandForEditing,
   defaultBrandBand,
@@ -47,6 +48,46 @@ export function withKitBands(sections, brandKit, template) {
 export function kitBandIsLaidOut(brandKit, kind) {
   if (!brandKit || !BRAND_BAND_KINDS.includes(kind)) return false;
   return brandKit[kind]?.mode === 'elements' && (brandKit[kind]?.elements || []).length > 0;
+}
+
+/**
+ * A template's band taken over as that design's own: the header or footer the organization draws
+ * today, copied into pieces the editor can move. A band that still follows the organization is
+ * painted from the brand kit, so anything placed on it before this copy exists never appears on
+ * the poster - which is why placing something on one has to start here.
+ */
+export function bandToCustomize(brandKit, kind, { size, current = null } = {}) {
+  if (!brandKit || !BRAND_BAND_KINDS.includes(kind)) return null;
+  if (current?.mode === 'custom') return null;
+  const band = brandBandForEditing(brandKit, kind, { size });
+  if (!band) return null;
+  const kitBackground = brandKit?.[kind]?.background;
+  const background = kitBackground
+    ? { ...kitBackground }
+    : current?.background
+      ? { ...current.background }
+      : { ...DEFAULT_PAGE_BACKGROUND };
+  return {
+    mode: 'custom',
+    height: band.height ?? current?.height ?? BAND_HEIGHTS[kind].default,
+    background,
+    elements: band.elements || [],
+  };
+}
+
+/**
+ * Where the words an organization paints in its header and footer sit, as pieces a canvas can put
+ * a frame around. A band that still follows the organization carries none of its own, so without
+ * these there is nothing to click on the poster - picking one of them hands the band over.
+ */
+export function borrowedBandPieces(brandKit, sections, size) {
+  const borrowed = {};
+  if (!brandKit || !sections) return borrowed;
+  for (const kind of BRAND_BAND_KINDS) {
+    const band = bandToCustomize(brandKit, kind, { size, current: sections[kind] });
+    if (band?.elements?.length) borrowed[kind] = band.elements;
+  }
+  return borrowed;
 }
 
 /* ------------------------------------------------------------------ *

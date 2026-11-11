@@ -48,8 +48,7 @@ export const TEMPLATE_CATEGORIES = ['Event', 'Festival', 'Awareness', 'Achieveme
  */
 export const LAYOUT_ITEM_KEYS = ['headline', 'description', 'date', 'time', 'venue', 'details'];
 
-export const ITEM_OFFSET_DEFAULT = { dx: 0, dy: 0 };
-export const ITEM_OFFSET_LIMIT = 4000;
+const ITEM_OFFSET_LIMIT = 4000;
 
 /** Plain-word names, matching the words the edit panel uses for the same words. */
 export const ITEM_LABELS = {
@@ -185,7 +184,11 @@ export function imageInsideContent(image, content) {
  */
 export function usesTemplateElements(template) {
   if (template?.sections?.content?.elements && Array.isArray(template.sections.content.elements)) {
-    return template.sections.content.elements.length > 0;
+    if (template.sections.content.elements.length > 0) return true;
+    /* Nothing placed yet. A layout the editor made is still the editor's own, so an empty one
+       draws its brand header and footer over a blank page instead of a flow layout nobody
+       authored. A poster saved before the editor keeps its classic look. */
+    return Number(template.editorVersion) === EDITOR_VERSION;
   }
   if (template?.sections) return true;
   return (
@@ -210,8 +213,14 @@ export function templateElements(template, brandKit) {
     : Array.isArray(template?.elements)
       ? template.elements
       : [];
-  const items = (stored.length > 0 ? normalizeElements(stored) : legacyToElements(template, brandKit))
-    .map((item) => resolveStyleTokens(item, brandKit));
+  /* An editor layout draws exactly what was placed on it - even when that is nothing. Reading a
+     starter design out of its areas instead would paint words the team never put there, and those
+     words belong to no item, so nobody could click them. */
+  const authoredByEditor = Number(template?.editorVersion) === EDITOR_VERSION;
+  const items = (stored.length > 0 || authoredByEditor
+    ? normalizeElements(stored)
+    : legacyToElements(template, brandKit)
+  ).map((item) => resolveStyleTokens(item, brandKit));
   const area = template?.sections
     ? {
         x: 0,

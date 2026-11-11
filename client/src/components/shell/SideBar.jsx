@@ -2,6 +2,8 @@ import React from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
 import Logo from '../Logo';
+import { useAuth } from '../../context/AuthContext';
+import { homeForRole } from './navItems';
 import { Button } from '../ui/button';
 import { cn } from 'cn';
 
@@ -93,10 +95,11 @@ export default function SideBar({
   hasClient,
   onNeedClient,
 }) {
+  const { user } = useAuth();
   return (
     <aside
       className={cn(
-        'sticky top-0 h-screen z-30 hidden min-w-0 shrink-0 flex-col overflow-hidden border-r border-[#E5E7EB] bg-[#FAFAFA] transition-[width] duration-150 lg:flex',
+        'h-full z-30 hidden min-w-0 shrink-0 flex-col overflow-hidden border-r border-[#E5E7EB] bg-[#FAFAFA] transition-[width] duration-150 lg:flex',
         collapsed ? 'w-[64px]' : 'w-[240px]'
       )}
     >
@@ -107,7 +110,7 @@ export default function SideBar({
           collapsed ? 'justify-center px-2' : 'px-4'
         )}
       >
-        <Link to="/" className="flex items-center">
+        <Link to={homeForRole(user?.role)} className="flex items-center">
           <Logo variant={collapsed ? 'icon' : 'full'} />
         </Link>
       </div>
@@ -153,6 +156,7 @@ export function MobileMenu({
   hasClient,
   onNeedClient,
 }) {
+  const { user } = useAuth();
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 lg:hidden">
@@ -168,7 +172,7 @@ export function MobileMenu({
         aria-label="Navigation menu"
       >
         <div className="flex h-[56px] shrink-0 items-center justify-between border-b border-[#E5E7EB] px-4">
-          <Link to="/" onClick={onClose} className="flex items-center">
+          <Link to={homeForRole(user?.role)} onClick={onClose} className="flex items-center">
             <Logo variant="full" />
           </Link>
           <Button

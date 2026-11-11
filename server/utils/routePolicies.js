@@ -1,4 +1,4 @@
-import { can, ROLE_PERMISSIONS } from '../../shared/permissions.js';
+import { can } from '../../shared/permissions.js';
 
 /**
  * Authoritative map of API route policies.
@@ -195,7 +195,7 @@ export const ROUTE_POLICIES = {
  * @param {string} [prefix=''] - URL mount path prefix
  * @returns {Array<{ method: string, path: string, key: string, policy: string|null }>}
  */
-export function listRegisteredRoutes(appOrRouter, prefix = '') {
+function listRegisteredRoutes(appOrRouter, prefix = '') {
   const routes = [];
   const stack = appOrRouter._router?.stack || appOrRouter.stack || [];
 

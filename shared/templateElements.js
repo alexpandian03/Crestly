@@ -284,7 +284,6 @@ export const SECTION_LIMITS = {
   content: { maxItems: 150 },
 };
 
-export const PAGE_MODES = ['brand', 'custom'];
 export const CONTENT_BACKGROUND_TYPES = ['color', 'gradient', 'image', 'pattern'];
 export const BACKGROUND_POSITIONS = ['top', 'center', 'bottom', 'left', 'right'];
 export const BACKGROUND_PATTERNS = ['none', 'dots', 'lines', 'grid'];
@@ -336,10 +335,6 @@ export function isBrandColorToken(value) {
 
 export function isBrandFontToken(value) {
   return typeof value === 'string' && BRAND_FONT_TOKENS.includes(value.trim());
-}
-
-export function isStyleColor(value) {
-  return isHexColor(value) || isBrandColorToken(value);
 }
 
 export function isStyleFont(value) {
@@ -723,7 +718,7 @@ export function effectivePage(brandKit, template) {
   const content = kit.content || {};
   const page = tpl.page || {};
 
-  const customBg = page.background?.mode === 'custom';
+  const customBg = page.background?.mode === 'custom' || Boolean(page.background?.imageUrl) || (page.background?.type && page.background.type !== 'color');
   const customDec = page.decoration?.mode === 'custom';
   const customWatermark = page.watermark?.mode === 'custom';
   const customCard = page.infoCard?.mode === 'custom';
@@ -931,26 +926,50 @@ export function isThinRule(element) {
 
 function normalizeStyle(style) {
   const filled = { ...ELEMENT_STYLE_DEFAULTS, ...(isPlainObject(toPlain(style)) ? toPlain(style) : {}) };
-  const size = clamp(toInt(filled.size, ELEMENT_STYLE_DEFAULTS.size), ELEMENT_LIMITS.fontSize.min, ELEMENT_LIMITS.fontSize.max);
+  const rawSize = filled.size !== undefined ? filled.size : filled.fontSize;
+  const size = clamp(toInt(rawSize, ELEMENT_STYLE_DEFAULTS.size), ELEMENT_LIMITS.fontSize.min, ELEMENT_LIMITS.fontSize.max);
   const minSize = clamp(
     toInt(filled.minSize, ELEMENT_STYLE_DEFAULTS.minSize),
     ELEMENT_LIMITS.fontSize.min,
     size
   );
-  const weight = ELEMENT_WEIGHTS.includes(toInt(filled.weight, 500)) ? toInt(filled.weight, 500) : 500;
+  const rawWeight = filled.weight !== undefined ? filled.weight : (filled.bold ? 700 : 500);
+  const weight = ELEMENT_WEIGHTS.includes(toInt(rawWeight, 500)) ? toInt(rawWeight, 500) : 500;
+  const rawAlign = filled.align !== undefined ? filled.align : filled.textAlign;
+  const align = TEXT_ALIGNS.includes(rawAlign) ? rawAlign : ELEMENT_STYLE_DEFAULTS.align;
+  const uppercase = Boolean(filled.uppercase || filled.textTransform === 'uppercase');
+  const italic = Boolean(filled.italic || filled.fontStyle === 'italic');
+  const underline = Boolean(filled.underline || filled.textDecoration === 'underline');
+  const strike = Boolean(filled.strike || filled.textDecoration === 'line-through');
+  const textDecoration = typeof filled.textDecoration === 'string' && filled.textDecoration
+    ? filled.textDecoration
+    : (underline ? 'underline' : (strike ? 'line-through' : 'none'));
+  const textTransform = typeof filled.textTransform === 'string' && filled.textTransform
+    ? filled.textTransform
+    : (uppercase ? 'uppercase' : 'none');
+  const effect = typeof filled.effect === 'string' && filled.effect ? filled.effect : 'none';
+
   return {
     fontFamily: isStyleFont(filled.fontFamily)
       ? (typeof filled.fontFamily === 'string' ? filled.fontFamily.trim() : filled.fontFamily)
       : ELEMENT_STYLE_DEFAULTS.fontFamily,
     size,
+    fontSize: size,
     minSize,
     weight,
+    bold: weight >= 700,
     color: normalizeStyleColor(filled.color, ELEMENT_STYLE_DEFAULTS.color),
-    align: TEXT_ALIGNS.includes(filled.align) ? filled.align : ELEMENT_STYLE_DEFAULTS.align,
+    align,
+    textAlign: align,
     lineHeight: clamp(toNumber(filled.lineHeight, 1.2), ELEMENT_LIMITS.lineHeight.min, ELEMENT_LIMITS.lineHeight.max),
-    letterSpacing: clamp(toInt(filled.letterSpacing, 0), ELEMENT_LIMITS.letterSpacing.min, ELEMENT_LIMITS.letterSpacing.max),
-    uppercase: Boolean(filled.uppercase),
-    italic: Boolean(filled.italic),
+    letterSpacing: clamp(toNumber(filled.letterSpacing, 0), ELEMENT_LIMITS.letterSpacing.min, ELEMENT_LIMITS.letterSpacing.max),
+    uppercase,
+    textTransform,
+    italic,
+    underline,
+    strike,
+    textDecoration,
+    effect,
     opacity: clamp(toNumber(filled.opacity, 1), ELEMENT_LIMITS.opacity.min, ELEMENT_LIMITS.opacity.max),
     fit: IMAGE_FITS.includes(filled.fit) ? filled.fit : ELEMENT_STYLE_DEFAULTS.fit,
     radius: clamp(toInt(filled.radius, 0), ELEMENT_LIMITS.radius.min, ELEMENT_LIMITS.radius.max),
@@ -2454,7 +2473,8 @@ export function normalizeBrandBand(section, kind, brandKit = null) {
       return item;
     });
 
-  return { mode: raw.mode === 'elements' ? 'elements' : 'legacy', height, background, elements };
+  const isElements = raw.mode === 'elements' || raw.mode === 'custom';
+  return { mode: isElements ? 'elements' : 'legacy', height, background, elements };
 }
 
 /**
@@ -2578,7 +2598,9 @@ function templateCustomBand(template, kind) {
  * has to shrink to leave room between them.
  */
 export function resolveBands(brandKit, template) {
-  const kit = toPlain(brandKit) || {};
+  const templateKit = template?.brandKit && typeof template.brandKit === 'object' ? toPlain(template.brandKit) : null;
+  const baseKit = toPlain(brandKit) || {};
+  const kit = templateKit ? { ...baseKit, ...templateKit } : baseKit;
   const size = templateSizeOf(template);
   const kitDefaultHeight = templateSizeOf({ size: kit.defaultPosterSize }).height;
   const bands = {};

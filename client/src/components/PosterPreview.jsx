@@ -1,8 +1,15 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useLayoutEffect } from 'react';
 import PosterCanvas from './PosterCanvas';
 
 /** Start drawing a poster preview when near the viewport (240px) */
 const LAZY_MARGIN = '240px';
+
+function getInitialPreviewWidth() {
+  if (typeof window === 'undefined') return 450;
+  // On mobile screens, fit within viewport minus padding so initial render never overflows
+  const available = window.innerWidth < 768 ? Math.max(200, window.innerWidth - 32) : 450;
+  return Math.min(450, available);
+}
 
 /**
  * <PosterPreview /> Component
@@ -30,12 +37,12 @@ export default function PosterPreview({
   isExporting = false,
 }) {
   const containerRef = useRef(null);
-  const [scale, setScale] = useState(0.4);
-  const [containerWidth, setContainerWidth] = useState(450);
-  const [visible, setVisible] = useState(eager || !!exportRef);
-
   const canvasWidth = template?.size?.width || 1080;
   const canvasHeight = template?.size?.height || 1350;
+
+  const [containerWidth, setContainerWidth] = useState(getInitialPreviewWidth);
+  const [scale, setScale] = useState(() => getInitialPreviewWidth() / canvasWidth);
+  const [visible, setVisible] = useState(eager || !!exportRef);
 
   // Lazy-render on screen only: wait until the preview is near the viewport
   useEffect(() => {
@@ -59,7 +66,7 @@ export default function PosterPreview({
     return () => observer.disconnect();
   }, [eager, visible, exportRef]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
@@ -91,7 +98,7 @@ export default function PosterPreview({
   return (
     <div
       ref={containerRef}
-      className={`relative w-full overflow-hidden select-none transition-all duration-150 ${className}`}
+      className={`relative w-full max-w-full overflow-hidden select-none ${className}`}
       style={{
         height: `${scaledHeight}px`,
         minHeight: '200px',

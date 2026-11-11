@@ -2,6 +2,7 @@ import express from 'express';
 import {
   createClient,
   deactivateClient,
+  deleteClient,
   getAllClients,
   getClientById,
   getOwnClient,
@@ -21,6 +22,6 @@ router.get('/:id', requireAuth, requirePermission('clients:read:own'), validateP
 // settings of its own organization; everything else stays superadmin-only.
 router.patch('/:id', requireAuth, requirePermission('settings:write'), validateParams(clientParamsSchema), validateBody(updateClientSchema), updateClient);
 router.put('/:id', requireAuth, requirePermission('clients:manage'), validateParams(clientParamsSchema), validateBody(updateClientSchema), updateClient);
-router.delete('/:id', requireAuth, requirePermission('clients:manage'), validateParams(clientParamsSchema), deactivateClient);
+router.delete('/:id', requireAuth, requirePermission('clients:manage'), validateParams(clientParamsSchema), deleteClient);
 
 export default router;

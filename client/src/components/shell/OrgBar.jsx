@@ -129,10 +129,15 @@ export function OrgPicker({
               {matches.map((client) => {
                 const id = idOf(client);
                 const isSelected = String(id) === String(currentId);
+                /* A stopped organization is searched for like any other, but nothing can be worked
+                   on inside it, so the choice is refused here instead of silently undoing itself
+                   once the click lands. */
+                const stopped = client.isActive === false;
                 return (
                   <li key={id}>
                     <button
                       type="button"
+                      disabled={stopped}
                       onClick={() => {
                         onPick(id);
                         onClose();
@@ -140,12 +145,18 @@ export function OrgPicker({
                       className={`flex w-full items-center justify-between gap-3 rounded-[6px] px-3 py-2 text-left text-sm transition-colors ${
                         isSelected
                           ? "bg-[#EFF6FF] text-[#2563EB] font-medium"
-                          : "text-[#374151] hover:bg-[#F3F4F6] hover:text-[#111827]"
+                          : stopped
+                            ? "cursor-not-allowed text-[#9CA3AF]"
+                            : "text-[#374151] hover:bg-[#F3F4F6] hover:text-[#111827]"
                       }`}
                     >
                       <span className="truncate">{client.name}</span>
-                      {isSelected && (
-                        <Check className="h-4 w-4 shrink-0 text-[#2563EB]" />
+                      {stopped ? (
+                        <span className="shrink-0 text-[11px] text-[#9CA3AF]">Inactive</span>
+                      ) : (
+                        isSelected && (
+                          <Check className="h-4 w-4 shrink-0 text-[#2563EB]" />
+                        )
                       )}
                     </button>
                   </li>

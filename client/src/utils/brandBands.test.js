@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { BAND_HEIGHTS, legacyToSections } from '../../../shared/templateElements.js';
 import {
+  bandToCustomize,
+  borrowedBandPieces,
   brandLayerTemplate,
   changedBrandBands,
   editingTemplateFromKit,
@@ -93,6 +95,78 @@ describe('kitBandIsLaidOut', () => {
     expect(kitBandIsLaidOut(laidOutKit, 'footer')).toBe(false);
     expect(kitBandIsLaidOut(laidOutKit, 'content')).toBe(false);
     expect(kitBandIsLaidOut(null, 'header')).toBe(false);
+  });
+});
+
+describe('bandToCustomize', () => {
+  it('copies the organization\'s own pieces onto a band that followed it', () => {
+    const taken = bandToCustomize(settingsKit, 'header', {
+      size: SIZE,
+      current: { mode: 'brand', elements: [] },
+    });
+    expect(taken.mode).toBe('custom');
+    expect(taken.height).toBe(80);
+    expect(taken.background).toEqual({ type: 'color', color: '#0f172a' });
+    expect(taken.elements.map((item) => item.id)).toEqual([
+      'brand-header-logo',
+      'brand-header-name',
+      'brand-header-tagline',
+    ]);
+  });
+
+  it('copies what the organization arranged by hand when it has', () => {
+    const handPlaced = { kind: 'text', x: 300, y: 22, w: 500, h: 40, text: 'Placed by hand' };
+    const kit = {
+      ...settingsKit,
+      header: {
+        mode: 'elements',
+        height: 96,
+        elements: [handPlaced],
+        background: settingsKit.header.background,
+      },
+    };
+    const taken = bandToCustomize(kit, 'header', { size: SIZE, current: { mode: 'brand' } });
+    expect(taken.height).toBe(96);
+    expect(taken.elements.map((item) => item.text)).toEqual(['Placed by hand']);
+  });
+
+  it('leaves a band that is already the design\'s own exactly as it is', () => {
+    expect(
+      bandToCustomize(settingsKit, 'header', {
+        size: SIZE,
+        current: { mode: 'custom', height: 120, elements: [{ kind: 'text', text: 'Mine' }] },
+      }),
+    ).toBe(null);
+  });
+
+  it('has nothing to take over in the middle of the poster', () => {
+    expect(bandToCustomize(settingsKit, 'content', { size: SIZE })).toBe(null);
+    expect(bandToCustomize(null, 'header', { size: SIZE })).toBe(null);
+  });
+});
+
+describe('borrowedBandPieces', () => {
+  it('puts a frame where the organization paints its logo and name', () => {
+    const borrowed = borrowedBandPieces(settingsKit, {
+      header: { mode: 'brand', elements: [] },
+      footer: { mode: 'brand', elements: [] },
+    }, SIZE);
+    expect(borrowed.header.map((item) => item.id)).toEqual([
+      'brand-header-logo',
+      'brand-header-name',
+      'brand-header-tagline',
+    ]);
+    expect(borrowed.footer.length).toBeGreaterThan(0);
+  });
+
+  it('borrows nothing from a band this design already owns', () => {
+    const own = { mode: 'custom', elements: [{ kind: 'text', x: 40, y: 20, w: 300, h: 40, text: 'Mine' }] };
+    expect(borrowedBandPieces(settingsKit, { header: own, footer: own }, SIZE)).toEqual({});
+  });
+
+  it('waits for a design and a brand kit to exist', () => {
+    expect(borrowedBandPieces(settingsKit, null, SIZE)).toEqual({});
+    expect(borrowedBandPieces(null, { header: { mode: 'brand' } }, SIZE)).toEqual({});
   });
 });
 
