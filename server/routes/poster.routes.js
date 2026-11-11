@@ -44,7 +44,7 @@ function smallBody(req, res, next) {
   return next();
 }
 
-// Pure Hugging Face AI model poster generation routes (only Hugging Face AI model is used)
+// Poster artwork generation routes (supports mock, huggingface, and cloudflare via IMAGE_PROVIDER)
 router.post('/generate-hf', generateHuggingFacePoster);
 router.post('/generate', generateHuggingFacePoster);
 
