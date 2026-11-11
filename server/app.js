@@ -19,6 +19,7 @@ import { httpLogger } from './utils/logger.js';
 
 import { cookieParser } from './middleware/cookies.middleware.js';
 import { csrfProtection } from './middleware/csrf.middleware.js';
+import { isAllowedOrigin } from './utils/originPolicy.js';
 
 initServerSentry();
 
@@ -63,36 +64,16 @@ app.use(
   })
 );
 
-// Restricted CORS: same-origin and approved local dev origins with credentials (no open CORS wildcard)
-const allowedOrigins = new Set(
-  [
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    process.env.CLIENT_URL,
-  ].filter(Boolean)
-);
-
+// Restricted CORS: same-origin, approved dev/deployed origins, and credentials (no open CORS wildcard)
 app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      try {
-        const parsed = new URL(origin);
-        if (
-          allowedOrigins.has(origin) ||
-          parsed.hostname === 'localhost' ||
-          parsed.hostname === '127.0.0.1'
-        ) {
-          return callback(null, true);
-        }
-      } catch {}
-      const corsErr = new Error('Not allowed by CORS');
-      corsErr.status = 403;
-      return callback(corsErr);
-    },
-    credentials: true,
+  cors((req, callback) => {
+    const origin = req.headers.origin;
+    if (isAllowedOrigin(origin, req)) {
+      return callback(null, { origin: Boolean(origin), credentials: true });
+    }
+    const corsErr = new Error('Not allowed by CORS');
+    corsErr.status = 403;
+    return callback(corsErr);
   })
 );
 

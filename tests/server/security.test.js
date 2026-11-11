@@ -313,6 +313,45 @@ describe('AUTH 7: Security Automated Test Suite', () => {
       .send({});
     expect(evilOriginRes.status).toBe(403);
 
+    const evilVercelRes = await request(app)
+      .post('/api/auth/logout')
+      .set('Origin', 'https://evil-crestly.vercel.app')
+      .set('X-Requested-With', 'XMLHttpRequest')
+      .set('Cookie', cookiesUserA.cookieString)
+      .send({});
+    expect(evilVercelRes.status).toBe(403);
+
+    // Trusted Crestly Vercel origins & configured APP_URL (with trailing slash) pass CORS & CSRF
+    const prevAppUrl = process.env.APP_URL;
+    try {
+      process.env.APP_URL = 'https://custom-poster-app.example.com/';
+      const prodCorsRes = await request(app)
+        .options('/api/login')
+        .set('Origin', 'https://crestly-client.vercel.app')
+        .set('Access-Control-Request-Method', 'POST');
+      expect([200, 204]).toContain(prodCorsRes.status);
+      expect(prodCorsRes.headers['access-control-allow-origin']).toBe('https://crestly-client.vercel.app');
+
+      const previewCorsRes = await request(app)
+        .options('/api/login')
+        .set('Origin', 'https://crestly-git-canva-level-alexpandian03.vercel.app')
+        .set('Access-Control-Request-Method', 'POST');
+      expect([200, 204]).toContain(previewCorsRes.status);
+      expect(previewCorsRes.headers['access-control-allow-origin']).toBe(
+        'https://crestly-git-canva-level-alexpandian03.vercel.app'
+      );
+
+      const appUrlCorsRes = await request(app)
+        .options('/api/login')
+        .set('Origin', 'https://custom-poster-app.example.com')
+        .set('Access-Control-Request-Method', 'POST');
+      expect([200, 204]).toContain(appUrlCorsRes.status);
+      expect(appUrlCorsRes.headers['access-control-allow-origin']).toBe('https://custom-poster-app.example.com');
+    } finally {
+      if (prevAppUrl === undefined) delete process.env.APP_URL;
+      else process.env.APP_URL = prevAppUrl;
+    }
+
     // GET requests do not require CSRF header
     const getRes = await request(app)
       .get('/api/auth/me')
