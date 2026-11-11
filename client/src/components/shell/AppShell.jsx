@@ -64,7 +64,7 @@ export default function AppShell({ children }) {
   const flatItems = !isAuthenticated ? guestNavItems : memberNavItems;
 
   return (
-    <div className="flex min-h-screen bg-white font-sans text-[#111827]">
+    <div className="flex h-screen w-full max-w-full overflow-hidden bg-white font-sans text-[#111827]">
       {/* 240px wide sidebar on the left for authenticated users */}
       {sidebar && (
         <SideBar
@@ -77,9 +77,9 @@ export default function AppShell({ children }) {
       )}
 
       {/* Main content column with 56px top bar */}
-      <div className="flex flex-1 flex-col min-w-0">
+      <div className="flex flex-1 flex-col min-w-0 h-full overflow-hidden">
         {sidebar ? (
-          <div className="sticky top-0 z-40 bg-white">
+          <div className="shrink-0 z-40 bg-white">
             <TopBar
               title={title}
               onToggleMenu={() => setDrawer((value) => !value)}
@@ -88,7 +88,7 @@ export default function AppShell({ children }) {
             {showOrgBar && <OrgBar selected={org.selected} onChange={askForClient} />}
           </div>
         ) : (
-          <div className="sticky top-0 z-40 bg-white">
+          <div className="shrink-0 z-40 bg-white">
             <Navbar
               menuOpen={drawer}
               onToggleMenu={() => setDrawer((value) => !value)}
@@ -98,7 +98,7 @@ export default function AppShell({ children }) {
           </div>
         )}
 
-        <main className="min-w-0 flex-1">{children}</main>
+        <main className="min-w-0 flex-1 max-w-full overflow-y-auto">{children}</main>
 
               </div>
 

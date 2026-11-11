@@ -233,9 +233,6 @@ export function templateSnapshot(template) {
   } else if (elements.length > 0) {
     snapshot.elements = elements;
   }
-  if (raw.brandKit) {
-    snapshot.brandKit = brandKitSnapshot(raw.brandKit);
-  }
   return snapshot;
 }
 
@@ -270,14 +267,13 @@ export function assertDesignSize(design) {
 
 /** Builds the frozen look of a poster from the tenant's current brand kit and template. */
 export function captureDesign({ brandKit, template }) {
-  const mergedKit = template?.brandKit ? { ...plain(brandKit), ...plain(template.brandKit) } : brandKit;
   const design = {
-    brandKit: brandKitSnapshot(mergedKit),
+    brandKit: brandKitSnapshot(brandKit),
     template: templateSnapshot(template),
     /* The two strips this poster draws at the top and the bottom, settled once and for all:
        whose band won, how tall it is, where it sits and what is painted on it. A later change
        to the brand kit or the template cannot move a saved poster's header or footer. */
-    bands: bandsSnapshot(mergedKit, template),
+    bands: bandsSnapshot(brandKit, template),
     capturedAt: new Date(),
   };
   assertDesignSize(design);
