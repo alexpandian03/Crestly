@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import request from 'supertest';
 import app from '../../server/app.js';
 import {
@@ -173,5 +175,15 @@ describe('Hugging Face Poster Generation API (/api/posters/generate)', () => {
     expect(res.status).toBe(400);
     expect(res.body.success).toBe(false);
     expect(res.body.error.message).toContain('IMAGE_PROVIDER=huggingface');
+  });
+
+  it('declares Hugging Face runtime packages in root package.json for Render/Vercel installs', async () => {
+    const rootPkg = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8'));
+    expect(rootPkg.dependencies['@gradio/client']).toBeTruthy();
+    expect(rootPkg.dependencies['@huggingface/inference']).toBeTruthy();
+    const gradio = await import('@gradio/client');
+    const hf = await import('@huggingface/inference');
+    expect(typeof gradio.Client).toBe('function');
+    expect(typeof hf.InferenceClient).toBe('function');
   });
 });
