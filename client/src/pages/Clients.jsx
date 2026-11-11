@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import api from "../services/api";
 import { friendlyError } from "../utils/brandImage";
@@ -33,6 +34,7 @@ import { Skeleton } from "../components/ui/skeleton";
 
 export default function Clients() {
   const { activeClientId, selectActiveClient } = useAuth();
+  const navigate = useNavigate();
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);

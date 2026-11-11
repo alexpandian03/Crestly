@@ -496,29 +496,30 @@ export function resolvePosterBrand(brandKit, template) {
       ? Math.max(16, Math.min(logoBaseSize, headerH - hairline - headerTextBoxes - headerGap - px(4)))
       : Math.max(16, Math.min(logoBaseSize, headerH - hairline - px(6)));
 
+  const headerHasImage = headerBg.type === 'image' && Boolean(headerBg.imageUrl);
   const header = {
     present: Boolean(headerZone) || Boolean(brandStrip) || Boolean(template?.sections) || true,
     top: Math.max(0, headerZone?.y ?? 0),
     left: headerZone?.x ?? 0,
     width: headerZone?.w ?? width,
     height: headerH,
-    bg: headerBg,
+    bg: headerHasImage ? { ...headerBg, overlayOpacity: 0 } : headerBg,
     surface: headerSurface,
     alignment: ['left', 'center', 'right'].includes(kit?.header?.alignment) ? kit.header.alignment : D.header.alignment,
     logo: {
-      show: Boolean(logoBlock ? logoBlock.show : (kit?.header?.showLogo ?? true)) && Boolean(logoUrl),
+      show: !headerHasImage && Boolean(logoBlock ? logoBlock.show : (kit?.header?.showLogo ?? true)) && Boolean(logoUrl),
       size: logoBaseSize,
       pxHeight: logoHeight,
       position: logoPositionValue,
       url: logoUrl,
     },
     orgName: {
-      show: Boolean(kit?.header?.orgName?.show ?? kit?.header?.showOrgName ?? true),
+      show: !headerHasImage && Boolean(kit?.header?.orgName?.show ?? kit?.header?.showOrgName ?? true),
       text: plain(kit?.header?.orgName?.text, 100) || plain(kit.orgName, 100) || 'Brand Organization',
       style: { ...orgNameStyle, color: orgNameColor },
     },
     tagline: {
-      show: taglineShown,
+      show: !headerHasImage && taglineShown,
       text: plain(kit?.header?.tagline?.text, 80),
       style: { ...taglineStyle, color: taglineColor },
     },
@@ -553,6 +554,7 @@ export function resolvePosterBrand(brandKit, template) {
     : Math.min(height * 0.4, Math.max(48, footerHeight ? px(footerHeight) : footerZoneH));
   const footerTop = Math.max(header.top + headerH, footerBottom - wantedFooterH);
 
+  const footerHasImage = footerBg.type === 'image' && Boolean(footerBg.imageUrl);
   const footerLayout = Number(pick('footer', 'layout', 2));
   const footer = {
     present: Boolean(footerZone) || Boolean(brandStrip) || Boolean(template?.sections) || true,
@@ -561,7 +563,7 @@ export function resolvePosterBrand(brandKit, template) {
     left: footerZone?.x ?? 0,
     width: footerZone?.w ?? width,
     height: brandStrip ? Math.max(0, footerBottom - footerTop) : Math.max(48, footerBottom - footerTop),
-    bg: footerBg,
+    bg: footerHasImage ? { ...footerBg, overlayOpacity: 0 } : footerBg,
     surface: footerSurface,
     layout: [1, 2, 3].includes(footerLayout) ? footerLayout : 2,
     style: { ...footerStyleRaw, color: footerTextColor },
@@ -571,28 +573,20 @@ export function resolvePosterBrand(brandKit, template) {
       color: dividerUntouched ? alpha(primary, 0.19) : colorOr(kit?.footer?.divider?.color, D.footer.divider.color),
       thickness: dividerUntouched ? Math.max(1, px(2)) : Math.max(0, px(numberOr(kit?.footer?.divider?.thickness, 1, 0, 8))),
     },
-    address: plain(kit?.footer?.address, 120),
-    phone: plain(kit?.footer?.phone, 40),
-    email: plain(kit?.footer?.email, 120),
-    website: plain(kit?.footer?.website, 120),
-    social: (Array.isArray(kit?.footer?.social) ? kit.footer.social : [])
-      .map((s) => ({ platform: plain(s?.platform, 20).toLowerCase(), url: plain(s?.url, 300) }))
-      .filter((s) => s.platform && s.url)
-      .slice(0, 6),
-    legalText: plain(kit?.footer?.legalText, 160),
-    legacyContact: plain(kit?.footer?.contactText, 200),
-    legacySocials: (Array.isArray(kit?.footer?.socials) ? kit.footer.socials : []).map((s) => plain(s, 60)).filter(Boolean),
+    address: footerHasImage ? '' : plain(kit?.footer?.address, 120),
+    phone: footerHasImage ? '' : plain(kit?.footer?.phone, 40),
+    email: footerHasImage ? '' : plain(kit?.footer?.email, 120),
+    website: footerHasImage ? '' : plain(kit?.footer?.website, 120),
+    social: footerHasImage
+      ? []
+      : (Array.isArray(kit?.footer?.social) ? kit.footer.social : [])
+          .map((s) => ({ platform: plain(s?.platform, 20).toLowerCase(), url: plain(s?.url, 300) }))
+          .filter((s) => s.platform && s.url)
+          .slice(0, 6),
+    legalText: footerHasImage ? '' : plain(kit?.footer?.legalText, 160),
     padX: px(36),
     gap: px(16),
   };
-  /* A kit that only ever filled the pre-style contact fields keeps the old
-   * single-line footer. */
-  footer.legacyPresentation =
-    footer.social.length === 0 &&
-    !footer.address &&
-    !footer.phone &&
-    !footer.email &&
-    Boolean(footer.legacyContact || footer.legacySocials.length);
 
   // ---------- content area between the bands ----------
   const bandTop = header.top + header.height;

@@ -2,486 +2,30 @@ import Template from '../models/Template.model.js';
 import BrandKit from '../models/BrandKit.model.js';
 import Client from '../models/Client.model.js';
 import Poster, { POSTER_MAX_VERSIONS, normalizePosterRecord } from '../models/Poster.model.js';
-import { variableSlotsOf } from '../../shared/templateElements.js';
-import { designById } from '../../shared/designRecipes.js';
 import { TEMPLATE_SIZE_DEFAULT } from '../services/template/zones.js';
 import { scopedFilter } from '../middleware/auth.middleware.js';
-import { generateContent, generateDesign, generateVariants } from '../services/ai/index.js';
-import { createCacheKey, getFromCache, setInCache } from '../services/ai/chain.js';
-import { resolveImage, resolveImageDetails, resolvePosterImage, searchPhotos, triggerDownload } from '../services/images.js';
-import { sanitizeString, designToContent, sanitizeAndTruncateDesign } from '../services/ai/schema.js';
-import { generateWithMock } from '../services/ai/providers/mock.js';
-import { normalizePosterContent, normalizeImageUrl, contentValuesContext, remapContentToDesign } from '../services/poster/content.js';
-import { captureDesign } from '../services/poster/design.js';
 import {
-  buildRecipeDesign,
-  readRecipe,
-  recipeNeedsPhoto,
-  recipePayload,
-} from '../services/poster/recipe.js';
+  sanitizeString,
+  normalizePosterContent,
+  normalizeImageUrl,
+  contentValuesContext,
+  remapContentToDesign,
+} from '../services/poster/content.js';
+import { captureDesign } from '../services/poster/design.js';
 import storageService from '../services/storage.js';
-import { consumeImageQuota } from '../services/image/limits.js';
-import { generatePosterPicture, imageProviderName } from '../services/image/index.js';
-import { screenSubject } from '../services/image/prompt.js';
 import { consumeRateLimit } from '../services/rateLimit.js';
-import { parseCardListEntries } from '../services/ai/listParser.js';
-import { guessEventType, isValidEventType } from '../../shared/eventTypes.js';
+import { isValidEventType } from '../../shared/eventTypes.js';
 import { audit } from '../services/audit.service.js';
 
-/**
- * POST /api/posters/generate with mode "ai": one whole design taken from a recipe, plus the
- * words that go on it. Whether this mode is open is the organization's setting, not the user's.
- */
-async function generateFromRecipe(req, res, { templateId, prompt, instruction, avoidRecipeIds, variant, seed, imageUrl: userImageUrl, cacheKey }) {
-  try {
-    const client = await Client.findById(req.clientId).select('designModes').lean();
-    if (!(client?.designModes?.ai ?? true)) {
-      return res.status(403).json({
-        success: false,
-        error: {
-          message:
-            'Designs written by the assistant are switched off for your organization. An administrator can turn them on in organization settings.',
-          status: 403,
-        },
-      });
-    }
-
-    let brandKit = await BrandKit.findOne(scopedFilter(req)).lean();
-    if (!brandKit) {
-      brandKit = { orgName: 'Our Organization', colors: {}, fonts: {}, header: {}, footer: {} };
-    }
-
-    /* The size comes from the layout asked for, else the tenant's first active template,
-       else the brand kit's own poster size. No template at all is not an error here. */
-    const template = templateId
-      ? await Template.findOne(scopedFilter(req, { _id: templateId, isActive: true })).lean()
-      : await Template.findOne(scopedFilter(req, { isActive: true })).sort({ createdAt: 1 }).lean();
-    const size = template?.size || brandKit.defaultPosterSize || TEMPLATE_SIZE_DEFAULT;
-
-    let answer;
-    let content;
-    let built;
-
-    let isAiGenerated = (process.env.LLM_PROVIDER || 'mock').toLowerCase().trim() !== 'mock';
-
-    // Generate the design (timeout, retry, sanitization handled internally)
-    // STAGE-10-COUNT: one AI generation. Count it here against the client's plan limit.
-    try {
-      answer = await generateDesign({ prompt, brandKit, instruction, avoidRecipeIds, variant, seed });
-      content = designToContent(answer);
-      built = buildRecipeDesign({
-        recipe: {
-          recipeId: answer.archetype || answer.recipeId,
-          archetype: answer.archetype || answer.recipeId,
-          variant: answer.variant,
-          icon: answer.icon,
-        },
-        content,
-        brandKit,
-        size,
-      });
-      if (content.extras) {
-        const slots = variableSlotsOf(built.elements || []);
-        const offered = new Set(slots.texts.map((s) => s.key));
-        const pruned = {};
-        for (const [k, v] of Object.entries(content.extras)) {
-          if (offered.has(k)) pruned[k] = v;
-        }
-        content.extras = Object.keys(pruned).length > 0 ? pruned : undefined;
-      }
-    } catch (err) {
-      console.error(`[AI Design] Generation failed: ${err.message || 'unknown error'}`);
-      isAiGenerated = false;
-      try {
-        const mockRaw = await generateWithMock({
-          prompt,
-          brandKit,
-          instruction,
-          mode: 'design',
-          avoidRecipeIds,
-          variant,
-          seed,
-        });
-        answer = sanitizeAndTruncateDesign(mockRaw, { avoidRecipeIds, variant, prompt, instruction, seed });
-        content = designToContent(answer);
-        built = buildRecipeDesign({
-          recipe: {
-            recipeId: answer.archetype || answer.recipeId,
-            archetype: answer.archetype || answer.recipeId,
-            variant: answer.variant,
-            icon: answer.icon,
-          },
-          content,
-          brandKit,
-          size,
-        });
-        if (content.extras) {
-          const slots = variableSlotsOf(built.elements || []);
-          const offered = new Set(slots.texts.map((s) => s.key));
-          const pruned = {};
-          for (const [k, v] of Object.entries(content.extras)) {
-            if (offered.has(k)) pruned[k] = v;
-          }
-          content.extras = Object.keys(pruned).length > 0 ? pruned : undefined;
-        }
-      } catch (fallbackErr) {
-        console.error(`[AI Design] Fallback failed: ${fallbackErr.message || 'unknown error'}`);
-        return res.status(500).json({
-          success: false,
-          error: { message: 'We could not generate the poster design. Please try again.', status: 500 },
-        });
-      }
-    }
-
-    content.isAiGenerated = isAiGenerated;
-
-    /* A design or template that shows a picture looks one up with resolvePosterImage,
-       and a photo that cannot be found falls back gracefully. */
-    try {
-      const hasImageSlot =
-        recipeNeedsPhoto(built.recipeId) ||
-        (Array.isArray(built.elements) && built.elements.some((el) => el.kind === 'image' || el.field === 'photo')) ||
-        (template && Array.isArray(template.elements) && template.elements.some((el) => el.kind === 'image' || el.field === 'photo'));
-
-      if (userImageUrl && typeof userImageUrl === 'string' && userImageUrl.trim()) {
-        content.imageUrl = userImageUrl.trim();
-      } else if (hasImageSlot) {
-        const photo = await resolvePosterImage(prompt, content.title, content.imageQuery);
-        content.imageUrl = photo?.imageUrl || '';
-        if (photo?.photographer) {
-          content.photographer = photo.photographer;
-          content.photographerUrl = photo.photographerUrl;
-        }
-        if (photo?.downloadLocation) {
-          content.downloadLocation = photo.downloadLocation;
-        }
-      } else {
-        content.imageUrl = '';
-      }
-    } catch (photoErr) {
-      console.warn(`[AI Photo] Photo resolution failed: ${photoErr.message || 'unknown error'}`);
-      content.imageUrl = userImageUrl ? userImageUrl.trim() : '';
-    }
-
-    const responseData = {
-      design: recipePayload(built),
-      content,
-      provider: answer?.provider || (isAiGenerated ? (process.env.LLM_PROVIDER || 'mock') : 'mock'),
-    };
-    if (cacheKey) {
-      setInCache(cacheKey, responseData);
-    }
-    return res.status(200).json({ success: true, data: responseData });
-  } catch (outerErr) {
-    console.error(`[AI Design] Unexpected error: ${outerErr.message || 'unknown error'}`);
-    return res.status(500).json({
-      success: false,
-      error: { message: 'We could not generate the poster design. Please try again.', status: 500 },
-    });
-  }
-}
-
-/**
- * POST /api/posters/generate
- * Generates structured poster content using the configured AI provider.
- * Does NOT log prompt text or API keys.
- */
-export async function generatePosterContentController(req, res, next) {
-  try {
-    const clientId = req.clientId;
-    if (!clientId) {
-      return res.status(400).json({
-        success: false,
-        error: { message: 'Tenant context could not be resolved', status: 400 },
-      });
-    }
-
-    const {
-      templateId,
-      prompt,
-      instruction,
-      mode = 'template',
-      avoidRecipeIds,
-      variant,
-      imageUrl: userImageUrl,
-      eventType: requestedEventType,
-      variants = 1,
-      seed,
-    } = req.body;
-
-    const cacheKey = mode === 'ai' ? null : createCacheKey(prompt, {
-      instruction,
-      mode,
-      variants,
-      eventType: requestedEventType,
-      avoidRecipeIds,
-      variant,
-      seed,
-    });
-    const cached = cacheKey ? getFromCache(cacheKey) : null;
-    if (cached) {
-      return res.status(200).json({ success: true, data: cached });
-    }
-
-    const userId = req.user?._id;
-    if (userId) {
-      const quota = await consumeRateLimit({
-        key: `ai-generate:user:${userId}`,
-        limit: process.env.NODE_ENV === 'production' ? 50 : 1000,
-        windowMs: 24 * 60 * 60 * 1000,
-      });
-      if (!quota.allowed) {
-        return res.status(429).json({
-          success: false,
-          error: {
-            message: 'You have reached your daily generation limit. Please try again tomorrow.',
-            status: 429,
-          },
-        });
-      }
-    }
-
-    if (Number(variants) === 3) {
-      try {
-        let brandKit = await BrandKit.findOne(scopedFilter(req)).lean();
-        if (!brandKit) {
-          brandKit = { orgName: 'Our Organization', colors: {}, fonts: {}, header: {}, footer: {} };
-        }
-        const template = templateId
-          ? await Template.findOne(scopedFilter(req, { _id: templateId, isActive: true })).lean()
-          : await Template.findOne(scopedFilter(req, { isActive: true })).sort({ createdAt: 1 }).lean();
-        const size = template?.size || brandKit.defaultPosterSize || TEMPLATE_SIZE_DEFAULT;
-
-        const eventType = isValidEventType(requestedEventType) ? requestedEventType : guessEventType(prompt);
-        const variantsResult = await generateVariants({
-          prompt,
-          brandKit,
-          instruction,
-          eventType,
-          size,
-          userImageUrl,
-        });
-
-        const responseData = {
-          posters: variantsResult.posters,
-          variants: variantsResult.posters,
-          design: variantsResult.posters[0]?.design,
-          content: variantsResult.posters[0]?.content,
-          suggestedEventType: eventType,
-          provider: variantsResult.provider,
-        };
-
-        setInCache(cacheKey, responseData);
-        return res.status(200).json({ success: true, data: responseData });
-      } catch (err) {
-        console.error(`[AI Variants Controller] Failed: ${err.message || 'unknown error'}`);
-        return res.status(err.status || 500).json({
-          success: false,
-          error: { message: err.message || 'We could not generate poster variants. Please try again.', status: err.status || 500 },
-        });
-      }
-    }
-
-    if (mode === 'ai') {
-      try {
-        return await generateFromRecipe(req, res, { templateId, prompt, instruction, avoidRecipeIds, variant, seed, imageUrl: userImageUrl, cacheKey: null });
-      } catch (err) {
-        console.error(`[AI Design Controller] Failed: ${err.message || 'unknown error'}`);
-        return res.status(500).json({
-          success: false,
-          error: { message: 'We could not generate the poster design. Please try again.', status: 500 },
-        });
-      }
-    }
-
-
-
-    // Determine the event type: use the one the user chose (if valid), else guess from the description.
-    const eventType = isValidEventType(requestedEventType)
-      ? requestedEventType
-      : guessEventType(prompt);
-    // Always return a suggestion so the client can show the picker pre-selected.
-    const suggestedEventType = eventType;
-
-    // Load template scoped strictly to the authenticated tenant.
-    // If templateId is omitted, fall back to the first active template.
-    let template;
-    if (templateId) {
-      template = await Template.findOne(scopedFilter(req, { _id: templateId, isActive: true }));
-    } else {
-      template = await Template.findOne(scopedFilter(req, { isActive: true })).sort({ createdAt: 1 });
-    }
-
-    if (!template) {
-      return res.status(404).json({
-        success: false,
-        error: {
-          message: templateId
-            ? 'Template not found or inaccessible for your organization.'
-            : 'No active template found for your organization. Please contact your admin.',
-          status: 404,
-        },
-      });
-    }
-
-    // Load tenant brand kit
-    let brandKit = await BrandKit.findOne(scopedFilter(req));
-    if (!brandKit) {
-      brandKit = { orgName: 'Our Organization', colors: {}, fonts: {}, header: {}, footer: {} };
-    }
-
-    /* The blanks this template's own items leave: words the assistant may fill, photos a
-       person replaces. A layout without items offers nothing, exactly as before. */
-    const slots = variableSlotsOf(template.elements);
-    const variables = slots.texts.map(({ key, label, hint, maxLength }) => ({ key, label, hint, maxLength }));
-    const imageSlots = slots.images;
-
-    // Generate content (timeout, retry, sanitization handled internally)
-    // STAGE-10-COUNT: one AI generation. Count it here against the client's plan limit.
-    const content = await generateContent({
-      prompt,
-      brandKit,
-      template,
-      instruction,
-      variables,
-      eventType,
-    });
-
-    let imageUrl = '';
-    let photo = null;
-
-    if (userImageUrl && typeof userImageUrl === 'string' && userImageUrl.trim()) {
-      imageUrl = userImageUrl.trim();
-    } else {
-      // Only when there is no user photo, call the stock photo search
-      photo = await resolvePosterImage(prompt, content.title, content.imageQuery);
-      imageUrl = photo?.imageUrl || '';
-    }
-
-    const images = {};
-    if (imageSlots.length > 0 && imageUrl) {
-      images[imageSlots[0].key] = imageUrl;
-    }
-
-    const responseData = {
-      content: {
-        ...content,
-        imageUrl,
-        ...(Object.keys(images).length > 0 ? { images } : {}),
-        ...(photo?.photographer ? { photographer: photo.photographer, photographerUrl: photo.photographerUrl } : {}),
-        ...(photo?.downloadLocation ? { downloadLocation: photo.downloadLocation } : {}),
-      },
-      /* Photo blanks are never generated: the person making the poster replaces them. */
-      imageSlots: imageSlots.map((slot) => ({ key: slot.key, label: slot.label })),
-      /** The event type the server chose or confirmed from the user's description. */
-      suggestedEventType,
-      provider: content.provider || 'mock',
-    };
-    setInCache(cacheKey, responseData);
-
-    return res.status(200).json({
-      success: true,
-      data: responseData,
-    });
-  } catch (err) {
-    next(err);
-  }
-}
-
-/**
- * POST /api/posters/image — one illustration for a design that shows a picture.
- *
- * The request carries only the design's name and the words already standing as the poster's
- * headline. What the picture service is asked for is built here from a fixed sentence, so a
- * person's own description can never reach it. A picture that cannot be made is a plain answer,
- * not a broken page: the poster keeps its mark and a stock photo is offered instead.
- */
-export async function generatePosterImageController(req, res, next) {
-  try {
-    const clientId = req.clientId;
-    if (!clientId) {
-      return res.status(400).json({
-        success: false,
-        error: { message: 'Tenant context could not be resolved', status: 400 },
-      });
-    }
-
-    /* Pictures belong to the designs the assistant makes, so the same switch governs them. */
-    const client = await Client.findById(clientId).select('designModes').lean();
-    if (!(client?.designModes?.ai ?? true)) {
-      return res.status(403).json({
-        success: false,
-        error: {
-          message:
-            'Designs written by the assistant are switched off for your organization. An administrator can turn them on in organization settings.',
-          status: 403,
-        },
-      });
-    }
-
-    const { recipeId, archetype, title } = req.body;
-    const targetRecipe = archetype || recipeId;
-    if (!recipeNeedsPhoto(targetRecipe)) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          message:
-            'This design has no place for a picture. Choose a design that shows one, or pick a photo for your layout.',
-          status: 400,
-        },
-      });
-    }
-
-    const screened = screenSubject(title);
-    if (!screened.ok) {
-      return res.status(400).json({ success: false, error: { message: screened.reason, status: 400 } });
-    }
-
-    const quota = await consumeImageQuota({
-      userId: String(req.user._id),
-      clientId: String(clientId),
-    });
-    if (!quota.ok) {
-      return res.status(429).json({ success: false, error: { message: quota.message, status: 429 } });
-    }
-
-    let brandKit = await BrandKit.findOne(scopedFilter(req)).lean();
-    if (!brandKit) {
-      brandKit = { orgName: 'Our Organization', colors: {}, fonts: {}, header: {}, footer: {} };
-    }
-    const size = brandKit.defaultPosterSize || TEMPLATE_SIZE_DEFAULT;
-
-    try {
-      const made = await generatePosterPicture({
-        subject: screened.subject,
-        brandKit,
-        size,
-        clientId: String(clientId),
-      });
-      return res.status(200).json({
-        success: true,
-        data: { imageUrl: made.imageUrl, provider: made.provider, stockUrl: '', message: '' },
-      });
-    } catch (err) {
-      /* A refusal to draw this idea stays a refusal - a photo of the same idea would be the
-         same mistake from a different source. */
-      if (Number(err?.status) === 400) throw err;
-      const stockUrl = await resolveImage(screened.subject);
-      const raw = String(err?.message || '').slice(0, 300).trim();
-      /* Only a real sentence reaches the screen; a service's own words stay inside the server. */
-      const message =
-        /^[A-Z]/.test(raw) && raw.includes(' ')
-          ? raw
-          : 'We could not make a picture just now. Your poster keeps its mark.';
-      return res.status(200).json({
-        success: true,
-        data: { imageUrl: '', provider: imageProviderName(), stockUrl, message },
-      });
-    }
-  } catch (err) {
-    next(err);
-  }
-}
+const DEFAULT_CANVAS_TEMPLATE = {
+  name: 'Standard poster',
+  size: TEMPLATE_SIZE_DEFAULT,
+  zones: [
+    { id: 'zone-header', type: 'header', x: 0, y: 0, w: 1080, h: 140, locked: true },
+    { id: 'zone-content', type: 'content', x: 0, y: 140, w: 1080, h: 1080, locked: false },
+    { id: 'zone-footer', type: 'footer', x: 0, y: 1220, w: 1080, h: 130, locked: true },
+  ],
+};
 
 function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -493,51 +37,20 @@ function posterScope(req, extra = {}) {
   return filter;
 }
 
-/**
- * Freezes the look a new poster starts with: this tenant's brand kit, and either its own
- * template or the design recipe this request asked for. Nothing about the look is taken
- * from the body except the recipe's name, arrangement and mark.
- */
-async function startingDesign(req, template, recipe, content) {
-  const brandKit = await BrandKit.findOne(scopedFilter(req)).lean();
-  const built = recipe
-    ? buildRecipeDesign({ recipe, content, brandKit, size: template.size })
-    : template;
-  return captureDesign({ brandKit, template: built });
-}
-
 function plainDesign(design) {
   if (!design) return undefined;
   return typeof design.toObject === 'function' ? design.toObject() : design;
 }
 
-/**
- * Re-captures the look for an existing poster; a deleted template keeps the stored layout.
- * A poster made from a design recipe keeps that recipe: it is re-built against today's brand
- * kit rather than falling back to the organization's template.
- */
+async function startingDesign(req, template) {
+  const brandKit = await BrandKit.findOne(scopedFilter(req)).lean();
+  return captureDesign({ brandKit, template: template || DEFAULT_CANVAS_TEMPLATE });
+}
+
 async function designForPoster(req, poster, template) {
   const brandKit = await BrandKit.findOne(scopedFilter(req)).lean();
   const stored = plainDesign(poster.design)?.template;
-  const rawKey = stored?.archetype || stored?.recipeId || poster.archetype || poster.recipeId;
-  if (rawKey) {
-    const canonical = designById(rawKey)?.id || rawKey;
-    return captureDesign({
-      brandKit,
-      template: buildRecipeDesign({
-        recipe: {
-          recipeId: canonical,
-          archetype: canonical,
-          variant: stored?.variant ?? poster.variant ?? 0,
-          icon: stored?.icon ?? poster.icon,
-        },
-        content: poster.content,
-        brandKit,
-        size: stored?.size,
-      }),
-    });
-  }
-  return captureDesign({ brandKit, template: template || stored || null });
+  return captureDesign({ brandKit, template: template || stored || DEFAULT_CANVAS_TEMPLATE });
 }
 
 export async function createPosterController(req, res, next) {
@@ -553,36 +66,24 @@ export async function createPosterController(req, res, next) {
       });
     }
 
-    const template = await Template.findOne(
-      scopedFilter(req, { _id: req.body.templateId, isActive: true })
-    );
-    if (!template) {
-      return res.status(404).json({
-        success: false,
-        error: { message: 'Template not found or inaccessible for your organization.', status: 404 },
-      });
-    }
+    const template = req.body.templateId
+      ? await Template.findOne(scopedFilter(req, { _id: req.body.templateId, isActive: true }))
+      : await Template.findOne(scopedFilter(req, { isActive: true })).sort({ isDefault: -1, createdAt: -1 });
 
-    const recipe = req.body.recipe ? readRecipe(req.body.recipe) : null;
-    const templateVersion = template.version || 1;
-    const design = await startingDesign(req, template, recipe, req.body.content);
-    /* Filled-in words are checked against the blanks this poster's own design offers. */
+    const templateVersion = template?.version || 1;
+    const design = await startingDesign(req, template);
     const content = normalizePosterContent(req.body.content, contentValuesContext(design, req.clientId));
     const prompt = sanitizeString(req.body.prompt).slice(0, 1000);
 
     const poster = await Poster.create({
       clientId: req.clientId,
       userId: req.user._id,
-      templateId: template._id,
+      ...(template?._id ? { templateId: template._id } : {}),
       templateVersion,
       design,
-      recipeId: recipe?.recipeId,
-      archetype: recipe?.archetype || recipe?.recipeId,
-      variant: recipe?.variant,
       title: content.title,
       prompt,
       content,
-      /** Event type chosen when this poster was created; validated by schema. */
       eventType: isValidEventType(req.body.eventType) ? req.body.eventType : 'general',
       versions: [
         {
@@ -591,9 +92,6 @@ export async function createPosterController(req, res, next) {
           versionNumber: 1,
           templateVersion,
           design,
-          recipeId: recipe?.recipeId,
-          archetype: recipe?.archetype || recipe?.recipeId,
-          variant: recipe?.variant,
           createdBy: req.user._id,
           createdAt: new Date(),
         },
@@ -637,7 +135,6 @@ export async function listPostersController(req, res, next) {
 
     const [rawItems, total] = await Promise.all([
       Poster.find(filter)
-        /* Cards only need to know which look a poster wears, not the whole snapshot. */
         .select(
           '-versions -__v -design.brandKit -design.template.zones -design.template.layout -design.template.elements'
         )
@@ -659,13 +156,8 @@ export async function listPostersController(req, res, next) {
   }
 }
 
-/**
- * The template as this poster was made with: the live document when the pin matches (or the
- * poster predates pinning), otherwise the archived state the template still keeps. A template
- * keeps its last 10 states, so a pin older than that falls back to the current layout rather
- * than failing to render.
- */
 async function templateForPoster(req, poster) {
+  if (!poster.templateId) return null;
   const template = await Template.findOne(scopedFilter(req, { _id: poster.templateId })).lean();
   if (!template) return null;
 
@@ -696,16 +188,9 @@ export async function getPosterController(req, res, next) {
     }
     const poster = normalizePosterRecord(rawPoster);
     const stored = plainDesign(poster.design)?.template;
-    /* The frozen snapshot wins; posters saved before snapshots fall back to the pinned
-       template state, and only then to the live document. `_id` is echoed so callers that
-       key templates by id still recognise the snapshot as the poster's own template. */
-    let template = stored
+    const template = stored
       ? { ...stored, _id: stored.templateId }
       : await templateForPoster(req, poster);
-    if (template && (template.archetype || template.recipeId)) {
-      const canonical = designById(template.archetype || template.recipeId)?.id || (template.archetype || template.recipeId);
-      template = { ...template, archetype: canonical, recipeId: canonical };
-    }
 
     if (rawPoster.draft && String(rawPoster.draft.userId) === String(req.user._id)) {
       poster.draft = {
@@ -717,7 +202,6 @@ export async function getPosterController(req, res, next) {
       delete poster.draft;
     }
 
-    /* One poster, one tenant, one response: never let a proxy or the browser replay it. */
     res.setHeader('Cache-Control', 'no-store');
     return res.status(200).json({ success: true, data: { poster, template } });
   } catch (err) {
@@ -746,16 +230,9 @@ async function loadPoster(req) {
   return Poster.findOne(posterScope(req, { _id: req.params.id })).select('-__v');
 }
 
-/**
- * Appends a new version atomically: the update only applies while currentVersion still equals
- * the version we read, so two editors cannot silently overwrite each other.
- * Returns the updated poster, null on a version conflict, or undefined when the poster vanished.
- */
 async function appendVersion(req, poster, content, note, options = {}) {
-  // STAGE-10-COUNT: a regeneration writes a new version. Count AI-based versions here.
   const versionNumber = poster.currentVersion + 1;
   const pinned = options.templateVersion ?? poster.templateVersion;
-  /* Every version keeps its own look; a plain text edit inherits the poster's current one. */
   const versionDesign = options.design ?? plainDesign(poster.design);
 
   const versionDoc = { content, note, versionNumber, createdBy: req.user._id, createdAt: new Date() };
@@ -765,19 +242,6 @@ async function appendVersion(req, poster, content, note, options = {}) {
   const setFields = { content, title: content.title, currentVersion: versionNumber };
   if (pinned) setFields.templateVersion = pinned;
   if (options.design) setFields.design = options.design;
-
-  const versionTemplate = versionDesign?.template;
-  const rawKey = options.archetype || options.recipeId || versionTemplate?.archetype || versionTemplate?.recipeId || poster.archetype || poster.recipeId;
-  if (rawKey) {
-    const canonical = designById(rawKey)?.id || rawKey;
-    const variantVal = options.variant ?? versionTemplate?.variant ?? poster.variant;
-    versionDoc.archetype = canonical;
-    versionDoc.recipeId = canonical;
-    if (variantVal !== undefined) versionDoc.variant = variantVal;
-    setFields.archetype = canonical;
-    setFields.recipeId = canonical;
-    if (variantVal !== undefined) setFields.variant = variantVal;
-  }
 
   return Poster.findOneAndUpdate(
     posterScope(req, { _id: poster._id, currentVersion: poster.currentVersion }),
@@ -790,17 +254,6 @@ async function appendVersion(req, poster, content, note, options = {}) {
     },
     { new: true }
   ).select('-__v');
-}
-
-function versionNoteFor(instruction) {
-  const labels = {
-    shorter: 'Shorter',
-    minimal: 'Minimal',
-    'more professional': 'More professional',
-    'emphasize date': 'Emphasized date',
-    'change image': 'Changed image',
-  };
-  return labels[instruction] || 'Regenerated';
 }
 
 export async function updatePosterController(req, res, next) {
@@ -828,18 +281,15 @@ export async function addPosterVersionController(req, res, next) {
     const expected = req.body.expectedVersion ?? poster.currentVersion;
     if (expected !== poster.currentVersion) return conflictResponse(res);
 
-    const template = await Template.findOne(
-      scopedFilter(req, { _id: poster.templateId })
-    ).lean();
+    const template = poster.templateId
+      ? await Template.findOne(scopedFilter(req, { _id: poster.templateId })).lean()
+      : null;
     const design = await designForPoster(req, poster, template);
     const content = normalizePosterContent(req.body.content, contentValuesContext(design, req.clientId));
-    const updated = await appendVersion(
-      req,
-      poster,
-      content,
-      versionNoteFor(req.body.instruction),
-      { templateVersion: template?.version || poster.templateVersion, design }
-    );
+    const updated = await appendVersion(req, poster, content, 'Regenerated', {
+      templateVersion: template?.version || poster.templateVersion,
+      design,
+    });
     if (!updated) return conflictResponse(res);
 
     return res.status(200).json({ success: true, data: { poster: updated } });
@@ -871,7 +321,7 @@ export async function restorePosterVersionController(req, res, next) {
     }
 
     const targetDesign = plainDesign(source.design) ?? plainDesign(poster.design);
-    const { content: remapped, droppedCount } = remapContentToDesign(
+    const { content: remapped } = remapContentToDesign(
       source.content,
       plainDesign(source.design) ?? plainDesign(poster.design),
       targetDesign
@@ -880,20 +330,11 @@ export async function restorePosterVersionController(req, res, next) {
       remapped,
       contentValuesContext(targetDesign, req.clientId)
     );
-    const note = droppedCount > 0
-      ? `Restored version ${wanted} (${droppedCount} unused space${droppedCount > 1 ? 's were' : ' was'} dropped)`
-      : `Restored version ${wanted}`;
-    const updated = await appendVersion(
-      req,
-      poster,
-      content,
-      note,
-      {
-        templateVersion: source.templateVersion ?? poster.templateVersion,
-        /* Restoring brings the old look back with the old words. */
-        design: targetDesign,
-      }
-    );
+    const note = `Restored version ${wanted}`;
+    const updated = await appendVersion(req, poster, content, note, {
+      templateVersion: source.templateVersion ?? poster.templateVersion,
+      design: targetDesign,
+    });
     if (!updated) return conflictResponse(res);
 
     return res.status(200).json({ success: true, data: { poster: updated } });
@@ -908,30 +349,20 @@ export async function duplicatePosterController(req, res, next) {
     if (!poster) return posterNotFound(res);
 
     const content = normalizePosterContent(poster.content, contentValuesContext(poster.design, req.clientId));
-    const template = await Template.findOne(
-      scopedFilter(req, { _id: poster.templateId })
-    ).lean();
+    const template = poster.templateId
+      ? await Template.findOne(scopedFilter(req, { _id: poster.templateId })).lean()
+      : null;
     const design = plainDesign(poster.design) || (await designForPoster(req, poster, template));
     const versionDoc = { content, note: 'Created', versionNumber: 1, createdBy: req.user._id, createdAt: new Date() };
     if (poster.templateVersion) versionDoc.templateVersion = poster.templateVersion;
     versionDoc.design = design;
 
-    const rawKey = design?.template?.archetype || design?.template?.recipeId || poster.archetype || poster.recipeId;
-    const canonical = rawKey ? (designById(rawKey)?.id || rawKey) : undefined;
-    const variantVal = design?.template?.variant ?? poster.variant;
-    if (canonical) {
-      versionDoc.archetype = canonical;
-      versionDoc.recipeId = canonical;
-      if (variantVal !== undefined) versionDoc.variant = variantVal;
-    }
-
     const copy = await Poster.create({
       clientId: req.clientId,
       userId: req.user._id,
-      templateId: poster.templateId,
+      ...(poster.templateId ? { templateId: poster.templateId } : {}),
       ...(poster.templateVersion ? { templateVersion: poster.templateVersion } : {}),
       design,
-      ...(canonical ? { archetype: canonical, recipeId: canonical, variant: variantVal } : {}),
       title: content.title,
       prompt: poster.prompt,
       content,
@@ -947,11 +378,6 @@ export async function duplicatePosterController(req, res, next) {
   }
 }
 
-/**
- * POST /api/posters/:id/apply-latest-design
- * Re-captures the tenant's current brand kit and template as a NEW version, for people who
- * want an old poster to wear the new look. Text stays; the version check is the usual one.
- */
 export async function applyLatestDesignController(req, res, next) {
   try {
     const poster = await loadPoster(req);
@@ -960,20 +386,17 @@ export async function applyLatestDesignController(req, res, next) {
     const expected = req.body.expectedVersion ?? poster.currentVersion;
     if (expected !== poster.currentVersion) return conflictResponse(res);
 
-    const template = await Template.findOne(
-      scopedFilter(req, { _id: poster.templateId })
-    ).lean();
+    const template = poster.templateId
+      ? await Template.findOne(scopedFilter(req, { _id: poster.templateId })).lean()
+      : null;
     const design = await designForPoster(req, poster, template);
-    const { content: remapped, droppedCount } = remapContentToDesign(
+    const { content: remapped } = remapContentToDesign(
       poster.content,
       poster.design,
       design
     );
     const content = normalizePosterContent(remapped, contentValuesContext(design, req.clientId));
-    const note = droppedCount > 0
-      ? `Updated to the latest brand design (${droppedCount} unused space${droppedCount > 1 ? 's were' : ' was'} dropped)`
-      : 'Updated to the latest brand design';
-    const updated = await appendVersion(req, poster, content, note, {
+    const updated = await appendVersion(req, poster, content, 'Updated to the latest brand design', {
       templateVersion: template?.version || poster.templateVersion,
       design,
     });
@@ -1046,41 +469,6 @@ export async function uploadPosterThumbnailController(req, res, next) {
     });
 
     return res.status(200).json({ success: true, data: { thumbnailUrl } });
-  } catch (err) {
-    next(err);
-  }
-}
-
-/**
- * GET /api/posters/photos/search?query=...
- * Searches photos using active image search provider (Unsplash, Pexels, Mock).
- */
-export async function searchPhotosController(req, res, next) {
-  try {
-    const query = req.query.query || req.query.q || '';
-    const photos = await searchPhotos(query);
-    return res.status(200).json({
-      success: true,
-      data: { photos },
-    });
-  } catch (err) {
-    next(err);
-  }
-}
-
-/**
- * POST /api/posters/photos/download
- * Triggers download tracking for Unsplash when a photo is chosen for a poster.
- */
-export async function trackPhotoDownloadController(req, res, next) {
-  try {
-    const { downloadLocation } = req.body || {};
-    if (downloadLocation) {
-      await triggerDownload(downloadLocation);
-    }
-    return res.status(200).json({
-      success: true,
-    });
   } catch (err) {
     next(err);
   }
@@ -1198,43 +586,3 @@ export async function discardPosterDraftController(req, res, next) {
     next(err);
   }
 }
-
-/**
- * POST /api/posters/parse-list
- * "Tidy my list": takes pasted text and a card list definition,
- * returning structured entries by field, only from text that is in the paste.
- * Authenticated and rate-limited in MongoDB (30 per minute per user).
- */
-export async function parseCardListController(req, res, next) {
-  try {
-    const rate = await consumeRateLimit({
-      key: `parse-list:user:${req.user._id}`,
-      limit: 30,
-      windowMs: 60 * 1000,
-    });
-    if (!rate.allowed) {
-      return res.status(429).json({
-        success: false,
-        error: {
-          message: 'Too many list tidy requests. Please wait a moment and try again.',
-          status: 429,
-        },
-      });
-    }
-
-    const { text, listDefinition, cardList } = req.body;
-    const definition = listDefinition || cardList || {};
-    const entries = await parseCardListEntries({ text, listDefinition: definition });
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        entries,
-        count: entries.length,
-      },
-    });
-  } catch (err) {
-    next(err);
-  }
-}
-

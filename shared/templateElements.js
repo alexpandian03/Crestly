@@ -70,13 +70,14 @@ export function resolveItemImage(item, content, photoUrl = '', isFirstUserSlot =
   const isExporting = typeof options === 'boolean' ? options : Boolean(options?.isExporting);
   const showSample = typeof options === 'object' && options?.showSample !== undefined ? Boolean(options.showSample) : !isExporting;
   if (!item) return '';
+  const fallbackPhoto = String(photoUrl || content?.imageUrl || content?.image || '').trim();
   if (item.kind === 'image') {
     let img = item.variable && content?.images ? String(content.images[item.key] || '').trim() : '';
-    if (!img && isFirstUserSlot) {
-      img = String(photoUrl || content?.imageUrl || content?.image || '').trim();
+    if (!img && (isFirstUserSlot || item.field === 'photo')) {
+      img = fallbackPhoto;
     }
     if (!img && !item.variable) {
-      img = String(item.imageUrl || item.src || item.url || '').trim();
+      img = String(item.imageUrl || item.src || item.url || '').trim() || fallbackPhoto;
     }
     if (!img && item.variable && showSample && !isExporting && item.sampleImage) {
       img = String(item.sampleImage).trim();
@@ -86,7 +87,7 @@ export function resolveItemImage(item, content, photoUrl = '', isFirstUserSlot =
   if (item.field === 'photo') {
     let img = item.variable && content?.images ? String(content.images[item.key] || '').trim() : '';
     if (!img) {
-      img = String(photoUrl || content?.imageUrl || content?.image || '').trim();
+      img = fallbackPhoto;
     }
     return img;
   }

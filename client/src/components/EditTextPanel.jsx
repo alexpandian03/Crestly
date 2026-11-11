@@ -1,12 +1,7 @@
-import React, { useState, useEffect, useRef, lazy, Suspense, useMemo } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { X, Undo2, RotateCcw, Lock, Check, Loader2 } from "lucide-react";
 import PosterImageInput from "./PosterImageInput";
 import { CONTENT_LIMITS as LIMITS } from "../utils/posterContentFields.js";
-import { eventTypeById } from "../../../shared/eventTypes.js";
-
-/* The fill-in spaces are only fetched when the layout actually offers some. */
-const VariableFields = lazy(() => import("./posteredit/VariableFields"));
-const CardListEntriesEditor = lazy(() => import("./posteredit/CardListEntriesEditor"));
 
 function CharCounter({ current, max }) {
   const isNear = current >= max * 0.9;
@@ -41,46 +36,7 @@ export default function EditTextPanel({
   saveError = "",
   conflict = false,
   onReloadLatest = null,
-  blankDesign = null,
-  blankView = null,
-  blankAlternatives = [],
-  canUploadBlanks = false,
-  onBlankContent = null,
-  onBlankView = null,
-  onBlankEdited = null,
-  /** Current event type id — controls which fields are shown with their plain labels */
-  eventType = null,
-  highlightSlotKey = null,
-  onHighlightSlot = null,
-  activeSlotKey = null,
-  onSlotSelect = null,
 }) {
-  // Determine which AI-fillable field ids are shown for this event type.
-  // When no eventType is given, all standard fields are shown (unchanged).
-  const visibleSectionIds = useMemo(() => {
-    if (!eventType) return null; // null means "show all"
-    const cfg = eventTypeById(eventType);
-    if (!cfg) return null;
-    // Only field and text kinds are shown in the edit panel
-    const ids = new Set(
-      cfg.sections
-        .filter((s) => s.kind === "field" || s.kind === "text")
-        .map((s) => s.id)
-    );
-    return ids;
-  }, [eventType]);
-
-  // Get plain label for a section id from the event type config
-  const sectionLabel = useMemo(() => {
-    if (!eventType) return {};
-    const cfg = eventTypeById(eventType);
-    if (!cfg) return {};
-    return Object.fromEntries(cfg.sections.map((s) => [s.id, s.label]));
-  }, [eventType]);
-
-  // Helper: should this standard field appear?
-  const show = (id) => visibleSectionIds === null || visibleSectionIds.has(id);
-  // Local state for smooth, un-lagged editing
   const [formData, setFormData] = useState({
     title: "",
     tagline: "",
@@ -92,9 +48,7 @@ export default function EditTextPanel({
 
   const [savedNotice, setSavedNotice] = useState(false);
   const debounceTimerRef = useRef(null);
-  const isInitialSyncRef = useRef(true);
 
-  // Sync incoming content to local form when content changes externally
   useEffect(() => {
     if (!content) return;
     const detailsArr = Array.isArray(content.details)
@@ -102,12 +56,6 @@ export default function EditTextPanel({
       : content.details
         ? [content.details]
         : [];
-    const paddedDetails = [
-      detailsArr[0] || "",
-      detailsArr[1] || "",
-      detailsArr[2] || "",
-      detailsArr[3] || "",
-    ];
 
     setFormData({
       title: content.title || "",
@@ -115,11 +63,15 @@ export default function EditTextPanel({
       date: content.date || "",
       time: content.time || "",
       venue: content.venue || "",
-      details: paddedDetails,
+      details: [
+        detailsArr[0] || "",
+        detailsArr[1] || "",
+        detailsArr[2] || "",
+        detailsArr[3] || "",
+      ],
     });
   }, [content]);
 
-  // Debounced push to parent (150 ms)
   const triggerDebouncedChange = (updated) => {
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
@@ -162,31 +114,28 @@ export default function EditTextPanel({
 
   return (
     <>
-      {/* Backdrop */}
       <div
         className="fixed inset-0 bg-heading/30 backdrop-blur-[2px] z-40 transition-opacity"
         onClick={onClose}
         aria-hidden="true"
       />
 
-      {/* Drawer */}
       <aside
         className="fixed inset-y-0 right-0 z-50 w-full max-w-md bg-canvas border-l border-line shadow-2xl flex flex-col"
         role="dialog"
         aria-modal="true"
         aria-labelledby="edit-panel-title"
       >
-        {/* Header */}
         <div className="p-4 sm:px-6 border-b border-line flex items-center justify-between bg-section/50">
           <div>
             <h2
               id="edit-panel-title"
               className="text-base font-semibold text-heading"
             >
-              Edit text
+              Edit details
             </h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Fill in words, photo spaces, and event details. Preview updates live.
+              Update event information or swap the poster photo. Preview updates live.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -206,7 +155,6 @@ export default function EditTextPanel({
           </div>
         </div>
 
-        {/* Toolbar & Brand Locked Chip */}
         <div className="p-4 sm:px-6 border-b border-line space-y-3 bg-canvas">
           <div className="flex items-center gap-2 px-3 py-2 rounded-card bg-section border border-line text-xs text-muted-foreground">
             <Lock className="w-3.5 h-3.5 text-primary shrink-0" />
@@ -214,7 +162,7 @@ export default function EditTextPanel({
               <strong className="text-heading font-medium">
                 Brand locked:
               </strong>{" "}
-              Colors, fonts, logo, header, and footer stay fixed.
+              Header and footer banners stay fixed.
             </span>
           </div>
 
@@ -235,7 +183,7 @@ export default function EditTextPanel({
               onClick={onResetToGenerated}
               disabled={!canReset}
               className="btn-ghost border border-line text-xs px-3 py-1.5 flex items-center gap-1.5 disabled:opacity-40"
-              title="Reset to the generated text"
+              title="Reset to the generated details"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Reset</span>
@@ -243,241 +191,181 @@ export default function EditTextPanel({
           </div>
         </div>
 
-        {/* Form Fields */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
-          {/* Headline / name field (title or name depending on event type) */}
-          {(show("title") || show("name")) && (
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label
+                htmlFor="edit-title"
+                className="text-xs font-semibold text-heading uppercase tracking-wider"
+              >
+                Headline
+              </label>
+              <CharCounter current={formData.title.length} max={LIMITS.title} />
+            </div>
+            <input
+              id="edit-title"
+              type="text"
+              value={formData.title}
+              maxLength={LIMITS.title}
+              onChange={(e) =>
+                handleFieldChange("title", e.target.value, LIMITS.title)
+              }
+              placeholder="e.g. Annual Sports Meet"
+              className="input-field"
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label
+                htmlFor="edit-tagline"
+                className="text-xs font-semibold text-heading uppercase tracking-wider"
+              >
+                Subtitle
+              </label>
+              <CharCounter
+                current={formData.tagline.length}
+                max={LIMITS.tagline}
+              />
+            </div>
+            <textarea
+              id="edit-tagline"
+              rows={2}
+              value={formData.tagline}
+              maxLength={LIMITS.tagline}
+              onChange={(e) =>
+                handleFieldChange("tagline", e.target.value, LIMITS.tagline)
+              }
+              placeholder="e.g. Join us for a day of teamwork and celebration"
+              className="input-field resize-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label
-                  htmlFor="edit-title"
+                  htmlFor="edit-date"
                   className="text-xs font-semibold text-heading uppercase tracking-wider"
                 >
-                  {sectionLabel["name"] || sectionLabel["title"] || "Headline"}
+                  Date
                 </label>
-                <CharCounter current={formData.title.length} max={LIMITS.title} />
+                <CharCounter current={formData.date.length} max={LIMITS.date} />
               </div>
               <input
-                id="edit-title"
+                id="edit-date"
                 type="text"
-                value={formData.title}
-                maxLength={LIMITS.title}
+                value={formData.date}
+                maxLength={LIMITS.date}
                 onChange={(e) =>
-                  handleFieldChange("title", e.target.value, LIMITS.title)
+                  handleFieldChange("date", e.target.value, LIMITS.date)
                 }
-                placeholder="e.g. Annual Sports Meet"
+                placeholder="e.g. 18 October 2026"
                 className="input-field"
               />
             </div>
-          )}
 
-          {/* Tagline / wishes */}
-          {show("tagline") && (
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label
-                  htmlFor="edit-tagline"
+                  htmlFor="edit-time"
                   className="text-xs font-semibold text-heading uppercase tracking-wider"
                 >
-                  {sectionLabel["tagline"] || "Line under the headline"}
+                  Time
                 </label>
-                <CharCounter
-                  current={formData.tagline.length}
-                  max={LIMITS.tagline}
+                <CharCounter current={formData.time.length} max={LIMITS.time} />
+              </div>
+              <input
+                id="edit-time"
+                type="text"
+                value={formData.time}
+                maxLength={LIMITS.time}
+                onChange={(e) =>
+                  handleFieldChange("time", e.target.value, LIMITS.time)
+                }
+                placeholder="e.g. 9:00 AM - 4:00 PM"
+                className="input-field"
+              />
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label
+                htmlFor="edit-venue"
+                className="text-xs font-semibold text-heading uppercase tracking-wider"
+              >
+                Place
+              </label>
+              <CharCounter current={formData.venue.length} max={LIMITS.venue} />
+            </div>
+            <input
+              id="edit-venue"
+              type="text"
+              value={formData.venue}
+              maxLength={LIMITS.venue}
+              onChange={(e) =>
+                handleFieldChange("venue", e.target.value, LIMITS.venue)
+              }
+              placeholder="e.g. Central Sports Arena"
+              className="input-field"
+            />
+          </div>
+
+          <div className="space-y-3 pt-2 border-t border-line">
+            <div>
+              <h3 className="text-xs font-semibold text-heading uppercase tracking-wider">
+                Details (up to 4 lines)
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Brief highlights shown at the bottom of the poster
+              </p>
+            </div>
+
+            {[0, 1, 2, 3].map((idx) => (
+              <div key={idx}>
+                <div className="flex items-center justify-between mb-1">
+                  <label
+                    htmlFor={`edit-detail-${idx}`}
+                    className="text-xs text-muted-foreground"
+                  >
+                    Point {idx + 1}
+                  </label>
+                  <CharCounter
+                    current={formData.details[idx]?.length || 0}
+                    max={LIMITS.detail}
+                  />
+                </div>
+                <input
+                  id={`edit-detail-${idx}`}
+                  type="text"
+                  value={formData.details[idx] || ""}
+                  maxLength={LIMITS.detail}
+                  onChange={(e) => handleDetailChange(idx, e.target.value)}
+                  placeholder={`Detail line ${idx + 1}`}
+                  className="input-field"
                 />
               </div>
-              <textarea
-                id="edit-tagline"
-                rows={2}
-                value={formData.tagline}
-                maxLength={LIMITS.tagline}
-                onChange={(e) =>
-                  handleFieldChange("tagline", e.target.value, LIMITS.tagline)
-                }
-                placeholder="e.g. Join us for a day of teamwork and competition"
-                className="input-field resize-none"
-              />
-            </div>
-          )}
+            ))}
+          </div>
 
-          {/* Date and Time grid */}
-          {(show("date") || show("time")) && (
-            <div className="grid grid-cols-2 gap-3">
-              {show("date") && (
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label
-                      htmlFor="edit-date"
-                      className="text-xs font-semibold text-heading uppercase tracking-wider"
-                    >
-                      {sectionLabel["date"] || "Date"}
-                    </label>
-                    <CharCounter current={formData.date.length} max={LIMITS.date} />
-                  </div>
-                  <input
-                    id="edit-date"
-                    type="text"
-                    value={formData.date}
-                    maxLength={LIMITS.date}
-                    onChange={(e) =>
-                      handleFieldChange("date", e.target.value, LIMITS.date)
-                    }
-                    placeholder="e.g. 18 October 2026"
-                    className="input-field"
-                  />
-                </div>
-              )}
-
-              {show("time") && (
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label
-                      htmlFor="edit-time"
-                      className="text-xs font-semibold text-heading uppercase tracking-wider"
-                    >
-                      {sectionLabel["time"] || "Time"}
-                    </label>
-                    <CharCounter current={formData.time.length} max={LIMITS.time} />
-                  </div>
-                  <input
-                    id="edit-time"
-                    type="text"
-                    value={formData.time}
-                    maxLength={LIMITS.time}
-                    onChange={(e) =>
-                      handleFieldChange("time", e.target.value, LIMITS.time)
-                    }
-                    placeholder="e.g. 9:00 AM - 4:00 PM"
-                    className="input-field"
-                  />
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Venue / location */}
-          {show("venue") && (
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label
-                  htmlFor="edit-venue"
-                  className="text-xs font-semibold text-heading uppercase tracking-wider"
-                >
-                  {sectionLabel["venue"] || "Place"}
-                </label>
-                <CharCounter current={formData.venue.length} max={LIMITS.venue} />
-              </div>
-              <input
-                id="edit-venue"
-                type="text"
-                value={formData.venue}
-                maxLength={LIMITS.venue}
-                onChange={(e) =>
-                  handleFieldChange("venue", e.target.value, LIMITS.venue)
-                }
-                placeholder="e.g. Central Sports Arena, Campus Ground"
-                className="input-field"
-              />
-            </div>
-          )}
-
-          {/* Key details (up to 4 lines) */}
-          {show("details") && (
-            <div className="space-y-3 pt-2 border-t border-line">
-              <div>
-                <h3 className="text-xs font-semibold text-heading uppercase tracking-wider">
-                  {sectionLabel["details"] || "Details (up to 4 lines)"}
-                </h3>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Brief highlights or instructions for attendees
-                </p>
-              </div>
-
-              {[0, 1, 2, 3].map((idx) => (
-                <div key={idx}>
-                  <div className="flex items-center justify-between mb-1">
-                    <label
-                      htmlFor={`edit-detail-${idx}`}
-                      className="text-xs text-muted-foreground"
-                    >
-                      Point {idx + 1}
-                    </label>
-                    <CharCounter
-                      current={formData.details[idx]?.length || 0}
-                      max={LIMITS.detail}
-                    />
-                  </div>
-                  <input
-                    id={`edit-detail-${idx}`}
-                    type="text"
-                    value={formData.details[idx] || ""}
-                    maxLength={LIMITS.detail}
-                    onChange={(e) => handleDetailChange(idx, e.target.value)}
-                    placeholder={`Detail line ${idx + 1}`}
-                    className="input-field"
-                  />
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Photo — always show unless eventType explicitly has no photo/mainPhoto section */}
-          {(() => {
-            const cfg = eventType ? eventTypeById(eventType) : null;
-            const hasPhotoSection = !cfg || cfg.sections.some((s) => s.kind === "photo");
-            return hasPhotoSection;
-          })() && (
-            <div className="pt-4 border-t border-line">
-              <h3 className="text-xs font-semibold text-heading uppercase tracking-wider mb-2">
-                {sectionLabel["mainPhoto"] || "Photo"}
-              </h3>
-              <PosterImageInput
-                value={content?.imageUrl || content?.image || ""}
-                onChange={(url) =>
-                  onApplyChange({
-                    ...content,
-                    imageUrl: url || "",
-                    image: url || "",
-                  })
-                }
-              />
-            </div>
-          )}
-
-          {/* Spaces the layout left to be filled in */}
-          {blankDesign && onBlankContent ? (
-            <Suspense fallback={null}>
-              <VariableFields
-                design={blankDesign}
-                content={content}
-                view={blankView}
-                alternatives={blankAlternatives}
-                canUpload={canUploadBlanks}
-                onContentChange={onBlankContent}
-                onViewChange={onBlankView}
-                onEdited={onBlankEdited}
-                highlightSlotKey={highlightSlotKey}
-                onHighlightSlot={onHighlightSlot}
-                activeSlotKey={activeSlotKey}
-                onSlotSelect={onSlotSelect}
-              />
-            </Suspense>
-          ) : null}
-
-          {/* Card lists (Speakers, Schedule, etc.) */}
-          {blankDesign ? (
-            <Suspense fallback={null}>
-              <CardListEntriesEditor
-                design={blankDesign}
-                content={content}
-                onContentChange={onBlankContent || onApplyChange}
-                canUpload={canUploadBlanks}
-              />
-            </Suspense>
-          ) : null}
+          <div className="pt-4 border-t border-line">
+            <h3 className="text-xs font-semibold text-heading uppercase tracking-wider mb-2">
+              Photo
+            </h3>
+            <PosterImageInput
+              value={content?.imageUrl || content?.image || ""}
+              onChange={(url) =>
+                onApplyChange({
+                  ...content,
+                  imageUrl: url || "",
+                  image: url || "",
+                })
+              }
+            />
+          </div>
         </div>
 
-        {/* Footer */}
         <div className="p-4 border-t border-line bg-section/40 space-y-3">
           {saveError && (
             <div className="flex items-center justify-between gap-2 text-xs text-danger">

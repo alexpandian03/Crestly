@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Plus, Palette, LayoutTemplate, Sparkles } from "lucide-react";
+import { Plus, Palette, CheckSquare, Sparkles } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../services/api";
 import { useAuth } from "../context/AuthContext";
@@ -225,9 +225,9 @@ export default function Dashboard() {
               variant="outline"
               className="h-9 px-3.5 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB]"
             >
-              <Link to="/templates" className="inline-flex items-center gap-2">
-                <LayoutTemplate className="w-3.5 h-3.5 text-[#6B7280]" />
-                <span>Manage templates</span>
+              <Link to="/company-setup" className="inline-flex items-center gap-2">
+                <CheckSquare className="w-3.5 h-3.5 text-[#6B7280]" />
+                <span>Company setup</span>
               </Link>
             </Button>
           </div>

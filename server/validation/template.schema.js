@@ -322,12 +322,14 @@ export const updateTemplateSchemaFor = (req) => {
       footer: shape.footer,
       content: shape.content,
       eventTypes: shape.eventTypes,
+      isDefault: z.boolean().optional(),
+      isActive: z.boolean().optional(),
       note: z.string().trim().max(120).optional(),
       expectedVersion: z.coerce.number().int().min(1, 'Invalid version number').optional(),
     })
     .refine(
       (value) =>
-        ['name', 'category', 'size', 'zones', 'layout', 'page', 'elements', 'sections', 'header', 'footer', 'content', 'eventTypes'].some(
+        ['name', 'category', 'size', 'zones', 'layout', 'page', 'elements', 'sections', 'header', 'footer', 'content', 'eventTypes', 'isDefault', 'isActive'].some(
           (key) => value[key] !== undefined
         ),
       { message: 'Provide at least one change' }

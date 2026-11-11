@@ -1,4 +1,4 @@
-import { sanitizeString } from '../ai/schema.js';
+import { sanitizeString } from '../poster/content.js';
 import {
   BRAND_BAND_KINDS,
   brandBandForEditing,
@@ -73,11 +73,16 @@ const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
 const RGB_COLOR = /^rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*(?:,\s*[\d.]+\s*)?\)$/i;
 
 export function isBrandColor(value) {
-  return typeof value === 'string' && (HEX_COLOR.test(value.trim()) || RGB_COLOR.test(value.trim()));
+  if (typeof value !== 'string') return false;
+  const t = value.trim();
+  if (!t) return true;
+  if (t === 'transparent' || t.startsWith('brand:')) return true;
+  return HEX_COLOR.test(t) || RGB_COLOR.test(t);
 }
 
 export function normalizeBrandColor(value) {
   const color = String(value || '').trim();
+  if (!color || color.startsWith('brand:')) return '#ffffff';
   if (!HEX_COLOR.test(color)) return color;
   if (color.length === 4) {
     const [, r, g, b] = color;
@@ -246,30 +251,49 @@ function syncDerivedFields(kit) {
     next.footer.background = background({ color: BRAND_KIT_DEFAULTS.footer.background.color });
   }
 
-  next.header.showLogo = Boolean(next.header?.logo?.show);
-  next.header.showOrgName = Boolean(next.header?.orgName?.show);
-
-  if (!next.header?.orgName?.text) {
-    next.header.orgName = { ...next.header.orgName, text: sanitizePlainText(next.orgName, TEXT_LIMITS.orgNameText) };
-  }
-
-  const hasNewContacts = Boolean(next.footer.phone || next.footer.email || next.footer.address);
-  if (hasNewContacts) {
-    next.footer.contactText = [next.footer.phone, next.footer.email, next.footer.address]
-      .map((value) => sanitizePlainText(value, TEXT_LIMITS.address))
-      .filter(Boolean)
-      .join(' · ');
+  if (next.header.background?.type === 'image' && next.header.background?.imageUrl) {
+    next.header.showLogo = false;
+    next.header.showOrgName = false;
+    next.header.logo = { ...(next.header.logo || {}), show: false };
+    next.header.orgName = { ...(next.header.orgName || {}), show: false, text: '' };
+    next.header.tagline = { ...(next.header.tagline || {}), show: false, text: '' };
   } else {
-    next.footer.contactText = sanitizePlainText(next.footer.contactText, TEXT_LIMITS.address);
+    next.header.showLogo = Boolean(next.header?.logo?.show);
+    next.header.showOrgName = Boolean(next.header?.orgName?.show);
+
+    if (!next.header?.orgName?.text) {
+      next.header.orgName = { ...next.header.orgName, text: sanitizePlainText(next.orgName, TEXT_LIMITS.orgNameText) };
+    }
   }
 
-  const socialLinks = Array.isArray(next.footer.social) ? next.footer.social : [];
-  if (socialLinks.length > 0) {
-    next.footer.socials = socialLinks.map((item) =>
-      sanitizePlainText(String(item?.url || '').replace(/^https?:\/\/(www\.)?/i, ''), 120)
-    );
-  } else if (!Array.isArray(next.footer.socials)) {
+  if (next.footer.background?.type === 'image' && next.footer.background?.imageUrl) {
+    next.footer.address = '';
+    next.footer.phone = '';
+    next.footer.email = '';
+    next.footer.website = '';
+    next.footer.social = [];
+    next.footer.contactText = '';
     next.footer.socials = [];
+    next.footer.legalText = '';
+  } else {
+    const hasNewContacts = Boolean(next.footer.phone || next.footer.email || next.footer.address);
+    if (hasNewContacts) {
+      next.footer.contactText = [next.footer.phone, next.footer.email, next.footer.address]
+        .map((value) => sanitizePlainText(value, TEXT_LIMITS.address))
+        .filter(Boolean)
+        .join(' · ');
+    } else {
+      next.footer.contactText = sanitizePlainText(next.footer.contactText, TEXT_LIMITS.address);
+    }
+
+    const socialLinks = Array.isArray(next.footer.social) ? next.footer.social : [];
+    if (socialLinks.length > 0) {
+      next.footer.socials = socialLinks.map((item) =>
+        sanitizePlainText(String(item?.url || '').replace(/^https?:\/\/(www\.)?/i, ''), 120)
+      );
+    } else if (!Array.isArray(next.footer.socials)) {
+      next.footer.socials = [];
+    }
   }
 
   if (typeof next.content?.headingFont !== 'string' || !next.content.headingFont) {

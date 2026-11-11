@@ -11,69 +11,66 @@ const settingsKit = {
   fonts: { heading: 'Outfit', body: 'Inter' },
   defaultPosterSize: SIZE,
   header: {
-    height: 80,
+    height: 140,
     background: { type: 'color', color: '#0f172a' },
     logo: { show: false, size: 40, position: 'left' },
     orgName: { show: true, text: 'Water Aid Trust' },
   },
-  footer: { height: 70, background: { type: 'color', color: '#0b0f17' }, phone: '+91 90000 00000' },
+  footer: { height: 130, background: { type: 'color', color: '#0b0f17' }, phone: '+91 90000 00000' },
 };
 
-/** The same organization after its header was arranged by hand in the brand layer editor. */
-const handPlaced = { kind: 'text', x: 300, y: 22, w: 500, h: 40, text: 'Placed by hand', locked: true };
-const laidOutKit = {
+const bannerKit = {
   ...settingsKit,
-  header: { mode: 'elements', height: 80, elements: [handPlaced], background: { type: 'color', color: '#0f172a' } },
+  logos: [{ url: 'https://example.com/logo.png', isPrimary: true }],
+  header: {
+    height: 140,
+    background: { type: 'image', imageUrl: 'https://example.com/header-banner.png', fit: 'cover', overlayOpacity: 0.6 },
+    showLogo: true,
+    showOrgName: true,
+    logo: { show: true },
+    orgName: { show: true, text: 'Stale Org Name' },
+    tagline: { show: true, text: 'Stale Tagline' },
+  },
+  footer: {
+    height: 130,
+    background: { type: 'image', imageUrl: 'https://example.com/footer-banner.png', fit: 'cover', overlayOpacity: 0.6 },
+    phone: '+1 (555) 019-2830',
+    website: 'example.com',
+    contactText: '+1 (555) 019-2830',
+    socials: ['@brand', 'linkedin.com/company/brand'],
+    legalText: '© All rights reserved.',
+  },
 };
 
-const brandBandsTemplate = {
+const template = {
   name: 'Plain layout',
   editorVersion: 2,
   size: SIZE,
   zones: [],
   elements: [],
-  sections: { header: { mode: 'brand' }, content: { elements: [] }, footer: { mode: 'brand' } },
 };
 
-const content = {
-  title: 'Community Health Camp',
-  tagline: 'Free check-ups for every family',
-  date: 'Saturday, 15 November',
-  time: '9:00 am - 4:00 pm',
-  venue: 'Town Hall Grounds',
-  details: ['Blood pressure screening'],
-};
-
-function draw(brandKit, template = brandBandsTemplate) {
-  return render(<PosterCanvas brandKit={brandKit} template={template} content={content} />);
-}
-
-describe('PosterCanvas with a brand layer', () => {
-  it('draws a kit that was never laid out from its own settings', () => {
-    draw(settingsKit);
+describe('PosterCanvas locked header and footer bands', () => {
+  it('draws default brand header and footer bands from brand kit settings', () => {
+    render(<PosterCanvas brandKit={settingsKit} template={template} content={{}} />);
     expect(screen.getByText('Water Aid Trust')).toBeInTheDocument();
-    expect(screen.queryByText('Placed by hand')).toBe(null);
+    expect(screen.getByText('+91 90000 00000')).toBeInTheDocument();
   });
 
-  it('draws a laid-out kit from the items the organization placed', () => {
-    draw(laidOutKit);
-    expect(screen.getByText('Placed by hand')).toBeInTheDocument();
-  });
-
-  it('lets a template that customizes its own band win', () => {
-    const template = {
-      ...brandBandsTemplate,
-      sections: {
-        ...brandBandsTemplate.sections,
-        header: {
-          mode: 'custom',
-          height: 120,
-          elements: [{ kind: 'text', x: 40, y: 30, w: 500, h: 50, text: 'This design draws its own strip' }],
-        },
-      },
-    };
-    draw(laidOutKit, template);
-    expect(screen.getByText('This design draws its own strip')).toBeInTheDocument();
-    expect(screen.queryByText('Placed by hand')).toBe(null);
+  it('draws uploaded header and footer banner images in locked bands without overlapping text or logo', () => {
+    const { container } = render(<PosterCanvas brandKit={bannerKit} template={template} content={{}} />);
+    const headerImg = container.querySelector('[data-section="header"] img[src="https://example.com/header-banner.png"]');
+    const footerImg = container.querySelector('[data-section="footer"] img[src="https://example.com/footer-banner.png"]');
+    const logoImg = container.querySelector('[data-section="header"] img[src="https://example.com/logo.png"]');
+    expect(headerImg).toBeInTheDocument();
+    expect(footerImg).toBeInTheDocument();
+    expect(logoImg).not.toBeInTheDocument();
+    expect(screen.queryByText('Stale Org Name')).not.toBeInTheDocument();
+    expect(screen.queryByText('Stale Tagline')).not.toBeInTheDocument();
+    expect(screen.queryByText('+1 (555) 019-2830')).not.toBeInTheDocument();
+    expect(screen.queryByText('example.com')).not.toBeInTheDocument();
+    expect(screen.queryByText('@brand')).not.toBeInTheDocument();
+    expect(screen.queryByText('linkedin.com/company/brand')).not.toBeInTheDocument();
+    expect(screen.queryByText('© All rights reserved.')).not.toBeInTheDocument();
   });
 });

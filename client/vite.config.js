@@ -7,6 +7,7 @@ const clientRoot = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(clientRoot, '..');
 
 export default defineConfig({
+  root: clientRoot,
   plugins: [react()],
   resolve: {
     alias: { '@': path.resolve(clientRoot, './src') },

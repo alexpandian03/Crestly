@@ -10,7 +10,7 @@ import { sanitizeRedirect } from "../../../shared/redirect.js";
 
 function landingForRole(role) {
   if (role === "superadmin") return "/clients";
-  if (role === "clientadmin") return "/dashboard";
+  if (role === "clientadmin") return "/create";
   return "/create";
 }
 

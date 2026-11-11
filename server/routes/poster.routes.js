@@ -7,31 +7,24 @@ import {
   deletePosterController,
   discardPosterDraftController,
   duplicatePosterController,
-  generatePosterContentController,
-  generatePosterImageController,
   getPosterController,
   getPosterDraftController,
   listPostersController,
   restorePosterVersionController,
   updatePosterController,
   uploadPosterThumbnailController,
-  searchPhotosController,
-  trackPhotoDownloadController,
-  parseCardListController,
 } from '../controllers/poster.controller.js';
+import { generateHuggingFacePoster } from '../controllers/huggingFace.controller.js';
 import { requireAuth, requirePermission, tenantGuard } from '../middleware/auth.middleware.js';
 import { validateBody, validateParams, validateQuery } from '../middleware/validate.middleware.js';
 import { uploadThumbnailMiddleware } from '../middleware/upload.middleware.js';
 import {
-  createPosterSchema,
+  addVersionSchema,
   applyLatestDesignSchema,
-  generatePosterRequestSchema,
-  parseCardListSchema,
+  createPosterSchema,
   posterDraftSchema,
   posterIdParamsSchema,
-  posterImageRequestSchema,
   posterListQuerySchema,
-  regeneratePosterSchema,
   restorePosterSchema,
   updatePosterSchema,
 } from '../validation/poster.schema.js';
@@ -51,40 +44,14 @@ function smallBody(req, res, next) {
   return next();
 }
 
+// Pure Hugging Face AI model poster generation routes (only Hugging Face AI model is used)
+router.post('/generate-hf', generateHuggingFacePoster);
+router.post('/generate', generateHuggingFacePoster);
+
 router.use(requireAuth);
-
-router.post(
-  '/generate',
-  requirePermission('posters:create'),
-  tenantGuard,
-  validateBody(generatePosterRequestSchema),
-  generatePosterContentController
-);
-
-/* One illustration for a design that shows a picture: the only writer here that talks to a
-   picture service, and it keeps its own daily count. */
-router.post(
-  '/image',
-  requirePermission('posters:create'),
-  tenantGuard,
-  validateBody(posterImageRequestSchema),
-  generatePosterImageController
-);
-
-/* Tidy my list: takes pasted text and card list definition and returns structured entries */
-router.post(
-  '/parse-list',
-  requirePermission('posters:create'),
-  tenantGuard,
-  smallBody,
-  validateBody(parseCardListSchema),
-  parseCardListController
-);
 
 router.post('/', requirePermission('posters:create'), tenantGuard, smallBody, validateBody(createPosterSchema), createPosterController);
 router.get('/', requirePermission('posters:read:own'), tenantGuard, validateQuery(posterListQuerySchema), listPostersController);
-router.get('/photos/search', requirePermission('posters:create'), tenantGuard, searchPhotosController);
-router.post('/photos/download', requirePermission('posters:create'), tenantGuard, trackPhotoDownloadController);
 router.get('/:id', requirePermission('posters:read:own'), tenantGuard, validateParams(posterIdParamsSchema), getPosterController);
 
 router.put(
@@ -126,7 +93,7 @@ router.post(
   requirePermission('posters:create'),
   tenantGuard,
   validateParams(posterIdParamsSchema),
-  validateBody(regeneratePosterSchema),
+  validateBody(addVersionSchema),
   addPosterVersionController
 );
 

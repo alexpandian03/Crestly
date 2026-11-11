@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import Navbar from '../Navbar';
-import Footer from '../Footer';
 import SideBar, { MobileMenu } from './SideBar';
 import TopBar from './TopBar';
 import { OrgBar, OrgPicker } from './OrgBar';
@@ -23,9 +22,8 @@ export default function AppShell({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const isTemplateEditor = /^\/templates\/[^/]+\/edit$/.test(location.pathname);
   const sidebar = isAuthenticated && hasSidebar(user);
-  const showOrgBar = isAuthenticated && user?.role === 'superadmin' && !isTemplateEditor;
+  const showOrgBar = isAuthenticated && user?.role === 'superadmin';
   const org = useClientOptions(showOrgBar);
 
   const [collapsed, setCollapsed] = useState(readCollapsed);
@@ -50,10 +48,6 @@ export default function AppShell({ children }) {
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [drawer]);
-
-  if (isTemplateEditor) {
-    return <main className="min-w-0 flex-1 h-screen w-screen overflow-hidden bg-[#F3F4F6]">{children}</main>;
-  }
 
   const toggleCollapsed = () =>
     setCollapsed((value) => {
@@ -106,8 +100,7 @@ export default function AppShell({ children }) {
 
         <main className="min-w-0 flex-1">{children}</main>
 
-        {!sidebar && <Footer />}
-      </div>
+              </div>
 
       {/* Mobile drawer for small screens */}
       <MobileMenu

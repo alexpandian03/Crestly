@@ -3,7 +3,7 @@ import { createStandardTemplates } from '../../shared/defaultTemplates.js';
 import Client from '../models/Client.model.js';
 import BrandKit from '../models/BrandKit.model.js';
 import { scopedFilter } from '../middleware/auth.middleware.js';
-import { sanitizeString } from '../services/ai/schema.js';
+import { sanitizeString } from '../services/poster/content.js';
 import { consumeRateLimit } from '../services/rateLimit.js';
 import { audit } from '../services/audit.service.js';
 import {
@@ -72,7 +72,7 @@ function isDuplicateKey(err) {
 
 /** Writers may touch every template of the tenant; plain users may only read active ones. */
 function canSeeInactive(req) {
-  return req.user.role !== 'user';
+  return req.user?.role === 'superadmin';
 }
 
 function readScope(req, extra = {}) {
@@ -392,6 +392,20 @@ export async function updateTemplate(req, res, next) {
       changes.elements = updatedSections.content.elements;
       changes.page = updatedSections.content.page;
       changes.editorVersion = editorVersionFor(changes.elements, storedEditorVersion(template));
+    }
+    if (req.body.isDefault !== undefined) {
+      if (req.body.isDefault) {
+        await Template.updateMany(
+          scopedFilter(req, { _id: { $ne: template._id } }),
+          { $set: { isDefault: false } }
+        );
+        changes.isDefault = true;
+      } else {
+        changes.isDefault = false;
+      }
+    }
+    if (req.body.isActive !== undefined) {
+      changes.isActive = Boolean(req.body.isActive);
     }
     if (req.body.name !== undefined) {
       const name = cleanName(req.body.name);

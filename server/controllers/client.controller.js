@@ -152,6 +152,7 @@ export async function updateClient(req, res, next) {
     if (!client) return sendNotFound(res);
 
     await audit(req, 'client.settings_update', client, {
+      clientId: client._id,
       meta: {
         changes: Object.keys(changes),
         sessionLength: client.sessionLength,

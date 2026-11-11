@@ -1,5 +1,4 @@
 import mongoose from 'mongoose';
-import { designById } from '../../shared/designRecipes.js';
 import { EVENT_TYPE_IDS } from '../../shared/eventTypes.js';
 
 const MAX_VERSIONS = 20;
@@ -71,7 +70,7 @@ const posterSchema = new mongoose.Schema(
     templateId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Template',
-      required: [true, 'templateId is required for Poster'],
+      required: false,
     },
     /* Pinned at creation: later edits to the template must not restyle saved posters. */
     templateVersion: { type: Number, min: 1 },
@@ -147,34 +146,7 @@ posterSchema.pre('save', function capVersions(next) {
 
 export function normalizePosterRecord(poster) {
   if (!poster) return poster;
-  const target = typeof poster.toObject === 'function' ? poster.toObject() : poster;
-  const stored = target.design?.template;
-  const rawKey = target.archetype || target.recipeId || stored?.archetype || stored?.recipeId;
-  if (rawKey) {
-    const canonical = designById(rawKey)?.id || rawKey;
-    target.archetype = canonical;
-    target.recipeId = canonical;
-    if (stored) {
-      stored.archetype = canonical;
-      stored.recipeId = canonical;
-    }
-  }
-  if (Array.isArray(target.versions)) {
-    target.versions.forEach((ver) => {
-      const verStored = ver.design?.template;
-      const verKey = ver.archetype || ver.recipeId || verStored?.archetype || verStored?.recipeId;
-      if (verKey) {
-        const canonical = designById(verKey)?.id || verKey;
-        ver.archetype = canonical;
-        ver.recipeId = canonical;
-        if (verStored) {
-          verStored.archetype = canonical;
-          verStored.recipeId = canonical;
-        }
-      }
-    });
-  }
-  return target;
+  return typeof poster.toObject === 'function' ? poster.toObject() : poster;
 }
 
 posterSchema.post('init', function () {

@@ -1,20 +1,26 @@
 import { v2 as cloudinary } from 'cloudinary';
 
-// Configure Cloudinary if credentials are present
-const isCloudinaryConfigured = Boolean(
-  process.env.CLOUDINARY_CLOUD_NAME &&
-  process.env.CLOUDINARY_API_KEY &&
-  process.env.CLOUDINARY_API_SECRET &&
-  process.env.CLOUDINARY_CLOUD_NAME !== 'your_cloud_name'
-);
+// Configure Cloudinary dynamically if credentials are present
+function isCloudinaryConfigured() {
+  return Boolean(
+    process.env.CLOUDINARY_CLOUD_NAME &&
+    process.env.CLOUDINARY_API_KEY &&
+    process.env.CLOUDINARY_API_SECRET &&
+    process.env.CLOUDINARY_CLOUD_NAME !== 'your_cloud_name'
+  );
+}
 
-if (isCloudinaryConfigured) {
-  cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET,
-    secure: true,
-  });
+function ensureCloudinaryConfig() {
+  if (isCloudinaryConfigured()) {
+    cloudinary.config({
+      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+      api_key: process.env.CLOUDINARY_API_KEY,
+      api_secret: process.env.CLOUDINARY_API_SECRET,
+      secure: true,
+    });
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -31,7 +37,7 @@ class StorageService {
   async uploadBuffer(buffer, options = {}) {
     const { folder = 'poster-generator/logos', filename, mimetype = 'image/png' } = options;
 
-    if (!isCloudinaryConfigured) {
+    if (!ensureCloudinaryConfig()) {
       console.warn('⚠️ Cloudinary not fully configured with production keys; generating inline data URI for local dev.');
       const base64Data = buffer.toString('base64');
       const dataUri = `data:${mimetype};base64,${base64Data}`;
