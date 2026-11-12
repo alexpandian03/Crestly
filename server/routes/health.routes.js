@@ -1,7 +1,7 @@
 import express from 'express';
 import { allowAnonymous } from '../middleware/auth.middleware.js';
 import { isDbConnected } from '../config/db.js';
-import { getHuggingFaceConfig } from '../controllers/huggingFace.controller.js';
+import { getAiConfig } from '../config/ai.js';
 
 const router = express.Router();
 
@@ -12,7 +12,7 @@ router.get('/', allowAnonymous(), (req, res) => {
     : isDbConnected()
     ? 'connected'
     : 'connecting_or_disconnected';
-  const { provider, model } = getHuggingFaceConfig();
+  const { provider, model } = getAiConfig();
   const activeLabel = `${provider} (${model})`;
 
   res.status(200).json({

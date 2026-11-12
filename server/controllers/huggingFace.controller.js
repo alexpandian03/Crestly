@@ -1,39 +1,29 @@
 import storageService from '../services/storage.js';
-import { CF_FLUX_MODEL, generateImage as generateCloudflareImage } from '../services/cloudflareImage.js';
+import { generateImage as generateCloudflareImage } from '../services/cloudflareImage.js';
+import { generateGeminiImage, generateOpenAiImage } from '../services/aiImage.js';
+import { DEFAULT_MODELS, SUPPORTED_AI_PROVIDERS, getAiConfig } from '../config/ai.js';
 import { extractEventFacts } from '../../shared/fallbackParser.js';
 
 /**
- * AI Image Generation Controller
- * Supports IMAGE_PROVIDER=mock | huggingface | cloudflare.
+ * Universal AI Poster Image Generation Controller
+ * Reads AI_PROVIDER / AI_MODEL / AI_API_KEY (or legacy provider env vars) from server/config/ai.js.
  */
 
 const HF_BASE_URL = 'https://huggingface.co';
-const DEFAULT_HF_MODEL = 'black-forest-labs/FLUX.1-schnell';
-export const SUPPORTED_IMAGE_PROVIDERS = ['mock', 'huggingface', 'cloudflare'];
+const HF_MODEL = DEFAULT_MODELS.huggingface;
+const HF_ROUTER_URL = `https://router.huggingface.co/hf-inference/models/${HF_MODEL}`;
+const HF_MODEL_ENDPOINT = `${HF_BASE_URL}/${HF_MODEL}`;
+
+export const SUPPORTED_IMAGE_PROVIDERS = SUPPORTED_AI_PROVIDERS;
+
+export function getHuggingFaceConfig() {
+  return getAiConfig();
+}
 
 const MOCK_POSTER_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
   'base64'
 );
-
-export function getHuggingFaceConfig() {
-  const provider = String(process.env.IMAGE_PROVIDER || 'huggingface').trim().toLowerCase();
-  const hfModel = String(process.env.HF_IMAGE_MODEL || DEFAULT_HF_MODEL).trim() || DEFAULT_HF_MODEL;
-  const model = provider === 'cloudflare' ? CF_FLUX_MODEL : provider === 'mock' ? 'mock' : hfModel;
-  return {
-    provider,
-    model,
-    hfModel,
-    routerUrl: `https://router.huggingface.co/hf-inference/models/${hfModel}`,
-    directUrl: `https://api-inference.huggingface.co/models/${hfModel}`,
-    modelEndpoint: `${HF_BASE_URL}/${hfModel}`,
-  };
-}
-
-const HF_MODEL = DEFAULT_HF_MODEL;
-const HF_ROUTER_URL = `https://router.huggingface.co/hf-inference/models/${HF_MODEL}`;
-const HF_DIRECT_URL = `https://api-inference.huggingface.co/models/${HF_MODEL}`;
-const HF_MODEL_ENDPOINT = `${HF_BASE_URL}/${HF_MODEL}`;
 
 // Event-tailored bright flat graphic poster themes (avoids dark spotlight / 3D boilerplate)
 const POSTER_THEMES = [
@@ -308,6 +298,12 @@ function sendGenerationError(res, err, fallbackMessage = 'Failed to generate ima
       error: { message: 'Image quota reached. Try again later.', status: 429 },
     });
   }
+  if (err?.status === 400) {
+    return res.status(400).json({
+      success: false,
+      error: { message, status: 400 },
+    });
+  }
   return res.status(500).json({
     success: false,
     error: { message, status: 500 },
@@ -323,7 +319,7 @@ async function streamPosterImage({ req, res, buffer, modelName, preferredContent
     const folder = `ai-posters/tenants/${clientId}/poster-images`;
     const uploadRes = await storageService.uploadBuffer(buffer, {
       folder,
-      filename: `flux_${Date.now()}.${ext}`,
+      filename: `poster_${Date.now()}.${ext}`,
       mimetype: contentType,
     });
     cloudUrl = uploadRes?.secure_url || uploadRes?.url || '';
@@ -345,10 +341,17 @@ async function streamPosterImage({ req, res, buffer, modelName, preferredContent
   return res.status(200).send(buffer);
 }
 
-async function generateWithHuggingFace({ enhancedPrompt, hfModel, routerUrl, apiKey }) {
+async function generateWithHuggingFace({
+  enhancedPrompt,
+  hfModel,
+  routerUrl,
+  apiKey,
+  width = 1024,
+  height = 1024,
+}) {
   let buffer = null;
   let lastError = null;
-  const endpoint = process.env.HF_API_URL || routerUrl;
+  const endpoint = routerUrl;
 
   try {
     const hfResponse = await fetch(endpoint, {
@@ -373,7 +376,7 @@ async function generateWithHuggingFace({ enhancedPrompt, hfModel, routerUrl, api
   }
 
   const isSchnell = hfModel.toLowerCase().includes('schnell');
-  if ((!buffer || buffer.length <= 500) && !process.env.HF_API_URL) {
+  if ((!buffer || buffer.length <= 500) && !process.env.HF_API_URL && !process.env.AI_BASE_URL) {
     try {
       const { InferenceClient } = await import('@huggingface/inference');
       const hfClient = new InferenceClient(apiKey);
@@ -382,8 +385,8 @@ async function generateWithHuggingFace({ enhancedPrompt, hfModel, routerUrl, api
         model: hfModel,
         inputs: enhancedPrompt,
         parameters: isSchnell
-          ? { width: 1024, height: 1024, num_inference_steps: 4 }
-          : { width: 1024, height: 1024, guidance_scale: 3.5, num_inference_steps: 20 },
+          ? { width, height, num_inference_steps: 4 }
+          : { width, height, guidance_scale: 3.5, num_inference_steps: 20 },
       });
       if (blob) {
         const arrayBuffer = await blob.arrayBuffer();
@@ -407,16 +410,16 @@ async function generateWithHuggingFace({ enhancedPrompt, hfModel, routerUrl, api
             prompt: enhancedPrompt,
             seed: Math.floor(Math.random() * 1000000),
             randomize_seed: true,
-            width: 1024,
-            height: 1024,
+            width,
+            height,
             num_inference_steps: 4,
           }
         : {
             prompt: enhancedPrompt,
             seed: Math.floor(Math.random() * 1000000),
             randomize_seed: true,
-            width: 1024,
-            height: 1024,
+            width,
+            height,
             guidance_scale: 3.5,
             num_inference_steps: 20,
           };
@@ -458,8 +461,8 @@ async function generateWithHuggingFace({ enhancedPrompt, hfModel, routerUrl, api
 
 /**
  * Active Express backend route handler for poster artwork generation.
- * Accepts { prompt } in req.body, generates poster artwork via the configured
- * IMAGE_PROVIDER (mock | huggingface | cloudflare), saves to storage, and streams binary image data.
+ * Resolves AI_PROVIDER / AI_MODEL / AI_API_KEY (or legacy provider vars) via getAiConfig(),
+ * generates poster artwork, saves to storage, and streams binary image data.
  */
 export async function generateHuggingFacePoster(req, res, next) {
   try {
@@ -472,12 +475,13 @@ export async function generateHuggingFacePoster(req, res, next) {
       });
     }
 
-    const { provider, hfModel, routerUrl } = getHuggingFaceConfig();
-    if (!SUPPORTED_IMAGE_PROVIDERS.includes(provider)) {
+    const aiConfig = getAiConfig();
+    const { provider, model, apiKey, accountId, baseUrl, fallbackModels, routerUrl } = aiConfig;
+    if (!SUPPORTED_AI_PROVIDERS.includes(provider)) {
       return res.status(400).json({
         success: false,
         error: {
-          message: `Unsupported IMAGE_PROVIDER "${provider}". Supported providers: ${SUPPORTED_IMAGE_PROVIDERS.join(', ')}.`,
+          message: `Unsupported AI_PROVIDER "${provider}". Supported providers: ${SUPPORTED_AI_PROVIDERS.join(', ')}.`,
           status: 400,
         },
       });
@@ -485,6 +489,7 @@ export async function generateHuggingFacePoster(req, res, next) {
 
     const styleIndex = pickNextStyleIndex(req.body?.variation);
     const enhancedPrompt = formatFluxEnglishPrompt(prompt, { styleIndex });
+    const targetSize = resolveContentImageDimensions(req.body?.contentWidth, req.body?.contentHeight);
 
     switch (provider) {
       case 'mock':
@@ -498,14 +503,19 @@ export async function generateHuggingFacePoster(req, res, next) {
 
       case 'cloudflare': {
         try {
-          const targetSize = resolveContentImageDimensions(req.body?.contentWidth, req.body?.contentHeight);
-          const dataUrl = await generateCloudflareImage(enhancedPrompt, targetSize);
+          const dataUrl = await generateCloudflareImage(enhancedPrompt, {
+            ...targetSize,
+            model,
+            apiKey,
+            accountId,
+            baseUrl,
+          });
           const { buffer, contentType } = parseDataUrlToImage(dataUrl);
           return streamPosterImage({
             req,
             res,
             buffer,
-            modelName: CF_FLUX_MODEL,
+            modelName: model,
             preferredContentType: contentType,
           });
         } catch (cfErr) {
@@ -514,25 +524,30 @@ export async function generateHuggingFacePoster(req, res, next) {
       }
 
       case 'huggingface': {
-        const apiKey = process.env.HF_API_KEY;
-        if (!apiKey || apiKey === 'YOUR_HUGGINGFACE_KEY_HERE') {
+        if (!apiKey) {
           return res.status(400).json({
             success: false,
             error: {
               message:
-                'Hugging Face API key is not configured. Please set HF_API_KEY in your root .env file.',
+                'Hugging Face API key is not configured. Please set AI_API_KEY or HF_API_KEY in your root .env file.',
               status: 400,
             },
           });
         }
 
         try {
-          const buffer = await generateWithHuggingFace({ enhancedPrompt, hfModel, routerUrl, apiKey });
+          const buffer = await generateWithHuggingFace({
+            enhancedPrompt,
+            hfModel: model,
+            routerUrl,
+            apiKey,
+            ...targetSize,
+          });
           return streamPosterImage({
             req,
             res,
             buffer,
-            modelName: hfModel,
+            modelName: model,
             preferredContentType: 'image/png',
           });
         } catch (hfErr) {
@@ -540,11 +555,53 @@ export async function generateHuggingFacePoster(req, res, next) {
         }
       }
 
+      case 'gemini': {
+        try {
+          const result = await generateGeminiImage(enhancedPrompt, {
+            model,
+            apiKey,
+            baseUrl,
+            fallbackModels,
+            ...targetSize,
+          });
+          return streamPosterImage({
+            req,
+            res,
+            buffer: result.buffer,
+            modelName: result.model || model,
+            preferredContentType: result.contentType,
+          });
+        } catch (geminiErr) {
+          return sendGenerationError(res, geminiErr);
+        }
+      }
+
+      case 'openai': {
+        try {
+          const result = await generateOpenAiImage(enhancedPrompt, {
+            model,
+            apiKey,
+            baseUrl,
+            fallbackModels,
+            ...targetSize,
+          });
+          return streamPosterImage({
+            req,
+            res,
+            buffer: result.buffer,
+            modelName: result.model || model,
+            preferredContentType: result.contentType,
+          });
+        } catch (openAiErr) {
+          return sendGenerationError(res, openAiErr);
+        }
+      }
+
       default:
         return res.status(400).json({
           success: false,
           error: {
-            message: `Unsupported IMAGE_PROVIDER "${provider}". Supported providers: ${SUPPORTED_IMAGE_PROVIDERS.join(', ')}.`,
+            message: `Unsupported AI_PROVIDER "${provider}". Supported providers: ${SUPPORTED_AI_PROVIDERS.join(', ')}.`,
             status: 400,
           },
         });
