@@ -30,7 +30,6 @@ import { clearDraft, readDraft } from "../config/draft";
 import { SAMPLE_PROMPTS } from "../data/demoPosters";
 import { useAuth } from "../context/AuthContext";
 import { useAutosave } from "../hooks/useAutosave";
-import DraftRestoreDialog from "../components/DraftRestoreDialog";
 
 const isRealId = (id) => typeof id === "string" && /^[0-9a-fA-F]{24}$/.test(id);
 
@@ -936,13 +935,6 @@ export default function Generate() {
             )}
           </div>
         </div>
-
-        <DraftRestoreDialog
-          isOpen={Boolean(posterAutosave.draftPrompt)}
-          savedAt={posterAutosave.draftPrompt?.savedAt}
-          onContinue={posterAutosave.continueDraft}
-          onDiscard={posterAutosave.discardDraft}
-        />
       </div>
     </div>
   );

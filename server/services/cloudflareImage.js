@@ -1,9 +1,6 @@
-const CF_FLUX_MODEL = '@cf/black-forest-labs/flux-2-klein-9b';
-const CF_FALLBACK_MODELS = [
-  '@cf/black-forest-labs/flux-2-klein-9b',
-  '@cf/leonardo/lucid-origin',
-  '@cf/black-forest-labs/flux-1-schnell',
-];
+import { DEFAULT_MODELS, getAiConfig } from '../config/ai.js';
+
+const CF_FLUX_MODEL = DEFAULT_MODELS.cloudflare;
 
 let loggedUnexpectedShape = false;
 
@@ -79,9 +76,8 @@ function extractBase64FromPayload(data) {
   return '';
 }
 
-function getCloudflareModelCandidates() {
-  const configured = String(process.env.CF_IMAGE_MODEL || '').trim();
-  const list = configured ? [configured, ...CF_FALLBACK_MODELS] : [...CF_FALLBACK_MODELS];
+function getCloudflareModelCandidates(config, overrideModel) {
+  const list = [overrideModel, config.model, ...(config.fallbackModels || [])].filter(Boolean);
   return [...new Set(list)];
 }
 
@@ -95,7 +91,8 @@ function clampCloudflareDimension(value, fallback = 1024) {
 function buildCloudflareRequest(model, prompt, apiToken, { width = 1024, height = 1024 } = {}) {
   const safeW = clampCloudflareDimension(width, 1024);
   const safeH = clampCloudflareDimension(height, 1024);
-  if (model.includes('flux-2')) {
+  const lower = String(model || '').toLowerCase();
+  if (lower.includes('flux-2')) {
     const form = new FormData();
     form.append('prompt', prompt);
     form.append('width', String(safeW));
@@ -107,9 +104,10 @@ function buildCloudflareRequest(model, prompt, apiToken, { width = 1024, height 
     };
   }
 
-  const body = model.includes('lucid-origin')
-    ? { prompt, width: safeW, height: safeH }
-    : { prompt, steps: 4 };
+  const body =
+    lower.includes('flux-1') || lower.includes('schnell')
+      ? { prompt, steps: 4 }
+      : { prompt, width: safeW, height: safeH };
 
   return {
     method: 'POST',
@@ -122,9 +120,8 @@ function buildCloudflareRequest(model, prompt, apiToken, { width = 1024, height 
 }
 
 /**
- * Generates an image with Cloudflare Workers AI (defaulting to flux-2-klein-9b for
- * legible English typography with automatic fallback on transient upstream errors)
- * and returns a base64 data URL.
+ * Generates an image with Cloudflare Workers AI using the active AI_MODEL / AI_API_KEY
+ * (or legacy CF_IMAGE_MODEL / CF_API_TOKEN) and returns a base64 data URL.
  */
 export async function generateImage(prompt, options = {}) {
   const cleanPrompt = typeof prompt === 'string' ? prompt.trim() : '';
@@ -132,18 +129,22 @@ export async function generateImage(prompt, options = {}) {
     throw new Error('A prompt is required to generate an image with Cloudflare Workers AI.');
   }
 
-  const accountId = String(process.env.CF_ACCOUNT_ID || '').trim();
-  const apiToken = String(process.env.CF_API_TOKEN || '').trim();
+  const aiConfig = getAiConfig({ ...process.env, AI_PROVIDER: 'cloudflare', IMAGE_PROVIDER: 'cloudflare' });
+  const accountId = String(options.accountId || aiConfig.accountId || '').trim();
+  const apiToken = String(options.apiKey || aiConfig.apiKey || '').trim();
+  const baseUrl = String(options.baseUrl || aiConfig.baseUrl || 'https://api.cloudflare.com/client/v4').replace(/\/+$/, '');
   if (!accountId || !apiToken) {
-    throw new Error('Cloudflare Workers AI credentials are missing (CF_ACCOUNT_ID / CF_API_TOKEN).');
+    throw new Error(
+      'Cloudflare Workers AI credentials are missing (set AI_ACCOUNT_ID / AI_API_KEY or CF_ACCOUNT_ID / CF_API_TOKEN).'
+    );
   }
 
-  const candidates = getCloudflareModelCandidates();
+  const candidates = getCloudflareModelCandidates(aiConfig, options.model);
   let lastError = null;
 
   for (let i = 0; i < candidates.length; i += 1) {
     const model = candidates[i];
-    const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`;
+    const endpoint = `${baseUrl}/accounts/${accountId}/ai/run/${model}`;
     const response = await fetch(endpoint, buildCloudflareRequest(model, cleanPrompt, apiToken, options));
     if (!response) {
       break;

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import request from 'supertest';
 import app from '../../server/app.js';
+import { getAiConfig, inferProviderFromModel } from '../../server/config/ai.js';
 import {
   formatFluxEnglishPrompt,
   getHuggingFaceConfig,
@@ -15,36 +16,49 @@ import {
   resetCloudflareShapeLogForTest,
 } from '../../server/services/cloudflareImage.js';
 
+const AI_ENV_KEYS = [
+  'AI_PROVIDER',
+  'AI_MODEL',
+  'AI_API_KEY',
+  'AI_ACCOUNT_ID',
+  'AI_BASE_URL',
+  'AI_FALLBACK_MODELS',
+  'AI_FALLBACK_MODEL',
+  'IMAGE_PROVIDER',
+  'HF_API_KEY',
+  'HF_IMAGE_MODEL',
+  'HF_API_URL',
+  'CF_ACCOUNT_ID',
+  'CF_API_TOKEN',
+  'CF_IMAGE_MODEL',
+  'GEMINI_API_KEY',
+  'GEMINI_IMAGE_MODEL',
+  'GEMINI_MODEL',
+  'OPENAI_API_KEY',
+  'OPENAI_IMAGE_MODEL',
+  'OPENAI_MODEL',
+];
+
 describe('Poster Image Generation API (/api/posters/generate)', () => {
-  const originalEnv = process.env.HF_API_KEY;
-  const originalProvider = process.env.IMAGE_PROVIDER;
-  const originalModel = process.env.HF_IMAGE_MODEL;
-  const originalCfAccount = process.env.CF_ACCOUNT_ID;
-  const originalCfToken = process.env.CF_API_TOKEN;
-  const originalCfModel = process.env.CF_IMAGE_MODEL;
+  const savedEnv = {};
   const originalFetch = global.fetch;
 
   beforeEach(() => {
     vi.restoreAllMocks();
     resetCloudflareShapeLogForTest();
+    for (const key of AI_ENV_KEYS) {
+      savedEnv[key] = process.env[key];
+      delete process.env[key];
+    }
     process.env.IMAGE_PROVIDER = 'huggingface';
     process.env.HF_IMAGE_MODEL = 'black-forest-labs/FLUX.1-schnell';
-    delete process.env.CF_IMAGE_MODEL;
   });
 
   afterEach(() => {
-    if (originalEnv === undefined) delete process.env.HF_API_KEY;
-    else process.env.HF_API_KEY = originalEnv;
-    if (originalProvider === undefined) delete process.env.IMAGE_PROVIDER;
-    else process.env.IMAGE_PROVIDER = originalProvider;
-    if (originalModel === undefined) delete process.env.HF_IMAGE_MODEL;
-    else process.env.HF_IMAGE_MODEL = originalModel;
-    if (originalCfAccount === undefined) delete process.env.CF_ACCOUNT_ID;
-    else process.env.CF_ACCOUNT_ID = originalCfAccount;
-    if (originalCfToken === undefined) delete process.env.CF_API_TOKEN;
-    else process.env.CF_API_TOKEN = originalCfToken;
-    if (originalCfModel === undefined) delete process.env.CF_IMAGE_MODEL;
-    else process.env.CF_IMAGE_MODEL = originalCfModel;
+    for (const key of AI_ENV_KEYS) {
+      if (savedEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = savedEnv[key];
+    }
     global.fetch = originalFetch;
   });
 
@@ -332,5 +346,110 @@ describe('Poster Image Generation API (/api/posters/generate)', () => {
     const hf = await import('@huggingface/inference');
     expect(typeof gradio.Client).toBe('function');
     expect(typeof hf.InferenceClient).toBe('function');
+  });
+
+  it('resolves universal AI_MODEL and AI_API_KEY across all providers and reflects active model in /api/health', async () => {
+    expect(inferProviderFromModel('@cf/black-forest-labs/flux-2-klein-9b')).toBe('cloudflare');
+    expect(inferProviderFromModel('gemini-2.5-flash-image')).toBe('gemini');
+    expect(inferProviderFromModel('imagen-3.0-generate-002')).toBe('gemini');
+    expect(inferProviderFromModel('gpt-image-1')).toBe('openai');
+    expect(inferProviderFromModel('stabilityai/stable-diffusion-3.5-large')).toBe('huggingface');
+
+    // Universal AI_MODEL + AI_API_KEY overrides lingering legacy IMAGE_PROVIDER / HF_IMAGE_MODEL
+    delete process.env.AI_PROVIDER;
+    process.env.IMAGE_PROVIDER = 'huggingface';
+    process.env.HF_IMAGE_MODEL = 'legacy/ignored-model';
+    process.env.AI_MODEL = 'gemini-2.5-flash-image';
+    process.env.AI_API_KEY = 'universal-gemini-key';
+
+    const resolved = getAiConfig();
+    expect(resolved.provider).toBe('gemini');
+    expect(resolved.model).toBe('gemini-2.5-flash-image');
+    expect(resolved.apiKey).toBe('universal-gemini-key');
+    expect(getHuggingFaceConfig().model).toBe('gemini-2.5-flash-image');
+
+    const healthRes = await request(app).get('/api/health');
+    expect(healthRes.status).toBe(200);
+    expect(healthRes.body.imageModel).toBe('gemini-2.5-flash-image');
+    expect(healthRes.body.activeProviders).toBe('gemini (gemini-2.5-flash-image)');
+  });
+
+  it('switches to Gemini, OpenAI, or custom Cloudflare model solely via .env variables', async () => {
+    const pngBytes = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Buffer.alloc(600, 2)]);
+
+    // 1. Gemini via AI_MODEL + AI_API_KEY (auto-inferred provider)
+    delete process.env.AI_PROVIDER;
+    delete process.env.IMAGE_PROVIDER;
+    process.env.AI_MODEL = 'gemini-2.5-flash-image';
+    process.env.AI_API_KEY = 'gem-test-key';
+
+    let capturedUrl = '';
+    global.fetch = vi.fn().mockImplementation(async (url) => {
+      capturedUrl = String(url);
+      return new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [{ inlineData: { mimeType: 'image/png', data: pngBytes.toString('base64') } }],
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    });
+
+    const gemRes = await request(app).post('/api/posters/generate').send({ prompt: 'Tech summit keynote' });
+    expect(gemRes.status).toBe(200);
+    expect(gemRes.headers['x-poster-model']).toBe('gemini-2.5-flash-image');
+    expect(capturedUrl).toContain('models/gemini-2.5-flash-image:generateContent?key=gem-test-key');
+
+    // 2. OpenAI / custom base URL via AI_MODEL + AI_API_KEY + AI_BASE_URL
+    process.env.AI_PROVIDER = 'openai';
+    process.env.AI_MODEL = 'gpt-image-1';
+    process.env.AI_API_KEY = 'sk-universal-test';
+    process.env.AI_BASE_URL = 'https://proxy.example.com/v1';
+
+    let openAiBody = null;
+    let openAiAuth = '';
+    global.fetch = vi.fn().mockImplementation(async (url, opts) => {
+      capturedUrl = String(url);
+      openAiAuth = opts.headers.Authorization;
+      openAiBody = JSON.parse(opts.body);
+      return new Response(JSON.stringify({ data: [{ b64_json: pngBytes.toString('base64') }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    const oaiRes = await request(app).post('/api/posters/generate').send({ prompt: 'Music night' });
+    expect(oaiRes.status).toBe(200);
+    expect(oaiRes.headers['x-poster-model']).toBe('gpt-image-1');
+    expect(capturedUrl).toBe('https://proxy.example.com/v1/images/generations');
+    expect(openAiAuth).toBe('Bearer sk-universal-test');
+    expect(openAiBody.model).toBe('gpt-image-1');
+
+    // 3. Cloudflare using custom AI_MODEL without falling back behind user's back
+    delete process.env.AI_BASE_URL;
+    process.env.AI_PROVIDER = 'cloudflare';
+    process.env.AI_MODEL = '@cf/leonardo/lucid-origin';
+    process.env.AI_API_KEY = 'cf-universal-token';
+    process.env.AI_ACCOUNT_ID = 'cf-universal-account';
+
+    global.fetch = vi.fn().mockImplementation(async (url) => {
+      capturedUrl = String(url);
+      return new Response(JSON.stringify({ success: true, result: { image: pngBytes.toString('base64') } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    const cfRes = await request(app).post('/api/posters/generate').send({ prompt: 'Science fair' });
+    expect(cfRes.status).toBe(200);
+    expect(cfRes.headers['x-poster-model']).toBe('@cf/leonardo/lucid-origin');
+    expect(capturedUrl).toBe(
+      'https://api.cloudflare.com/client/v4/accounts/cf-universal-account/ai/run/@cf/leonardo/lucid-origin'
+    );
   });
 });

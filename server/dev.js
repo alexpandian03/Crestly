@@ -1,14 +1,16 @@
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
+const envPath = path.resolve(__dirname, '../.env');
+dotenv.config({ path: envPath });
 
-const [{ default: app }, { connectDB }, { getHuggingFaceConfig }] = await Promise.all([
+const [{ default: app }, { connectDB }, { getAiConfig }] = await Promise.all([
   import('./app.js'),
   import('./config/db.js'),
-  import('./controllers/huggingFace.controller.js'),
+  import('./config/ai.js'),
 ]);
 
 const PORT = process.env.PORT || 5000;
@@ -25,7 +27,19 @@ async function startLocalServer() {
     console.warn('⚠️ MongoDB connection could not be established at startup:', err.message);
   }
 
-  const { provider, model } = getHuggingFaceConfig();
+  const { provider, model } = getAiConfig();
+  let envTimer = null;
+  if (fs.existsSync(envPath)) {
+    fs.watch(envPath, () => {
+      clearTimeout(envTimer);
+      envTimer = setTimeout(() => {
+        dotenv.config({ path: envPath, override: true });
+        const next = getAiConfig();
+        console.log(`🔄 Reloaded .env -> Active AI provider: ${next.provider} (${next.model})`);
+      }, 150);
+    });
+  }
+
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 [DEV SERVER] Express running locally at: http://localhost:${PORT} (http://127.0.0.1:${PORT})`);
     console.log(`🔌 Active AI provider: ${provider} (${model})`);
