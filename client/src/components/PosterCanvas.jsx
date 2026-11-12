@@ -1668,6 +1668,9 @@ export default function PosterCanvas({
                 inset: 0,
                 zIndex: 10,
                 overflow: 'hidden',
+                backgroundColor: content?.isAiGenerated
+                  ? brand.content.bg?.color || brand.canvas.color || '#ffffff'
+                  : 'transparent',
               }}
             >
               <img
@@ -1677,63 +1680,11 @@ export default function PosterCanvas({
                 style={{
                   width: '100%',
                   height: '100%',
-                  objectFit: 'cover',
+                  objectFit: content?.isAiGenerated ? 'contain' : 'cover',
+                  objectPosition: 'center center',
                   display: 'block',
                 }}
               />
-            </div>
-          ) : null}
-
-          {photoUrl && (content?.date || content?.time || content?.venue || (content?.details && content.details.length > 0)) ? (
-            <div
-              style={{
-                position: 'absolute',
-                bottom: '24px',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                zIndex: 15,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: '8px',
-                maxWidth: '92%',
-                background: 'rgba(15, 23, 42, 0.85)',
-                backdropFilter: 'blur(10px)',
-                padding: '12px 28px',
-                borderRadius: '16px',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
-                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
-                textAlign: 'center',
-                pointerEvents: 'none',
-              }}
-            >
-              {(content.date || content.time || content.venue) && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                  {content.date && (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#ffffff', fontSize: '20px', fontWeight: 600 }}>
-                      <Calendar size={18} color="#F59E0B" />
-                      {content.date}
-                    </span>
-                  )}
-                  {content.time && (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#ffffff', fontSize: '20px', fontWeight: 600 }}>
-                      <Clock size={18} color="#F59E0B" />
-                      {content.time}
-                    </span>
-                  )}
-                  {content.venue && (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#ffffff', fontSize: '20px', fontWeight: 600 }}>
-                      <MapPin size={18} color="#F59E0B" />
-                      {content.venue}
-                    </span>
-                  )}
-                </div>
-              )}
-              {content.details && (Array.isArray(content.details) ? content.details.length > 0 : Boolean(content.details)) && (
-                <p style={{ color: '#E2E8F0', fontSize: '15px', margin: 0, fontWeight: 400 }}>
-                  {Array.isArray(content.details) ? content.details.join(' • ') : content.details}
-                </p>
-              )}
             </div>
           ) : null}
 

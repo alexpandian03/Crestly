@@ -1,5 +1,6 @@
 import storageService from '../services/storage.js';
 import { CF_FLUX_MODEL, generateImage as generateCloudflareImage } from '../services/cloudflareImage.js';
+import { extractEventFacts } from '../../shared/fallbackParser.js';
 
 /**
  * AI Image Generation Controller
@@ -205,25 +206,9 @@ function resolvePosterTheme(text) {
 }
 
 /**
- * Strips trailing schedule metadata (e.g. "on 18 Oct, 8 AM, school ground")
- * so FLUX focuses on crisp English headline lettering without baking garbled dates
- * that <PosterCanvas> already renders cleanly in HTML.
- */
-function extractSubjectPhrase(firstSentence) {
-  const withoutSchedule = firstSentence
-    .replace(
-      /(?:\s+\b(?:on|at|from)\b\s+|\s*,\s*)(?:\d{1,2}\b|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|mon|tue|wed|thu|fri|sat|sun).*$/i,
-      ''
-    )
-    .replace(/\s*,\s*\d{1,2}\s*(?::\d{2})?\s*(?:am|pm)\b.*$/i, '')
-    .trim();
-  return withoutSchedule || firstSentence;
-}
-
-/**
- * Formats a bright, colorful flat graphic poster prompt for FLUX.1.
- * Rotates through STYLE_DIRECTIONS so each poster gets a distinct art direction
- * instead of repetitive dark spotlight or single default layouts.
+ * Formats a bright, colorful flat graphic poster prompt using explicit quoted English
+ * text lines (headline, date/time/venue, and highlights) so image models render crisp
+ * spelling without gibberish text. Rotates through STYLE_DIRECTIONS for visual variety.
  */
 export function formatFluxEnglishPrompt(userPrompt, options = {}) {
   const raw = String(userPrompt || '').trim();
@@ -240,14 +225,51 @@ export function formatFluxEnglishPrompt(userPrompt, options = {}) {
     .trim()
     .toUpperCase();
 
-  const subjectContext = extractSubjectPhrase(firstSentence);
+  const facts = extractEventFacts(raw);
+  const metaParts = [facts.date, facts.time, facts.venue]
+    .map((part) => String(part || '').trim())
+    .filter(Boolean);
+  const metaLine = metaParts.join(' | ');
+  const extraSentences = raw
+    .split(/[.\n]/)
+    .slice(1)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 2);
+  const extraLine = extraSentences.join(' • ');
+
+  const textInstructions = [
+    `bold crisp English headline text reading "${cleanTitle}"`,
+    metaLine ? `clean smaller English text below reading "${metaLine}"` : '',
+    extraLine ? `clean footer text reading "${extraLine}"` : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
+
   const theme = resolvePosterTheme(raw);
 
   if (raw.toLowerCase().includes('poster of') || raw.toLowerCase().includes('poster for')) {
-    return `${raw}. ${style.composition}, featuring ${style.lettering} reading "${cleanTitle}", ${style.palette}, flat modern vector poster art, clean minimal advertising poster style, clear breathing room near the bottom edge.`;
+    return `${firstSentence}. ${style.composition}, featuring ${style.lettering} with ${textInstructions}, ${style.palette}, correct English spelling only, keep all text, emblems, and artwork comfortably inside clear top and bottom margins away from edges, balanced typographic poster layout, flat modern vector poster art, clean minimal advertising poster style.`;
   }
 
-  return `Vibrant illustrated graphic design event poster for ${subjectContext}, ${style.composition}, using ${style.lettering} and ${theme.headlineColors} reading "${cleanTitle}" cleanly in English across ${theme.canvas}, ${theme.scene}, ${style.palette}, cheerful daylight colors, flat modern vector poster art, clean minimal advertising poster style, clear breathing room near the bottom edge.`;
+  return `Vibrant illustrated graphic design event poster for ${firstSentence}, ${style.composition}, using ${style.lettering} and ${theme.headlineColors} with ${textInstructions} cleanly across ${theme.canvas}, ${theme.scene}, ${style.palette}, cheerful daylight colors, correct English spelling only, keep all text, emblems, and artwork comfortably inside clear top and bottom margins away from edges, balanced typographic poster layout, flat modern vector poster art, clean minimal advertising poster style.`;
+}
+
+export function resolveContentImageDimensions(contentWidth, contentHeight) {
+  const w = Number(contentWidth);
+  const h = Number(contentHeight);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+    return { width: 1024, height: 1024 };
+  }
+  const ratio = w / h;
+  if (Math.abs(ratio - 1) <= 0.04) {
+    return { width: 1024, height: 1024 };
+  }
+  const snap16 = (val) => Math.min(1024, Math.max(512, Math.round(val / 16) * 16));
+  if (ratio > 1) {
+    return { width: 1024, height: snap16(1024 / ratio) };
+  }
+  return { width: snap16(1024 * ratio), height: 1024 };
 }
 
 function detectImageContentType(buffer, fallback = 'image/png') {
@@ -476,7 +498,8 @@ export async function generateHuggingFacePoster(req, res, next) {
 
       case 'cloudflare': {
         try {
-          const dataUrl = await generateCloudflareImage(enhancedPrompt);
+          const targetSize = resolveContentImageDimensions(req.body?.contentWidth, req.body?.contentHeight);
+          const dataUrl = await generateCloudflareImage(enhancedPrompt, targetSize);
           const { buffer, contentType } = parseDataUrlToImage(dataUrl);
           return streamPosterImage({
             req,

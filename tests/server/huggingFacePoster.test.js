@@ -6,6 +6,7 @@ import app from '../../server/app.js';
 import {
   formatFluxEnglishPrompt,
   getHuggingFaceConfig,
+  resolveContentImageDimensions,
   STYLE_DIRECTIONS,
 } from '../../server/controllers/huggingFace.controller.js';
 import {
@@ -20,6 +21,7 @@ describe('Poster Image Generation API (/api/posters/generate)', () => {
   const originalModel = process.env.HF_IMAGE_MODEL;
   const originalCfAccount = process.env.CF_ACCOUNT_ID;
   const originalCfToken = process.env.CF_API_TOKEN;
+  const originalCfModel = process.env.CF_IMAGE_MODEL;
   const originalFetch = global.fetch;
 
   beforeEach(() => {
@@ -27,6 +29,7 @@ describe('Poster Image Generation API (/api/posters/generate)', () => {
     resetCloudflareShapeLogForTest();
     process.env.IMAGE_PROVIDER = 'huggingface';
     process.env.HF_IMAGE_MODEL = 'black-forest-labs/FLUX.1-schnell';
+    delete process.env.CF_IMAGE_MODEL;
   });
 
   afterEach(() => {
@@ -40,6 +43,8 @@ describe('Poster Image Generation API (/api/posters/generate)', () => {
     else process.env.CF_ACCOUNT_ID = originalCfAccount;
     if (originalCfToken === undefined) delete process.env.CF_API_TOKEN;
     else process.env.CF_API_TOKEN = originalCfToken;
+    if (originalCfModel === undefined) delete process.env.CF_IMAGE_MODEL;
+    else process.env.CF_IMAGE_MODEL = originalCfModel;
     global.fetch = originalFetch;
   });
 
@@ -110,21 +115,24 @@ describe('Poster Image Generation API (/api/posters/generate)', () => {
     expect(Buffer.isBuffer(res.body)).toBe(true);
   });
 
-  it('builds distinct bright graphic poster prompts per event without dark 3D spotlight boilerplate or schedule clutter', () => {
-    const sportsPrompt = formatFluxEnglishPrompt('Annual sports day on 18 Oct, 8 AM, school ground');
+  it('builds distinct bright graphic poster prompts preserving full event details without 3D spotlight boilerplate', () => {
+    const sportsPrompt = formatFluxEnglishPrompt('Annual sports day on 18 Oct, 8 AM, school ground. Include registration desk and medals.');
     const bloodPrompt = formatFluxEnglishPrompt('Blood donation camp on 12 Nov, 9 AM, community hall. Certificates for donors.');
 
     expect(sportsPrompt).toContain('"ANNUAL SPORTS DAY"');
+    expect(sportsPrompt).toContain('18 Oct');
+    expect(sportsPrompt).toContain('8 AM');
+    expect(sportsPrompt).toMatch(/school ground/i);
+    expect(sportsPrompt).toContain('Include registration desk and medals');
     expect(sportsPrompt).toContain('sports field');
     expect(sportsPrompt).toContain('flat modern vector poster art');
-    expect(sportsPrompt).not.toContain('18 Oct');
-    expect(sportsPrompt).not.toContain('8 AM');
     expect(sportsPrompt).not.toMatch(/3D title|dramatic lighting/i);
 
     expect(bloodPrompt).toContain('"BLOOD DONATION CAMP"');
+    expect(bloodPrompt).toContain('12 Nov');
+    expect(bloodPrompt).toContain('Certificates for donors');
     expect(bloodPrompt).toContain('red heart emblem');
     expect(bloodPrompt).toContain('flat modern vector poster art');
-    expect(bloodPrompt).not.toContain('12 Nov');
     expect(bloodPrompt).not.toMatch(/3D title|dramatic lighting/i);
   });
 
@@ -197,7 +205,7 @@ describe('Poster Image Generation API (/api/posters/generate)', () => {
     expect(badRes.body.error.message).toContain('mock, huggingface, cloudflare');
   });
 
-  it('calls Cloudflare Workers AI FLUX.1-schnell via generateImage and parses result.image', async () => {
+  it('calls Cloudflare Workers AI FLUX.2 via generateImage and parses result.image', async () => {
     process.env.CF_ACCOUNT_ID = 'cf-account-test';
     process.env.CF_API_TOKEN = 'cf-secret-token-test';
 
@@ -206,12 +214,12 @@ describe('Poster Image Generation API (/api/posters/generate)', () => {
 
     let calledUrl = '';
     let calledHeaders = null;
-    let calledBody = null;
+    let calledForm = null;
 
     global.fetch = vi.fn().mockImplementation(async (url, opts) => {
       calledUrl = url;
       calledHeaders = opts.headers;
-      calledBody = JSON.parse(opts.body);
+      calledForm = opts.body;
       return new Response(JSON.stringify({ success: true, result: { image: b64 } }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -223,9 +231,14 @@ describe('Poster Image Generation API (/api/posters/generate)', () => {
       `https://api.cloudflare.com/client/v4/accounts/cf-account-test/ai/run/${CF_FLUX_MODEL}`
     );
     expect(calledHeaders.Authorization).toBe('Bearer cf-secret-token-test');
-    expect(calledHeaders['Content-Type']).toBe('application/json');
-    expect(calledBody).toEqual({ prompt: 'Environment day flat vector poster', steps: 4 });
+    expect(calledForm).toBeInstanceOf(FormData);
+    expect(calledForm.get('prompt')).toBe('Environment day flat vector poster');
+    expect(calledForm.get('width')).toBe('1024');
+    expect(calledForm.get('height')).toBe('1024');
     expect(dataUrl).toBe(`data:image/jpeg;base64,${b64}`);
+
+    expect(resolveContentImageDimensions(1080, 1080)).toEqual({ width: 1024, height: 1024 });
+    expect(resolveContentImageDimensions(1080, 810)).toEqual({ width: 1024, height: 768 });
   });
 
   it('logs alternate Cloudflare response shape once and throws clearly when no image exists', async () => {

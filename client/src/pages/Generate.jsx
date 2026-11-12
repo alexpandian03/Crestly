@@ -5,7 +5,6 @@ import React, {
   useMemo,
   useCallback,
 } from "react";
-import { extractEventFacts } from "../../../shared/fallbackParser.js";
 import { useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
@@ -14,7 +13,6 @@ import {
   AlertCircle,
   CheckCircle,
   RefreshCw,
-  Edit3,
   Lock,
   AlertTriangle,
   Save,
@@ -26,7 +24,7 @@ import api from "../services/api";
 import PosterPreview from "../components/PosterPreview";
 import PosterExportButtons from "../components/PosterExportButtons";
 import PosterImageInput from "../components/PosterImageInput";
-import EditTextPanel from "../components/EditTextPanel";
+import { resolvePosterBrand } from "../utils/brandRender";
 import { renderAndUploadThumbnail } from "../utils/posterThumbnail";
 import { clearDraft, readDraft } from "../config/draft";
 import { SAMPLE_PROMPTS } from "../data/demoPosters";
@@ -101,9 +99,6 @@ export default function Generate() {
   const [posterDesign, setPosterDesign] = useState(null);
   const [brandKit, setBrandKit] = useState(null);
   const [generatedContent, setGeneratedContent] = useState(null);
-  const [rawGeneratedContent, setRawGeneratedContent] = useState(null);
-  const [historyStack, setHistoryStack] = useState([]);
-  const [isEditOpen, setIsEditOpen] = useState(false);
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [feedback, setFeedback] = useState({ type: null, message: "" });
@@ -117,8 +112,6 @@ export default function Generate() {
   const [saveError, setSaveError] = useState(null);
   const [showSavedChip, setShowSavedChip] = useState(false);
   const [isSavingEdits, setIsSavingEdits] = useState(false);
-  const [drawerSaveError, setDrawerSaveError] = useState("");
-  const [drawerConflict, setDrawerConflict] = useState(false);
   const [initialDraft, setInitialDraft] = useState(null);
 
   const posterIdRef = useRef("");
@@ -261,7 +254,6 @@ export default function Generate() {
       image: draftData.content.imageUrl || "",
     };
     setGeneratedContent(content);
-    setRawGeneratedContent(content);
     toast.success("Draft restored");
   }, []);
 
@@ -295,18 +287,13 @@ export default function Generate() {
     setPosterId("");
     setCurrentVersion(1);
     setGeneratedContent(null);
-    setRawGeneratedContent(null);
-    setHistoryStack([]);
     setUserImageUrl("");
     setPosterDesign(null);
     setDescription("");
     setInitialDraft(null);
     setSaveStatus("idle");
     setSaveError(null);
-    setDrawerSaveError("");
-    setDrawerConflict(false);
     setShowSavedChip(false);
-    setIsEditOpen(false);
     setFeedback({ type: null, message: "" });
   }, []);
 
@@ -335,7 +322,6 @@ export default function Generate() {
         versionRef.current = loaded.currentVersion || 1;
         setCurrentVersion(versionRef.current);
         setGeneratedContent(content);
-        setRawGeneratedContent(content);
         // Only prefill the custom photo input when the saved image wasn't AI-generated,
         // so Regenerate / Generate poster still produces fresh Hugging Face artwork.
         setUserImageUrl(loaded.content?.isAiGenerated ? "" : loaded.content?.imageUrl || "");
@@ -347,7 +333,7 @@ export default function Generate() {
         retryOpRef.current = null;
         setFeedback({
           type: "success",
-          message: "Poster loaded. Edit, regenerate or download below.",
+          message: "Poster loaded. Regenerate or download below.",
         });
       } catch (err) {
         if (cancelled) return;
@@ -476,15 +462,12 @@ export default function Generate() {
       versionRef.current = loaded.currentVersion || 1;
       setCurrentVersion(versionRef.current);
       setGeneratedContent(content);
-      setRawGeneratedContent(content);
       setUserImageUrl(
         loaded.content?.isAiGenerated ? "" : loaded.content?.imageUrl || "",
       );
       setPosterDesign(loaded.design || null);
       markSaved(content);
       setSaveError(null);
-      setDrawerSaveError("");
-      setDrawerConflict(false);
       setShowSavedChip(true);
       clearTimeout(savedChipTimerRef.current);
       savedChipTimerRef.current = setTimeout(
@@ -525,12 +508,18 @@ export default function Generate() {
 
       if (!finalImageUrl) {
         let res;
+        const centerArea = drawBrandKit
+          ? resolvePosterBrand(drawBrandKit, drawTemplate)?.content
+          : null;
         try {
           res = await api.post(
             "/posters/generate",
             {
               prompt: promptText,
               variation: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+              ...(centerArea?.w && centerArea?.h
+                ? { contentWidth: centerArea.w, contentHeight: centerArea.h }
+                : {}),
             },
             {
               responseType: "blob",
@@ -581,37 +570,29 @@ export default function Generate() {
         finalImageUrl = cloudUrl || blobUrl;
       }
 
-      const facts = extractEventFacts(promptText);
       const firstSentence = promptText.split(/[.\n]/)[0].trim();
       const cleanTitle =
-        facts.title ||
         (firstSentence.length > 60
           ? firstSentence.slice(0, 60) + "..."
-          : firstSentence);
+          : firstSentence) || "Generated poster";
 
       const contentToSave = {
         title: cleanTitle,
-        tagline: facts.subtitle || "",
-        subtitle: facts.subtitle || "",
-        date: facts.date || "",
-        time: facts.time || "",
-        venue: facts.venue || "",
-        details: Array.isArray(facts.details)
-          ? facts.details
-          : facts.details
-            ? [facts.details]
-            : [],
+        tagline: "",
+        subtitle: "",
+        date: "",
+        time: "",
+        venue: "",
+        details: [],
         imageUrl: finalImageUrl,
         image: finalImageUrl,
         isAiGenerated: true,
       };
 
-      setRawGeneratedContent(contentToSave);
       setGeneratedContent(contentToSave);
-      setHistoryStack([]);
       setFeedback({
         type: "success",
-        message: "Poster ready. Download or refine below.",
+        message: "Poster ready. Download or regenerate below.",
       });
       toast.success("Poster generated with Hugging Face!");
 
@@ -648,79 +629,30 @@ export default function Generate() {
     await runGenerate();
   };
 
-  const handleApplyEdit = (next) => {
-    setHistoryStack((prev) => {
-      const snapshot = generatedContent || posterContent;
-      return snapshot ? [...prev.slice(-20), snapshot] : prev;
-    });
-    setGeneratedContent(next);
-  };
-
-  const handleUndo = () => {
-    if (historyStack.length === 0) return;
-    const previous = historyStack[historyStack.length - 1];
-    setHistoryStack((prev) => prev.slice(0, -1));
-    setGeneratedContent(previous);
-  };
-
-  const handleResetToGenerated = () => {
-    if (!rawGeneratedContent) return;
-    setHistoryStack((prev) => {
-      const snapshot = generatedContent || posterContent;
-      return snapshot ? [...prev.slice(-20), snapshot] : prev;
-    });
-    setGeneratedContent(rawGeneratedContent);
-  };
-
   const handleSaveChanges = async () => {
     const payload = buildContentPayload(posterContent);
     if (!payload || !payload.title) {
-      setDrawerSaveError("Please add a headline before saving.");
-      setDrawerConflict(false);
-      if (!isEditOpen) {
-        setFeedback({
-          type: "error",
-          message: "Please add a headline before saving.",
-        });
-      }
+      setFeedback({
+        type: "error",
+        message: "Please add a headline before saving.",
+      });
       return;
     }
 
     setIsSavingEdits(true);
-    setDrawerSaveError("");
-    setDrawerConflict(false);
 
-    const result = posterIdRef.current
-      ? await runSaveOp({ mode: "patch", content: payload })
-      : await runSaveOp({
-          mode: "create",
-          content: payload,
-          templateId: getRealTemplateId(),
-          prompt: (description.trim() || payload.title).slice(0, 1000),
-        });
-
-    if (result.ok) {
-      setRawGeneratedContent({ ...payload, image: payload.imageUrl });
-      setHistoryStack([]);
+    if (posterIdRef.current) {
+      await runSaveOp({ mode: "patch", content: payload });
     } else {
-      setDrawerSaveError(result.message);
-      setDrawerConflict(Boolean(result.conflict));
+      await runSaveOp({
+        mode: "create",
+        content: payload,
+        templateId: getRealTemplateId(),
+        prompt: (description.trim() || payload.title).slice(0, 1000),
+      });
     }
-    setIsSavingEdits(false);
-  };
 
-  const requestCloseEditor = () => {
-    if (
-      hasUnsavedChanges &&
-      !window.confirm(
-        "You have unsaved changes. Close the editor without saving?",
-      )
-    ) {
-      return;
-    }
-    setIsEditOpen(false);
-    setDrawerSaveError("");
-    setDrawerConflict(false);
+    setIsSavingEdits(false);
   };
 
   return (
@@ -917,19 +849,6 @@ export default function Generate() {
                   )
                 )}
 
-                {hasPoster && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsEditOpen(true)}
-                    className="h-8 rounded-[6px] border-[#E5E7EB] bg-white text-xs font-medium text-[#111827] hover:bg-[#F9FAFB]"
-                  >
-                    <Edit3 className="w-3.5 h-3.5 mr-1.5 text-[#6B7280]" />
-                    <span>Edit details</span>
-                  </Button>
-                )}
-
                 {hasPoster && hasUnsavedChanges && (
                   <Button
                     type="button"
@@ -1017,34 +936,6 @@ export default function Generate() {
             )}
           </div>
         </div>
-
-        <EditTextPanel
-          isOpen={isEditOpen}
-          onClose={requestCloseEditor}
-          content={posterContent}
-          onApplyChange={handleApplyEdit}
-          onResetToGenerated={handleResetToGenerated}
-          canReset={Boolean(
-            rawGeneratedContent &&
-              posterContent &&
-              (posterContent.title !== rawGeneratedContent.title ||
-                posterContent.tagline !== rawGeneratedContent.tagline ||
-                posterContent.date !== rawGeneratedContent.date ||
-                posterContent.time !== rawGeneratedContent.time ||
-                posterContent.venue !== rawGeneratedContent.venue ||
-                posterContent.imageUrl !== rawGeneratedContent.imageUrl ||
-                JSON.stringify(posterContent.details || []) !==
-                  JSON.stringify(rawGeneratedContent.details || [])),
-          )}
-          onUndo={handleUndo}
-          canUndo={historyStack.length > 0}
-          onSaveChanges={handleSaveChanges}
-          isSaving={isSavingEdits}
-          canSave={hasUnsavedChanges}
-          saveError={drawerSaveError}
-          conflict={drawerConflict}
-          onReloadLatest={refreshPoster}
-        />
 
         <DraftRestoreDialog
           isOpen={Boolean(posterAutosave.draftPrompt)}

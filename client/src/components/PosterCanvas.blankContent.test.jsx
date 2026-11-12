@@ -61,10 +61,14 @@ describe('PosterCanvas AI poster and blank content area behavior', () => {
     expect(contentSection).toBeInTheDocument();
   });
 
-  it('fills content area with the full-bleed AI image when photoUrl is generated, with zero heading overlays', () => {
+  it('fills content area with the full-bleed AI image when photoUrl is generated, with zero heading or default date/venue overlays', () => {
     const aiImageUrl = 'https://example.com/ai-flux-generated-poster.png';
     const content = {
       title: 'Blood Donation Camp',
+      date: '18 Oct',
+      time: '8 AM',
+      venue: 'School ground',
+      details: ['Medals for every winner'],
       imageUrl: aiImageUrl,
       isAiGenerated: true,
     };
@@ -77,11 +81,19 @@ describe('PosterCanvas AI poster and blank content area behavior', () => {
     expect(screen.getByText(/Rotary Club International/i)).toBeInTheDocument();
     expect(screen.getByText(/789 Service Lane/i)).toBeInTheDocument();
 
-    // AI image is rendered in content area
+    // AI image is rendered strictly within content box using objectFit: contain so header/footer never clip it
     const img = container.querySelector('img[src="https://example.com/ai-flux-generated-poster.png"]');
     expect(img).toBeInTheDocument();
+    expect(img.style.objectFit).toBe('contain');
+    const contentBox = container.querySelector('[data-section="content"] > div');
+    expect(contentBox.style.top).toBe('140px');
+    expect(contentBox.style.height).toBe('1080px');
 
-    // No heading overlays on top of the image
+    // No heading or default date/time/venue overlays on top of the image
     expect(screen.queryByText(/Blood Donation Camp/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/18 Oct/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/8 AM/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/School ground/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Medals for every winner/i)).not.toBeInTheDocument();
   });
 });

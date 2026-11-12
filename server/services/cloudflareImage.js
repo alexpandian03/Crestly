@@ -1,4 +1,9 @@
-const CF_FLUX_MODEL = '@cf/black-forest-labs/flux-1-schnell';
+const CF_FLUX_MODEL = '@cf/black-forest-labs/flux-2-klein-9b';
+const CF_FALLBACK_MODELS = [
+  '@cf/black-forest-labs/flux-2-klein-9b',
+  '@cf/leonardo/lucid-origin',
+  '@cf/black-forest-labs/flux-1-schnell',
+];
 
 let loggedUnexpectedShape = false;
 
@@ -74,11 +79,54 @@ function extractBase64FromPayload(data) {
   return '';
 }
 
+function getCloudflareModelCandidates() {
+  const configured = String(process.env.CF_IMAGE_MODEL || '').trim();
+  const list = configured ? [configured, ...CF_FALLBACK_MODELS] : [...CF_FALLBACK_MODELS];
+  return [...new Set(list)];
+}
+
+function clampCloudflareDimension(value, fallback = 1024) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return fallback;
+  const clamped = Math.min(1024, Math.max(512, num));
+  return Math.round(clamped / 16) * 16;
+}
+
+function buildCloudflareRequest(model, prompt, apiToken, { width = 1024, height = 1024 } = {}) {
+  const safeW = clampCloudflareDimension(width, 1024);
+  const safeH = clampCloudflareDimension(height, 1024);
+  if (model.includes('flux-2')) {
+    const form = new FormData();
+    form.append('prompt', prompt);
+    form.append('width', String(safeW));
+    form.append('height', String(safeH));
+    return {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiToken}` },
+      body: form,
+    };
+  }
+
+  const body = model.includes('lucid-origin')
+    ? { prompt, width: safeW, height: safeH }
+    : { prompt, steps: 4 };
+
+  return {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  };
+}
+
 /**
- * Generates an image with Cloudflare Workers AI (@cf/black-forest-labs/flux-1-schnell)
- * and returns a base64 JPEG data URL.
+ * Generates an image with Cloudflare Workers AI (defaulting to flux-2-klein-9b for
+ * legible English typography with automatic fallback on transient upstream errors)
+ * and returns a base64 data URL.
  */
-export async function generateImage(prompt) {
+export async function generateImage(prompt, options = {}) {
   const cleanPrompt = typeof prompt === 'string' ? prompt.trim() : '';
   if (!cleanPrompt) {
     throw new Error('A prompt is required to generate an image with Cloudflare Workers AI.');
@@ -90,61 +138,83 @@ export async function generateImage(prompt) {
     throw new Error('Cloudflare Workers AI credentials are missing (CF_ACCOUNT_ID / CF_API_TOKEN).');
   }
 
-  const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${CF_FLUX_MODEL}`;
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ prompt: cleanPrompt, steps: 4 }),
-  });
+  const candidates = getCloudflareModelCandidates();
+  let lastError = null;
 
-  const contentType = String(response.headers?.get('content-type') || '').toLowerCase();
+  for (let i = 0; i < candidates.length; i += 1) {
+    const model = candidates[i];
+    const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`;
+    const response = await fetch(endpoint, buildCloudflareRequest(model, cleanPrompt, apiToken, options));
+    if (!response) {
+      break;
+    }
 
-  if (!response.ok) {
-    let payload = null;
-    let rawText = '';
+    const contentType = String(response.headers?.get('content-type') || '').toLowerCase();
+
+    if (!response.ok) {
+      let payload = null;
+      let rawText = '';
+      try {
+        rawText = await response.text();
+        payload = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        payload = null;
+      }
+      const err = new Error(extractCloudflareErrorMessage(response.status, payload, rawText));
+      err.status = response.status;
+      if (!lastError) lastError = err;
+
+      // Quota exhaustion is account-wide and should fail fast; transient 5xx can fall back cleanly.
+      const isRetryable = response.status >= 500 || response.status === 404;
+      if (isRetryable && i < candidates.length - 1) {
+        continue;
+      }
+      throw err;
+    }
+
+    if (contentType.startsWith('image/')) {
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      if (buffer.length === 0) {
+        const emptyErr = new Error('Cloudflare Workers AI returned an empty image response.');
+        if (!lastError) lastError = emptyErr;
+        if (i < candidates.length - 1) continue;
+        throw emptyErr;
+      }
+      const mime = contentType.split(';')[0] || 'image/jpeg';
+      logUnexpectedShapeOnce({ contentType, byteLength: buffer.length });
+      return `data:${mime};base64,${buffer.toString('base64')}`;
+    }
+
+    let data;
     try {
-      rawText = await response.text();
-      payload = rawText ? JSON.parse(rawText) : null;
-    } catch {
-      payload = null;
+      data = await response.json();
+    } catch (parseErr) {
+      const jsonErr = new Error(`Cloudflare Workers AI returned invalid JSON: ${parseErr.message}`);
+      if (!lastError) lastError = jsonErr;
+      if (i < candidates.length - 1) continue;
+      throw jsonErr;
     }
-    const err = new Error(extractCloudflareErrorMessage(response.status, payload, rawText));
-    err.status = response.status;
-    throw err;
-  }
 
-  if (contentType.startsWith('image/')) {
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    if (buffer.length === 0) {
-      throw new Error('Cloudflare Workers AI returned an empty image response.');
+    if (data?.success === false) {
+      const apiErr = new Error(extractCloudflareErrorMessage(response.status, data, ''));
+      if (!lastError) lastError = apiErr;
+      if (i < candidates.length - 1) continue;
+      throw apiErr;
     }
-    const mime = contentType.split(';')[0] || 'image/jpeg';
-    logUnexpectedShapeOnce({ contentType, byteLength: buffer.length });
-    return `data:${mime};base64,${buffer.toString('base64')}`;
+
+    const b64 = extractBase64FromPayload(data);
+    if (!b64) {
+      logUnexpectedShapeOnce(data);
+      const missingErr = new Error('Cloudflare Workers AI response did not include an image.');
+      if (!lastError) lastError = missingErr;
+      throw missingErr;
+    }
+
+    return formatDataUrl(b64, 'image/jpeg');
   }
 
-  let data;
-  try {
-    data = await response.json();
-  } catch (parseErr) {
-    throw new Error(`Cloudflare Workers AI returned invalid JSON: ${parseErr.message}`);
-  }
-
-  if (data?.success === false) {
-    throw new Error(extractCloudflareErrorMessage(response.status, data, ''));
-  }
-
-  const b64 = extractBase64FromPayload(data);
-  if (!b64) {
-    logUnexpectedShapeOnce(data);
-    throw new Error('Cloudflare Workers AI response did not include an image.');
-  }
-
-  return formatDataUrl(b64, 'image/jpeg');
+  throw lastError || new Error('Cloudflare Workers AI image generation failed.');
 }
 
 export function resetCloudflareShapeLogForTest() {
