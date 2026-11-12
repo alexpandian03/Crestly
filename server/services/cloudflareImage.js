@@ -81,20 +81,35 @@ function getCloudflareModelCandidates(config, overrideModel) {
   return [...new Set(list)];
 }
 
-function clampCloudflareDimension(value, fallback = 1024) {
-  const num = Number(value);
-  if (!Number.isFinite(num) || num <= 0) return fallback;
-  const clamped = Math.min(1024, Math.max(512, num));
-  return Math.round(clamped / 16) * 16;
+function clampCloudflareDimensions(width, height, maxEdge = 1024) {
+  const w = Number(width);
+  const h = Number(height);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+    return { width: maxEdge, height: maxEdge };
+  }
+  const scale = maxEdge / Math.max(w, h);
+  const snap = (val) => Math.round(Math.min(maxEdge, Math.max(512, val)) / 16) * 16;
+  return {
+    width: snap(w * scale),
+    height: snap(h * scale),
+  };
 }
 
 function buildCloudflareRequest(model, prompt, apiToken, { width = 1024, height = 1024 } = {}) {
-  const safeW = clampCloudflareDimension(width, 1024);
-  const safeH = clampCloudflareDimension(height, 1024);
   const lower = String(model || '').toLowerCase();
-  if (lower.includes('flux-2')) {
+  const isFlux2 = lower.includes('flux-2');
+  // Cloudflare flux-2 workers reliably execute up to 768x768 while preserving square/custom aspect ratio
+  const maxEdge = isFlux2 ? 768 : 1024;
+  const { width: safeW, height: safeH } = clampCloudflareDimensions(width, height, maxEdge);
+  if (isFlux2) {
+    // Cloudflare flux-2 multipart form endpoint throws 500 Internal error on unescaped quotes/pipes in prompts
+    const cfSafePrompt = String(prompt || '')
+      .replace(/\s*\|\s*/g, ', ')
+      .replace(/"/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
     const form = new FormData();
-    form.append('prompt', prompt);
+    form.append('prompt', cfSafePrompt);
     form.append('width', String(safeW));
     form.append('height', String(safeH));
     return {
@@ -145,7 +160,14 @@ export async function generateImage(prompt, options = {}) {
   for (let i = 0; i < candidates.length; i += 1) {
     const model = candidates[i];
     const endpoint = `${baseUrl}/accounts/${accountId}/ai/run/${model}`;
-    const response = await fetch(endpoint, buildCloudflareRequest(model, cleanPrompt, apiToken, options));
+    let response = await fetch(endpoint, buildCloudflareRequest(model, cleanPrompt, apiToken, options));
+    if (response && response.status >= 500) {
+      // Retry once on transient Cloudflare 500 GPU errors before moving to fallbacks
+      const retryResponse = await fetch(endpoint, buildCloudflareRequest(model, cleanPrompt, apiToken, options));
+      if (retryResponse) {
+        response = retryResponse;
+      }
+    }
     if (!response) {
       break;
     }
