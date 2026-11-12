@@ -240,15 +240,15 @@ describe('Poster Image Generation API (/api/posters/generate)', () => {
       });
     });
 
-    const dataUrl = await generateCloudflareImage('Environment day flat vector poster');
+    const dataUrl = await generateCloudflareImage('Environment day "GREEN EARTH" | 5 Jun flat vector poster');
     expect(calledUrl).toBe(
       `https://api.cloudflare.com/client/v4/accounts/cf-account-test/ai/run/${CF_FLUX_MODEL}`
     );
     expect(calledHeaders.Authorization).toBe('Bearer cf-secret-token-test');
     expect(calledForm).toBeInstanceOf(FormData);
-    expect(calledForm.get('prompt')).toBe('Environment day flat vector poster');
-    expect(calledForm.get('width')).toBe('1024');
-    expect(calledForm.get('height')).toBe('1024');
+    expect(calledForm.get('prompt')).toBe('Environment day GREEN EARTH, 5 Jun flat vector poster');
+    expect(calledForm.get('width')).toBe('768');
+    expect(calledForm.get('height')).toBe('768');
     expect(dataUrl).toBe(`data:image/jpeg;base64,${b64}`);
 
     expect(resolveContentImageDimensions(1080, 1080)).toEqual({ width: 1024, height: 1024 });

@@ -11,7 +11,7 @@
     "dev:server": "node --watch server/dev.js",
     "dev:client": "npm --prefix client run dev",
     "dev": "concurrently -n \"API,VITE\" -c \"cyan,magenta\" \"npm run dev:server\" \"npm run dev:client\"",
-    "build:client": "npm --prefix client install && npm --prefix client run build",
+    "build:client": "npm --prefix client install --include=dev && npm --prefix client run build",
     "build": "npm run build:client",
     "install:all": "npm install && npm --prefix client install",
     "seed": "node server/scripts/seed.js",
