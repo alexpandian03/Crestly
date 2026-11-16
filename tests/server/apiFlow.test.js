@@ -98,6 +98,7 @@ describe('Server API Flow - Auth, Posters, RBAC and Tenant Isolation', () => {
           time: '10:00 AM',
           venue: 'Campus Auditorium',
           details: ['Prizes worth 50k', 'Mentors from top firms'],
+          hasTextOverlay: true,
         },
       });
 
@@ -105,6 +106,7 @@ describe('Server API Flow - Auth, Posters, RBAC and Tenant Isolation', () => {
     expect(res.body.success).toBe(true);
     expect(res.body.data.poster).toBeDefined();
     expect(res.body.data.poster.title).toBe('Designathon 2026');
+    expect(res.body.data.poster.content.hasTextOverlay).toBe(true);
     createdPosterId = res.body.data.poster._id;
   });
 

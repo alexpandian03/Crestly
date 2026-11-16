@@ -115,6 +115,7 @@ const VALID_CONTENT_KEYS = new Set([
   'details',
   'imageUrl',
   'image',
+  'hasTextOverlay',
   'extras',
   'images',
   'lists',

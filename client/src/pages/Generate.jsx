@@ -64,6 +64,7 @@ function buildContentPayload(content) {
 
 function friendlySaveError(err) {
   const status = err.response?.status;
+  const serverMsg = err.response?.data?.error?.message;
   if (status === 409) {
     return {
       message: "This poster was changed somewhere else. Reload to continue.",
@@ -77,7 +78,7 @@ function friendlySaveError(err) {
     };
   }
   return {
-    message: "We couldn't save this poster. Try again.",
+    message: serverMsg || "We couldn't save this poster. Try again.",
     conflict: false,
   };
 }

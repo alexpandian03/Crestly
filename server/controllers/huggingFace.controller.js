@@ -239,7 +239,13 @@ export function formatFluxEnglishPrompt(userPrompt, options = {}) {
   const theme = resolvePosterTheme(raw);
 
   if (options?.pureArtwork) {
-    return `Vibrant flat modern vector poster illustration for ${firstSentence}, ${theme.scene}, ${style.composition}, ${style.palette}, cheerful daylight colors, generous open space in center and top margins for typography, clean graphic design, advertising illustration, no text, no letters, no words, no watermark, no typography, blank background space, flat modern vector poster art, clean minimal advertising poster style.`;
+    const visualSubject =
+      firstSentence
+        .replace(/\b(awards?|annual|celebration|day|night|camp|party|meeting|festival)\b.*$/i, '')
+        .replace(/\b(on|at|from|to|in|by|for)\b.*$/i, '')
+        .trim() || 'event';
+
+    return `Vibrant flat modern vector graphic illustration depicting a scenic theme of ${visualSubject}, ${theme.scene}, ${style.composition}, ${style.palette}, cheerful daylight colors, generous open blank space in top, center and bottom areas for overlay, clean advertising artwork, purely visual background illustration with absolutely no text, no letters, no words, no typography, no banner text, no numbers, completely text-free flat modern vector poster background art.`;
   }
 
   if (raw.toLowerCase().includes('poster of') || raw.toLowerCase().includes('poster for')) {
@@ -389,8 +395,19 @@ async function generateWithHuggingFace({
         model: hfModel,
         inputs: enhancedPrompt,
         parameters: isSchnell
-          ? { width, height, num_inference_steps: 4 }
-          : { width, height, guidance_scale: 3.5, num_inference_steps: 20 },
+          ? {
+              width,
+              height,
+              num_inference_steps: 4,
+              negative_prompt: 'text, letters, words, typography, label, watermark, blurry, low quality',
+            }
+          : {
+              width,
+              height,
+              guidance_scale: 3.5,
+              num_inference_steps: 20,
+              negative_prompt: 'text, letters, words, typography, label, watermark, blurry, low quality',
+            },
       });
       if (blob) {
         const arrayBuffer = await blob.arrayBuffer();

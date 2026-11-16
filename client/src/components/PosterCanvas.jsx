@@ -280,20 +280,21 @@ function ContentTypographyOverlay({ content, brand }) {
           <h1
             style={{
               fontFamily: headingFont,
-              fontSize: title.length > 32 ? '44px' : '56px',
-              fontWeight: 800,
+              fontSize: title.length > 36 ? '48px' : title.length > 22 ? '60px' : '72px',
+              fontWeight: 900,
               lineHeight: 1.15,
               textTransform: hasTamilTitle ? 'none' : 'uppercase',
               color: '#0F172A',
               margin: 0,
-              padding: '8px 24px',
-              borderRadius: '10px',
-              backgroundColor: 'rgba(255, 255, 255, 0.92)',
-              backdropFilter: 'blur(6px)',
-              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.08)',
-              border: '1px solid rgba(255, 255, 255, 0.8)',
+              padding: '12px 36px',
+              borderRadius: '16px',
+              backgroundColor: 'rgba(255, 255, 255, 0.96)',
+              backdropFilter: 'blur(8px)',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.16)',
+              border: '2px solid rgba(255, 255, 255, 0.95)',
               maxWidth: '94%',
               wordBreak: 'break-word',
+              letterSpacing: '-0.02em',
             }}
           >
             {title}
@@ -303,14 +304,14 @@ function ContentTypographyOverlay({ content, brand }) {
           <p
             style={{
               fontFamily: bodyFont,
-              fontSize: '22px',
-              fontWeight: 600,
-              color: '#334155',
+              fontSize: '28px',
+              fontWeight: 700,
+              color: '#1E293B',
               margin: 0,
-              padding: '4px 16px',
-              borderRadius: '6px',
-              backgroundColor: 'rgba(255, 255, 255, 0.88)',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)',
+              padding: '6px 24px',
+              borderRadius: '8px',
+              backgroundColor: 'rgba(255, 255, 255, 0.92)',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
               maxWidth: '85%',
             }}
           >
@@ -325,7 +326,8 @@ function ContentTypographyOverlay({ content, brand }) {
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          gap: '10px',
+          gap: '14px',
+          marginBottom: '10px',
         }}
       >
         {metaItems.length > 0 && (
@@ -335,13 +337,13 @@ function ContentTypographyOverlay({ content, brand }) {
               flexWrap: 'wrap',
               justifyContent: 'center',
               alignItems: 'center',
-              gap: '16px',
-              padding: '10px 24px',
+              gap: '24px',
+              padding: '16px 38px',
               borderRadius: '9999px',
               backgroundColor: '#0F172A',
               color: '#FFFFFF',
-              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.16)',
-              border: '1px solid rgba(255, 255, 255, 0.25)',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.28)',
+              border: '2px solid rgba(255, 255, 255, 0.4)',
             }}
           >
             {metaItems.map((item, idx) => (
@@ -349,8 +351,8 @@ function ContentTypographyOverlay({ content, brand }) {
                 key={idx}
                 style={{
                   fontFamily: bodyFont,
-                  fontSize: '19px',
-                  fontWeight: 600,
+                  fontSize: '32px',
+                  fontWeight: 700,
                   letterSpacing: '0.01em',
                 }}
               >
@@ -366,7 +368,7 @@ function ContentTypographyOverlay({ content, brand }) {
               display: 'flex',
               flexWrap: 'wrap',
               justifyContent: 'center',
-              gap: '8px',
+              gap: '12px',
               maxWidth: '92%',
             }}
           >
@@ -375,14 +377,14 @@ function ContentTypographyOverlay({ content, brand }) {
                 key={idx}
                 style={{
                   fontFamily: bodyFont,
-                  fontSize: '18px',
-                  fontWeight: 600,
-                  color: '#1E293B',
-                  backgroundColor: 'rgba(255, 255, 255, 0.94)',
-                  padding: '6px 18px',
+                  fontSize: '28px',
+                  fontWeight: 700,
+                  color: '#0F172A',
+                  backgroundColor: 'rgba(255, 255, 255, 0.96)',
+                  padding: '10px 28px',
                   borderRadius: '9999px',
-                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-                  border: '1px solid rgba(226, 232, 240, 0.9)',
+                  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.14)',
+                  border: '2px solid rgba(203, 213, 225, 0.95)',
                 }}
               >
                 🎖️ {detail}
