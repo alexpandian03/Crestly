@@ -765,18 +765,18 @@ export default function Generate() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Type className="w-4 h-4 text-[#2563EB]" />
-                    <h2 className="text-sm font-semibold text-[#111827]">Words on poster</h2>
+                    <h2 className="text-sm font-semibold text-[#111827]">Event details on poster</h2>
                   </div>
                   <span className="text-xs text-[#6B7280]">Live preview</span>
                 </div>
                 <p className="text-xs text-[#6B7280]">
-                  Edit words directly to fix any spelling. Changes appear on your poster instantly.
+                  Edit date, time, and venue directly with clean spelling. Changes appear docked at the bottom of your poster.
                 </p>
 
                 <div className="space-y-3">
                   <div className="space-y-1">
                     <label htmlFor="poster-title" className="block text-xs font-medium text-[#374151]">
-                      Main headline
+                      Poster name
                     </label>
                     <Input
                       id="poster-title"
@@ -785,11 +785,10 @@ export default function Generate() {
                         setGeneratedContent((prev) => ({
                           ...(prev || {}),
                           title: e.target.value,
-                          hasTextOverlay: true,
                         }))
                       }
                       maxLength={60}
-                      placeholder="e.g. Blood Donation Camp"
+                      placeholder="e.g. Employee of the year awards"
                       className="h-8 rounded-[6px] border-[#E5E7EB] bg-white text-xs"
                     />
                   </div>

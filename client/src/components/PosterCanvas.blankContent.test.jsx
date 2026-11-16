@@ -114,8 +114,8 @@ describe('PosterCanvas AI poster and blank content area behavior', () => {
       <PosterCanvas brandKit={brandKit} template={template} content={content} />
     );
 
-    // Headline is rendered with exact spelling in HTML
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Blood Donation Camp');
+    // Headline box overlay is NOT drawn so AI graphic headline stays unobstructed
+    expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument();
 
     // Date, time, and venue meta items are rendered
     expect(screen.getByText(/12 Nov/)).toBeInTheDocument();

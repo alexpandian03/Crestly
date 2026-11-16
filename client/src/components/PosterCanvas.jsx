@@ -239,160 +239,94 @@ function FooterBand({ brand }) {
 
 function ContentTypographyOverlay({ content, brand }) {
   if (!content?.hasTextOverlay) return null;
-  const { title, tagline, date, time, venue, details } = content;
-  if (!title && !date && !time && !venue && (!details || details.length === 0)) return null;
-
-  const hasTamilTitle = hasTamil(title);
-  const headingFont = fontStackFor(brand?.fonts?.heading || 'Outfit', hasTamilTitle);
-  const bodyFont = fontStackFor(brand?.fonts?.body || 'Inter', hasTamil(tagline));
+  const { date, time, venue, details } = content;
 
   const metaItems = [
-    date ? `📅 ${date}` : null,
-    time ? `⏰ ${time}` : null,
-    venue ? `📍 ${venue}` : null,
+    date ? String(date).trim() : null,
+    time ? String(time).trim() : null,
+    venue ? String(venue).trim() : null,
   ].filter(Boolean);
+
+  const cleanDetails = Array.isArray(details)
+    ? details.map((d) => String(d).trim()).filter(Boolean)
+    : [];
+
+  if (metaItems.length === 0 && cleanDetails.length === 0) return null;
+
+  const bodyFont = fontStackFor(brand?.fonts?.body || 'Inter', false);
 
   return (
     <div
       style={{
         position: 'absolute',
-        inset: 0,
+        bottom: 0,
+        left: 0,
+        right: 0,
         zIndex: 5,
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: 'space-between',
-        padding: '36px 40px',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '12px 28px',
         pointerEvents: 'none',
         boxSizing: 'border-box',
+        backgroundColor: 'rgba(15, 23, 42, 0.88)',
+        backdropFilter: 'blur(8px)',
+        borderTop: '1px solid rgba(255, 255, 255, 0.2)',
+        gap: '4px',
       }}
     >
-      {/* Top: Headline & Tagline */}
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          textAlign: 'center',
-          gap: '8px',
-        }}
-      >
-        {title && (
-          <h1
-            style={{
-              fontFamily: headingFont,
-              fontSize: title.length > 36 ? '48px' : title.length > 22 ? '60px' : '72px',
-              fontWeight: 900,
-              lineHeight: 1.15,
-              textTransform: hasTamilTitle ? 'none' : 'uppercase',
-              color: '#0F172A',
-              margin: 0,
-              padding: '12px 36px',
-              borderRadius: '16px',
-              backgroundColor: 'rgba(255, 255, 255, 0.96)',
-              backdropFilter: 'blur(8px)',
-              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.16)',
-              border: '2px solid rgba(255, 255, 255, 0.95)',
-              maxWidth: '94%',
-              wordBreak: 'break-word',
-              letterSpacing: '-0.02em',
-            }}
-          >
-            {title}
-          </h1>
-        )}
-        {tagline && (
-          <p
-            style={{
-              fontFamily: bodyFont,
-              fontSize: '28px',
-              fontWeight: 700,
-              color: '#1E293B',
-              margin: 0,
-              padding: '6px 24px',
-              borderRadius: '8px',
-              backgroundColor: 'rgba(255, 255, 255, 0.92)',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
-              maxWidth: '85%',
-            }}
-          >
-            {tagline}
-          </p>
-        )}
-      </div>
+      {metaItems.length > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+            alignItems: 'center',
+            gap: '12px',
+            color: '#FFFFFF',
+            fontFamily: bodyFont,
+            fontSize: '24px',
+            fontWeight: 700,
+            letterSpacing: '0.02em',
+          }}
+        >
+          {metaItems.map((item, idx) => (
+            <React.Fragment key={idx}>
+              {idx > 0 && (
+                <span style={{ opacity: 0.5, margin: '0 4px', fontSize: '20px' }}>•</span>
+              )}
+              <span>{item}</span>
+            </React.Fragment>
+          ))}
+        </div>
+      )}
 
-      {/* Bottom: Date/Time/Venue Pill & Highlights */}
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: '14px',
-          marginBottom: '10px',
-        }}
-      >
-        {metaItems.length > 0 && (
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              justifyContent: 'center',
-              alignItems: 'center',
-              gap: '24px',
-              padding: '16px 38px',
-              borderRadius: '9999px',
-              backgroundColor: '#0F172A',
-              color: '#FFFFFF',
-              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.28)',
-              border: '2px solid rgba(255, 255, 255, 0.4)',
-            }}
-          >
-            {metaItems.map((item, idx) => (
-              <span
-                key={idx}
-                style={{
-                  fontFamily: bodyFont,
-                  fontSize: '32px',
-                  fontWeight: 700,
-                  letterSpacing: '0.01em',
-                }}
-              >
-                {item}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {Array.isArray(details) && details.length > 0 && (
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              justifyContent: 'center',
-              gap: '12px',
-              maxWidth: '92%',
-            }}
-          >
-            {details.map((detail, idx) => (
-              <span
-                key={idx}
-                style={{
-                  fontFamily: bodyFont,
-                  fontSize: '28px',
-                  fontWeight: 700,
-                  color: '#0F172A',
-                  backgroundColor: 'rgba(255, 255, 255, 0.96)',
-                  padding: '10px 28px',
-                  borderRadius: '9999px',
-                  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.14)',
-                  border: '2px solid rgba(203, 213, 225, 0.95)',
-                }}
-              >
-                🎖️ {detail}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
+      {cleanDetails.length > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+            alignItems: 'center',
+            gap: '10px',
+            color: '#CBD5E1',
+            fontFamily: bodyFont,
+            fontSize: '19px',
+            fontWeight: 600,
+            letterSpacing: '0.01em',
+          }}
+        >
+          {cleanDetails.map((detail, idx) => (
+            <React.Fragment key={idx}>
+              {idx > 0 && (
+                <span style={{ opacity: 0.4, margin: '0 4px' }}>|</span>
+              )}
+              <span>{detail}</span>
+            </React.Fragment>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
