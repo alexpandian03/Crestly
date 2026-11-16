@@ -11,13 +11,11 @@ import app from '../../server/app.js';
 import User from '../../server/models/User.model.js';
 import Client from '../../server/models/Client.model.js';
 import BrandKit from '../../server/models/BrandKit.model.js';
-import Template from '../../server/models/Template.model.js';
 
 describe('Server API Flow - Auth, Posters, RBAC and Tenant Isolation', () => {
   let mongod;
   let clientA;
   let clientB;
-  let templateA;
   let tokenA;
   let tokenB;
   let createdPosterId;
@@ -35,34 +33,6 @@ describe('Server API Flow - Auth, Posters, RBAC and Tenant Isolation', () => {
     // Create BrandKits
     await BrandKit.create({ clientId: clientA._id, orgName: 'Alpha Org' });
     await BrandKit.create({ clientId: clientB._id, orgName: 'Beta Org' });
-
-    // Create an active template for Client A
-    templateA = await Template.create({
-      clientId: clientA._id,
-      name: 'Default Event Template',
-      category: 'Event',
-      isActive: true,
-      editorVersion: 2,
-      size: { width: 1080, height: 1350 },
-      elements: [
-        {
-          id: 'head-1',
-          kind: 'field',
-          field: 'headline',
-          text: 'Title Here',
-          x: 60,
-          y: 200,
-          w: 960,
-          h: 120,
-          style: { size: 64, color: '#000000' },
-        },
-      ],
-      zones: [
-        { id: 'z-hdr', type: 'header', x: 0, y: 0, w: 1080, h: 140, locked: true },
-        { id: 'z-cnt', type: 'content', x: 0, y: 140, w: 1080, h: 1080, locked: false },
-        { id: 'z-ftr', type: 'footer', x: 0, y: 1220, w: 1080, h: 130, locked: true },
-      ],
-    });
 
     // Create User in Client A (normal user)
     const passwordHashA = await User.hashPassword('Pass12345678!');
@@ -120,7 +90,6 @@ describe('Server API Flow - Auth, Posters, RBAC and Tenant Isolation', () => {
       .post('/api/posters')
       .set('Authorization', `Bearer ${tokenA}`)
       .send({
-        templateId: templateA._id.toString(),
         prompt: 'Annual inter-college design hackathon event',
         content: {
           title: 'Designathon 2026',

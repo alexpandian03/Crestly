@@ -1,12 +1,10 @@
 import Client from '../models/Client.model.js';
 import BrandKit from '../models/BrandKit.model.js';
-import Template from '../models/Template.model.js';
 import User from '../models/User.model.js';
 import Poster from '../models/Poster.model.js';
 import Session from '../models/Session.model.js';
 import Token from '../models/Token.model.js';
 import Asset from '../models/Asset.model.js';
-import { createStandardTemplates } from '../../shared/defaultTemplates.js';
 import { audit } from '../services/audit.service.js';
 
 function sendNotFound(res) {
@@ -26,8 +24,6 @@ export async function createClient(req, res, next) {
   try {
     const client = await Client.create({ name: req.body.name, plan: req.body.plan, isActive: true });
     await BrandKit.create({ clientId: client._id, orgName: client.name });
-    const standards = createStandardTemplates(client._id);
-    await Template.insertMany(standards, { ordered: false });
     return res.status(201).json({ success: true, data: { client } });
   } catch (err) {
     return next(err);
@@ -201,7 +197,6 @@ export async function deleteClient(req, res, next) {
     }
 
     await Poster.deleteMany({ clientId: client._id });
-    await Template.deleteMany({ clientId: client._id });
     await BrandKit.deleteMany({ clientId: client._id });
     await Asset.deleteMany({ clientId: client._id });
     await Client.findByIdAndDelete(client._id);

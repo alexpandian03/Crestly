@@ -11,7 +11,6 @@ import app from '../../server/app.js';
 import User from '../../server/models/User.model.js';
 import Client from '../../server/models/Client.model.js';
 import BrandKit from '../../server/models/BrandKit.model.js';
-import Template from '../../server/models/Template.model.js';
 import Poster from '../../server/models/Poster.model.js';
 import Session from '../../server/models/Session.model.js';
 import Asset from '../../server/models/Asset.model.js';
@@ -25,8 +24,6 @@ describe('AUTH 7: Security Automated Test Suite', () => {
   let adminA;
   let userA;
   let userB;
-  let templateA;
-  let templateB;
   let posterA;
   let assetB;
   let tokenAdminA;
@@ -95,42 +92,10 @@ describe('AUTH 7: Security Automated Test Suite', () => {
       isActive: true,
     });
 
-    // Create templates
-    templateA = await Template.create({
-      clientId: clientA._id,
-      name: 'Template A',
-      category: 'Event',
-      isActive: true,
-      editorVersion: 2,
-      size: { width: 1080, height: 1350 },
-      elements: [{ id: 'h1', kind: 'field', field: 'headline', text: 'Head', x: 0, y: 150, w: 1000, h: 100, style: { size: 40 } }],
-      zones: [
-        { id: 'zh', type: 'header', x: 0, y: 0, w: 1080, h: 140, locked: true },
-        { id: 'zc', type: 'content', x: 0, y: 140, w: 1080, h: 1080, locked: false },
-        { id: 'zf', type: 'footer', x: 0, y: 1220, w: 1080, h: 130, locked: true },
-      ],
-    });
-
-    templateB = await Template.create({
-      clientId: clientB._id,
-      name: 'Template B Private',
-      category: 'Event',
-      isActive: true,
-      editorVersion: 2,
-      size: { width: 1080, height: 1350 },
-      elements: [{ id: 'h2', kind: 'field', field: 'headline', text: 'Head B', x: 0, y: 150, w: 1000, h: 100, style: { size: 40 } }],
-      zones: [
-        { id: 'zh', type: 'header', x: 0, y: 0, w: 1080, h: 140, locked: true },
-        { id: 'zc', type: 'content', x: 0, y: 140, w: 1080, h: 1080, locked: false },
-        { id: 'zf', type: 'footer', x: 0, y: 1220, w: 1080, h: 130, locked: true },
-      ],
-    });
-
     // Create a poster for Tenant A
     posterA = await Poster.create({
       clientId: clientA._id,
       userId: userA._id,
-      templateId: templateA._id,
       title: 'Poster Alpha',
       prompt: 'A test poster prompt for Alpha',
       content: { title: 'Poster Alpha' },
@@ -360,7 +325,7 @@ describe('AUTH 7: Security Automated Test Suite', () => {
   });
 
   // -------------------------------------------------------------------------
-  // 5. IDOR ACROSS TENANTS (Posters, Templates, Assets, Users)
+  // 5. IDOR ACROSS TENANTS (Posters, Assets, Clients, Users)
   // -------------------------------------------------------------------------
   it("5a. IDOR - Tenant B cannot read, update, or delete Tenant A's poster", async () => {
     // GET
@@ -385,27 +350,20 @@ describe('AUTH 7: Security Automated Test Suite', () => {
     expect(delRes.status).toBe(404);
   });
 
-  it("5b. IDOR - Tenant A cannot read, update, or delete Tenant B's private template", async () => {
-    // GET
+  it("5b. IDOR - Tenant A cannot read or update Tenant B's organization settings", async () => {
+    // GET client B by admin A
     const getRes = await request(app)
-      .get(`/api/templates/${templateB._id}`)
-      .set('Authorization', `Bearer ${tokenUserA}`);
-    expect(getRes.status).toBe(404);
+      .get(`/api/clients/${clientB._id}`)
+      .set('Authorization', `Bearer ${tokenAdminA}`);
+    expect([403, 404]).toContain(getRes.status);
 
-    // PATCH
+    // PATCH client B by admin A
     const patchRes = await request(app)
-      .patch(`/api/templates/${templateB._id}`)
+      .patch(`/api/clients/${clientB._id}`)
       .set('Authorization', `Bearer ${tokenAdminA}`)
       .set('X-Requested-With', 'XMLHttpRequest')
-      .send({ name: 'Hacked Template' });
+      .send({ name: 'Hacked Client' });
     expect([403, 404]).toContain(patchRes.status);
-
-    // DELETE
-    const delRes = await request(app)
-      .delete(`/api/templates/${templateB._id}`)
-      .set('Authorization', `Bearer ${tokenAdminA}`)
-      .set('X-Requested-With', 'XMLHttpRequest');
-    expect([403, 404]).toContain(delRes.status);
   });
 
   it("5c. IDOR - Tenant A cannot see or delete Tenant B's asset", async () => {
@@ -588,8 +546,7 @@ describe('AUTH 7: Security Automated Test Suite', () => {
 
     // Allowed legitimate application paths
     expect(sanitizeRedirect('/posters', '/default')).toBe('/posters');
-    expect(sanitizeRedirect('/create?template=event', '/default')).toBe('/create?template=event');
-    expect(sanitizeRedirect('/templates/123/edit', '/default')).toBe('/templates/123/edit');
+    expect(sanitizeRedirect('/create?event=general', '/default')).toBe('/create?event=general');
     expect(sanitizeRedirect('/brand-kit', '/default')).toBe('/brand-kit');
   });
 
@@ -602,7 +559,6 @@ describe('AUTH 7: Security Automated Test Suite', () => {
       .set('Authorization', `Bearer ${tokenUserA}`)
       .set('X-Requested-With', 'XMLHttpRequest')
       .send({
-        templateId: templateA._id.toString(),
         clientId: clientB._id.toString(), // Attacker tries to inject client B ID
         prompt: 'Mass assignment check',
         content: { title: 'Safe Poster' },
@@ -637,7 +593,6 @@ describe('AUTH 7: Security Automated Test Suite', () => {
       .set('Authorization', `Bearer ${tokenUserA}`)
       .set('X-Requested-With', 'XMLHttpRequest')
       .send({
-        templateId: templateA._id.toString(),
         prompt: hugeString,
         content: { title: 'Big' },
       });

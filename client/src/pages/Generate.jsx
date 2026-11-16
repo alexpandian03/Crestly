@@ -84,7 +84,7 @@ function SkeletonPoster() {
       <Skeleton className="w-full aspect-[4/5] rounded-[8px] border border-[#E5E7EB] bg-[#E5E7EB]/60" />
       <div className="mt-4 flex items-center gap-2 text-xs text-[#6B7280]">
         <Loader2 className="w-3.5 h-3.5 animate-spin text-[#2563EB]" />
-        <span>Generating your poster with Hugging Face...</span>
+        <span>Generating your poster with AI...</span>
       </div>
     </div>
   );
@@ -93,8 +93,6 @@ function SkeletonPoster() {
 export default function Generate() {
   const { activeClientId } = useAuth();
   const [description, setDescription] = useState("");
-  const [templates, setTemplates] = useState([]);
-  const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [posterDesign, setPosterDesign] = useState(null);
   const [brandKit, setBrandKit] = useState(null);
   const [generatedContent, setGeneratedContent] = useState(null);
@@ -137,25 +135,8 @@ export default function Generate() {
     async function loadInitialData() {
       try {
         setLoadingInitial(true);
-        const [templatesRes, brandKitRes] = await Promise.all([
-          api.get("/templates").catch(() => null),
-          api.get("/brand-kit").catch(() => null),
-        ]);
+        const brandKitRes = await api.get("/brand-kit").catch(() => null);
         if (cancelled) return;
-
-        const loadedTemplates = templatesRes?.data?.data?.templates || [];
-        if (templatesRes?.data?.success && loadedTemplates.length > 0) {
-          setTemplates(loadedTemplates);
-          if (!searchParams.get("poster")) {
-            const defaultT =
-              loadedTemplates.find((t) => t.isDefault && t.isActive !== false) ||
-              loadedTemplates.find((t) => t.isActive !== false);
-            if (defaultT) setSelectedTemplateId(defaultT.id || defaultT._id);
-          }
-        } else {
-          setTemplates([]);
-          setSelectedTemplateId("");
-        }
 
         const loadedBrandKit = brandKitRes?.data?.data?.brandKit;
         setBrandKit(
@@ -174,14 +155,7 @@ export default function Generate() {
     };
   }, [activeClientId, searchParams]);
 
-  const selectedTemplate = useMemo(() => {
-    const active = templates.filter((t) => t.isActive !== false);
-    return (
-      active.find((t) => (t.id || t._id) === selectedTemplateId) ||
-      active[0] ||
-      DEFAULT_FRAME_TEMPLATE
-    );
-  }, [templates, selectedTemplateId]);
+  const selectedTemplate = DEFAULT_FRAME_TEMPLATE;
 
   const drawBrandKit = posterDesign?.brandKit || brandKit;
   const drawTemplate = posterDesign?.template || selectedTemplate;
@@ -325,7 +299,6 @@ export default function Generate() {
         // so Regenerate / Generate poster still produces fresh Hugging Face artwork.
         setUserImageUrl(loaded.content?.isAiGenerated ? "" : loaded.content?.imageUrl || "");
         setPosterDesign(loaded.design || null);
-        if (loaded.templateId) setSelectedTemplateId(String(loaded.templateId));
         if (loaded.prompt) setDescription(loaded.prompt);
         markSaved(content);
         setSaveError(null);
@@ -372,7 +345,6 @@ export default function Generate() {
       let poster;
       if (op.mode === "create") {
         const res = await api.post("/posters", {
-          ...(op.templateId ? { templateId: op.templateId } : {}),
           prompt: op.prompt,
           content: op.content,
         });
@@ -481,11 +453,6 @@ export default function Generate() {
     }
   };
 
-  const getRealTemplateId = () => {
-    const id = selectedTemplate?.id || selectedTemplate?._id;
-    return isRealId(id) ? String(id) : "";
-  };
-
   const runGenerate = async ({ forceGenerate = false } = {}) => {
     const promptText = description.trim();
     if (!promptText || promptText.length < 5) {
@@ -551,7 +518,7 @@ export default function Generate() {
                 "The poster server is not responding. Make sure the backend server is running and try again.";
             } else {
               msg =
-                apiErr.message || "Failed to generate poster with Hugging Face.";
+                apiErr.message || "Failed to generate poster with AI.";
             }
           }
           setFeedback({ type: "error", message: msg });
@@ -562,7 +529,7 @@ export default function Generate() {
 
         const blob = res?.data;
         if (!blob || blob.size === 0) {
-          throw new Error("No image data received from Hugging Face.");
+          throw new Error("No image data received from AI service.");
         }
         const blobUrl = URL.createObjectURL(blob);
         const cloudUrl = res?.headers?.["x-poster-image-url"] || "";
@@ -593,16 +560,14 @@ export default function Generate() {
         type: "success",
         message: "Poster ready. Download or regenerate below.",
       });
-      toast.success("Poster generated with Hugging Face!");
+      toast.success("Poster generated with AI!");
 
       const savedPayload = buildContentPayload(contentToSave);
-      const resolvedTemplateId = getRealTemplateId();
       if (savedPayload?.title) {
         if (!posterIdRef.current) {
           runSaveOp({
             mode: "create",
             content: savedPayload,
-            templateId: resolvedTemplateId,
             prompt: promptText.slice(0, 1000),
           });
         } else {
@@ -646,7 +611,6 @@ export default function Generate() {
       await runSaveOp({
         mode: "create",
         content: payload,
-        templateId: getRealTemplateId(),
         prompt: (description.trim() || payload.title).slice(0, 1000),
       });
     }

@@ -4,7 +4,6 @@ import { connectDB } from '../config/db.js';
 import Client from '../models/Client.model.js';
 import User from '../models/User.model.js';
 import BrandKit from '../models/BrandKit.model.js';
-import Template, { getDefaultTemplateData } from '../models/Template.model.js';
 
 const fields = [
   'DEMO_CLIENT_NAME',
@@ -49,9 +48,6 @@ async function run() {
     { $setOnInsert: { clientId: client._id, orgName: client.name } },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
-  if (!(await Template.exists({ clientId: client._id }))) {
-    await Template.create(getDefaultTemplateData(client._id, client.name));
-  }
   const creator = await User.findOne({ role: 'superadmin', isActive: true }).select('_id');
   await upsertDemoUser({
     name: process.env.DEMO_CLIENT_ADMIN_NAME,

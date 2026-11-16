@@ -11,15 +11,12 @@ import app from '../../server/app.js';
 import User from '../../server/models/User.model.js';
 import Client from '../../server/models/Client.model.js';
 import BrandKit from '../../server/models/BrandKit.model.js';
-import Template from '../../server/models/Template.model.js';
 import Poster from '../../server/models/Poster.model.js';
 
 describe('Local-Level Roles and Company Setup Test Suite', () => {
   let mongod;
   let clientA;
   let clientB;
-  let templateA;
-  let templateB;
   let superadminUser;
   let adminAUser;
   let userAUser;
@@ -58,41 +55,6 @@ describe('Local-Level Roles and Company Setup Test Suite', () => {
       orgName: 'Beta Local Company',
       primaryColor: '#047857',
       header: { text: 'Beta 2025 Header' },
-    });
-
-    // 3. Create Templates
-    templateA = await Template.create({
-      clientId: clientA._id,
-      name: 'Alpha Annual Poster Layout',
-      category: 'Event',
-      isActive: true,
-      isDefault: true,
-      editorVersion: 2,
-      version: 1,
-      size: { width: 1080, height: 1350 },
-      elements: [{ id: 'h1', kind: 'field', field: 'headline', text: 'Head', x: 0, y: 150, w: 1000, h: 100, style: { size: 40 } }],
-      zones: [
-        { id: 'zh', type: 'header', x: 0, y: 0, w: 1080, h: 140, locked: true },
-        { id: 'zc', type: 'content', x: 0, y: 140, w: 1080, h: 1080, locked: false },
-        { id: 'zf', type: 'footer', x: 0, y: 1220, w: 1080, h: 130, locked: true },
-      ],
-    });
-
-    templateB = await Template.create({
-      clientId: clientB._id,
-      name: 'Beta Showcase Layout',
-      category: 'Event',
-      isActive: true,
-      isDefault: true,
-      editorVersion: 2,
-      version: 1,
-      size: { width: 1080, height: 1350 },
-      elements: [{ id: 'h2', kind: 'field', field: 'headline', text: 'Head B', x: 0, y: 150, w: 1000, h: 100, style: { size: 40 } }],
-      zones: [
-        { id: 'zh', type: 'header', x: 0, y: 0, w: 1080, h: 140, locked: true },
-        { id: 'zc', type: 'content', x: 0, y: 140, w: 1080, h: 1080, locked: false },
-        { id: 'zf', type: 'footer', x: 0, y: 1220, w: 1080, h: 130, locked: true },
-      ],
     });
 
     // 4. Create Users across roles
@@ -182,46 +144,6 @@ describe('Local-Level Roles and Company Setup Test Suite', () => {
       expect(res.body.data.brandKit.orgName).toBe('Alpha Local Company - Super Edited');
     });
 
-    it('Superadmin CAN create, update, and manage templates (200/201)', async () => {
-      // Create template
-      const createRes = await request(app)
-        .post('/api/templates')
-        .set('Authorization', `Bearer ${superToken}`)
-        .set('X-Client-Id', String(clientA._id))
-        .send({
-          name: 'Alpha Promo Template',
-        });
-      expect(createRes.status).toBe(201);
-      const newTemplateId = createRes.body.data.template._id;
-
-      // Update template
-      const updateRes = await request(app)
-        .patch(`/api/templates/${newTemplateId}`)
-        .set('Authorization', `Bearer ${superToken}`)
-        .set('X-Client-Id', String(clientA._id))
-        .send({ name: 'Alpha Promo Template Updated' });
-      expect(updateRes.status).toBe(200);
-
-      // Duplicate template
-      const dupRes = await request(app)
-        .post(`/api/templates/${templateA._id}/duplicate`)
-        .set('Authorization', `Bearer ${superToken}`)
-        .set('X-Client-Id', String(clientA._id));
-      expect(dupRes.status).toBe(201);
-
-      // Delete template
-      await request(app)
-        .post(`/api/templates/${newTemplateId}/deactivate`)
-        .set('Authorization', `Bearer ${superToken}`)
-        .set('X-Client-Id', String(clientA._id));
-
-      const delRes = await request(app)
-        .delete(`/api/templates/${newTemplateId}`)
-        .set('Authorization', `Bearer ${superToken}`)
-        .set('X-Client-Id', String(clientA._id));
-      expect(delRes.status).toBe(200);
-    });
-
     it('Superadmin CAN update company settings and activation status (200)', async () => {
       const res = await request(app)
         .patch(`/api/clients/${clientA._id}`)
@@ -241,34 +163,6 @@ describe('Local-Level Roles and Company Setup Test Suite', () => {
       expect(res.status).toBe(403);
     });
 
-    it('Clientadmin gets 403 on creating or modifying templates', async () => {
-      const createRes = await request(app)
-        .post('/api/templates')
-        .set('Authorization', `Bearer ${adminAToken}`)
-        .send({
-          name: 'Unauthorized Template',
-          category: 'Event',
-          size: { width: 1080, height: 1350 },
-        });
-      expect(createRes.status).toBe(403);
-
-      const updateRes = await request(app)
-        .patch(`/api/templates/${templateA._id}`)
-        .set('Authorization', `Bearer ${adminAToken}`)
-        .send({ name: 'Hacked Template' });
-      expect(updateRes.status).toBe(403);
-
-      const dupRes = await request(app)
-        .post(`/api/templates/${templateA._id}/duplicate`)
-        .set('Authorization', `Bearer ${adminAToken}`);
-      expect(dupRes.status).toBe(403);
-
-      const delRes = await request(app)
-        .delete(`/api/templates/${templateA._id}`)
-        .set('Authorization', `Bearer ${adminAToken}`);
-      expect(delRes.status).toBe(403);
-    });
-
     it('Clientadmin gets 403 on modifying company settings', async () => {
       const res = await request(app)
         .patch(`/api/clients/${clientA._id}`)
@@ -278,41 +172,26 @@ describe('Local-Level Roles and Company Setup Test Suite', () => {
       expect(res.status).toBe(403);
     });
 
-    it('User gets 403 on brand kit and template writes', async () => {
+    it('User gets 403 on brand kit writes', async () => {
       const brandRes = await request(app)
         .put('/api/brand-kit')
         .set('Authorization', `Bearer ${userAToken}`)
         .send({ orgName: 'Hacked by User' });
       expect(brandRes.status).toBe(403);
-
-      const tplRes = await request(app)
-        .post('/api/templates')
-        .set('Authorization', `Bearer ${userAToken}`)
-        .send({ name: 'User Template' });
-      expect(tplRes.status).toBe(403);
     });
 
-    it('Clientadmin and User CAN read active templates and brand kit (200)', async () => {
+    it('Clientadmin and User CAN read brand kit (200)', async () => {
       const brandRes = await request(app)
         .get('/api/brand-kit')
         .set('Authorization', `Bearer ${adminAToken}`);
       expect(brandRes.status).toBe(200);
-
-      const tplRes = await request(app)
-        .get('/api/templates')
-        .set('Authorization', `Bearer ${adminAToken}`);
-      expect(tplRes.status).toBe(200);
-      expect(Array.isArray(tplRes.body.data.templates)).toBe(true);
+      expect(brandRes.body.data.brandKit).toBeDefined();
 
       const userBrandRes = await request(app)
         .get('/api/brand-kit')
         .set('Authorization', `Bearer ${userAToken}`);
       expect(userBrandRes.status).toBe(200);
-
-      const userTplRes = await request(app)
-        .get('/api/templates')
-        .set('Authorization', `Bearer ${userAToken}`);
-      expect(userTplRes.status).toBe(200);
+      expect(userBrandRes.body.data.brandKit).toBeDefined();
     });
   });
 
@@ -324,26 +203,15 @@ describe('Local-Level Roles and Company Setup Test Suite', () => {
       posterB = await Poster.create({
         clientId: clientB._id,
         userId: adminBUser._id,
-        templateId: templateB._id,
         templateVersion: 1,
         title: 'Beta Exclusive Event',
         prompt: 'Beta exclusive annual meeting',
         content: { title: 'Beta Exclusive Event' },
         design: {
           brandKit: { orgName: 'Beta Local Company' },
-          template: { name: 'Beta Showcase Layout' },
           bands: { header: { text: 'Beta Header' } },
         },
       });
-    });
-
-    it('Clientadmin A accessing Client B template by ID returns 404', async () => {
-      const res = await request(app)
-        .get(`/api/templates/${templateB._id}`)
-        .set('Authorization', `Bearer ${adminAToken}`);
-
-      expect(res.status).toBe(404);
-      expect(res.body.success).toBe(false);
     });
 
     it('Clientadmin A accessing Client B poster by ID returns 404', async () => {
@@ -364,12 +232,7 @@ describe('Local-Level Roles and Company Setup Test Suite', () => {
       expect(res.body.success).toBe(false);
     });
 
-    it('User A accessing Client B template or poster returns 404', async () => {
-      const tplRes = await request(app)
-        .get(`/api/templates/${templateB._id}`)
-        .set('Authorization', `Bearer ${userAToken}`);
-      expect(tplRes.status).toBe(404);
-
+    it('User A accessing Client B poster returns 404', async () => {
       const posterRes = await request(app)
         .get(`/api/posters/${posterB._id}`)
         .set('Authorization', `Bearer ${userAToken}`);
@@ -380,12 +243,11 @@ describe('Local-Level Roles and Company Setup Test Suite', () => {
   describe('3. Poster Snapshot Immutability (Versioning)', () => {
     let savedPosterId;
 
-    it('creates a poster with the company initial brand kit and template', async () => {
+    it('creates a poster with the company initial brand kit', async () => {
       const res = await request(app)
         .post('/api/posters')
         .set('Authorization', `Bearer ${adminAToken}`)
         .send({
-          templateId: String(templateA._id),
           prompt: 'Annual Sports Festival for the local community',
           content: {
             title: 'Annual Sports Day 2025',
@@ -397,13 +259,11 @@ describe('Local-Level Roles and Company Setup Test Suite', () => {
       savedPosterId = res.body.data.poster._id;
 
       const poster = res.body.data.poster;
-      expect(poster.templateVersion).toBe(1);
       expect(poster.design).toBeDefined();
       expect(poster.design.brandKit.orgName).toBe('Alpha Local Company - Super Edited');
     });
 
-    it('Super Admin updates Brand Kit and Template (creates version 2)', async () => {
-      // 1. Super Admin updates Brand Kit with new org name and header
+    it('Super Admin updates Brand Kit', async () => {
       const kitRes = await request(app)
         .put('/api/brand-kit')
         .set('Authorization', `Bearer ${superToken}`)
@@ -413,18 +273,6 @@ describe('Local-Level Roles and Company Setup Test Suite', () => {
           primaryColor: '#DC2626',
         });
       expect(kitRes.status).toBe(200);
-
-      // 2. Super Admin updates Template (increments to version 2)
-      const tplRes = await request(app)
-        .patch(`/api/templates/${templateA._id}`)
-        .set('Authorization', `Bearer ${superToken}`)
-        .set('X-Client-Id', String(clientA._id))
-        .send({
-          name: 'Alpha Annual Poster Layout - 2026 Edition',
-          size: { width: 1080, height: 1350 },
-        });
-      expect(tplRes.status).toBe(200);
-      expect(tplRes.body.data.template.version).toBe(2);
     });
 
     it('previously saved poster retains its original frozen snapshot', async () => {
@@ -435,18 +283,15 @@ describe('Local-Level Roles and Company Setup Test Suite', () => {
       expect(res.status).toBe(200);
       const poster = res.body.data.poster;
 
-      // The saved poster keeps version 1 snapshot and old brand kit details
-      expect(poster.templateVersion).toBe(1);
+      // The saved poster keeps old brand kit details
       expect(poster.design.brandKit.orgName).toBe('Alpha Local Company - Super Edited');
-      expect(poster.design.template.name).toBe('Alpha Annual Poster Layout');
     });
 
-    it('a new poster created after the update uses the new version and brand kit snapshot', async () => {
+    it('a new poster created after the update uses the new brand kit snapshot', async () => {
       const res = await request(app)
         .post('/api/posters')
         .set('Authorization', `Bearer ${adminAToken}`)
         .send({
-          templateId: String(templateA._id),
           prompt: 'New 2026 Gala Poster',
           content: {
             title: 'Gala Night 2026',
@@ -456,10 +301,8 @@ describe('Local-Level Roles and Company Setup Test Suite', () => {
       expect(res.status).toBe(201);
       const newPoster = res.body.data.poster;
 
-      // New poster captures version 2 and the updated brand kit
-      expect(newPoster.templateVersion).toBe(2);
+      // New poster captures the updated brand kit
       expect(newPoster.design.brandKit.orgName).toBe('Alpha Yearly Rebranded 2026');
-      expect(newPoster.design.template.name).toBe('Alpha Annual Poster Layout - 2026 Edition');
     });
   });
 
