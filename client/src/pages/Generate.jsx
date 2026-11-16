@@ -491,6 +491,7 @@ export default function Generate() {
             {
               prompt: promptText,
               variation: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+              pureArtwork: true,
               ...(centerArea?.w && centerArea?.h
                 ? { contentWidth: centerArea.w, contentHeight: centerArea.h }
                 : {}),
@@ -563,7 +564,7 @@ export default function Generate() {
         imageUrl: finalImageUrl,
         image: finalImageUrl,
         isAiGenerated: true,
-        hasTextOverlay: false,
+        hasTextOverlay: true,
       };
 
       setGeneratedContent(contentToSave);
@@ -764,38 +765,18 @@ export default function Generate() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Type className="w-4 h-4 text-[#2563EB]" />
-                    <h2 className="text-sm font-semibold text-[#111827]">Event details on poster</h2>
+                    <h2 className="text-sm font-semibold text-[#111827]">Words on poster</h2>
                   </div>
                   <span className="text-xs text-[#6B7280]">Live preview</span>
                 </div>
                 <p className="text-xs text-[#6B7280]">
-                  Edit date, time, and venue directly with clean spelling. Changes appear docked at the bottom of your poster.
+                  Edit words directly to fix any spelling. Changes appear on your poster instantly.
                 </p>
 
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between pt-1">
-                    <label htmlFor="toggle-bottom-strip" className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        id="toggle-bottom-strip"
-                        type="checkbox"
-                        checked={Boolean(posterContent.hasTextOverlay)}
-                        onChange={(e) =>
-                          setGeneratedContent((prev) => ({
-                            ...(prev || {}),
-                            hasTextOverlay: e.target.checked,
-                          }))
-                        }
-                        className="w-4 h-4 rounded text-[#2563EB] focus:ring-[#2563EB]"
-                      />
-                      <span className="text-xs text-[#374151] font-medium">
-                        Show date & location strip at bottom
-                      </span>
-                    </label>
-                  </div>
-
                   <div className="space-y-1">
                     <label htmlFor="poster-title" className="block text-xs font-medium text-[#374151]">
-                      Poster name
+                      Main headline
                     </label>
                     <Input
                       id="poster-title"
@@ -804,10 +785,11 @@ export default function Generate() {
                         setGeneratedContent((prev) => ({
                           ...(prev || {}),
                           title: e.target.value,
+                          hasTextOverlay: true,
                         }))
                       }
                       maxLength={60}
-                      placeholder="e.g. Employee of the year awards"
+                      placeholder="e.g. Blood Donation Camp"
                       className="h-8 rounded-[6px] border-[#E5E7EB] bg-white text-xs"
                     />
                   </div>
