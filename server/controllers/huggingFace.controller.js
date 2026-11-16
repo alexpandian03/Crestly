@@ -228,8 +228,9 @@ export function formatFluxEnglishPrompt(userPrompt, options = {}) {
     .slice(0, 2);
   const extraLine = extraSentences.join(' • ');
 
+  const spelledLetters = cleanTitle.length <= 24 ? `(spelled ${cleanTitle.split('').join(' ')})` : '';
   const textInstructions = [
-    `bold crisp English headline text reading "${cleanTitle}"`,
+    `prominent bold display headline reading "${cleanTitle}" ${spelledLetters} with correct English spelling only`,
     metaLine ? `clean smaller English text below reading "${metaLine}"` : '',
     extraLine ? `clean footer text reading "${extraLine}"` : '',
   ]
@@ -358,6 +359,7 @@ async function generateWithHuggingFace({
   apiKey,
   width = 1024,
   height = 1024,
+  pureArtwork = false,
 }) {
   let buffer = null;
   let lastError = null;
@@ -386,6 +388,10 @@ async function generateWithHuggingFace({
   }
 
   const isSchnell = hfModel.toLowerCase().includes('schnell');
+  const negativePrompt = pureArtwork
+    ? 'text, letters, words, typography, label, watermark, blurry, low quality'
+    : 'misspelling, typo, distorted letters, bad typography, blurry text, watermark, low quality, cropped';
+
   if ((!buffer || buffer.length <= 500) && !process.env.HF_API_URL && !process.env.AI_BASE_URL) {
     try {
       const { InferenceClient } = await import('@huggingface/inference');
@@ -399,14 +405,14 @@ async function generateWithHuggingFace({
               width,
               height,
               num_inference_steps: 4,
-              negative_prompt: 'text, letters, words, typography, label, watermark, blurry, low quality',
+              negative_prompt: negativePrompt,
             }
           : {
               width,
               height,
               guidance_scale: 3.5,
               num_inference_steps: 20,
-              negative_prompt: 'text, letters, words, typography, label, watermark, blurry, low quality',
+              negative_prompt: negativePrompt,
             },
       });
       if (blob) {
@@ -563,6 +569,7 @@ export async function generateHuggingFacePoster(req, res, next) {
             hfModel: model,
             routerUrl,
             apiKey,
+            pureArtwork,
             ...targetSize,
           });
           return streamPosterImage({

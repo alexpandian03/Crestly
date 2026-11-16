@@ -491,7 +491,6 @@ export default function Generate() {
             {
               prompt: promptText,
               variation: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-              pureArtwork: true,
               ...(centerArea?.w && centerArea?.h
                 ? { contentWidth: centerArea.w, contentHeight: centerArea.h }
                 : {}),
@@ -564,7 +563,7 @@ export default function Generate() {
         imageUrl: finalImageUrl,
         image: finalImageUrl,
         isAiGenerated: true,
-        hasTextOverlay: true,
+        hasTextOverlay: false,
       };
 
       setGeneratedContent(contentToSave);
@@ -774,6 +773,26 @@ export default function Generate() {
                 </p>
 
                 <div className="space-y-3">
+                  <div className="flex items-center justify-between pt-1">
+                    <label htmlFor="toggle-bottom-strip" className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        id="toggle-bottom-strip"
+                        type="checkbox"
+                        checked={Boolean(posterContent.hasTextOverlay)}
+                        onChange={(e) =>
+                          setGeneratedContent((prev) => ({
+                            ...(prev || {}),
+                            hasTextOverlay: e.target.checked,
+                          }))
+                        }
+                        className="w-4 h-4 rounded text-[#2563EB] focus:ring-[#2563EB]"
+                      />
+                      <span className="text-xs text-[#374151] font-medium">
+                        Show date & location strip at bottom
+                      </span>
+                    </label>
+                  </div>
+
                   <div className="space-y-1">
                     <label htmlFor="poster-title" className="block text-xs font-medium text-[#374151]">
                       Poster name
