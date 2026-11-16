@@ -34,6 +34,7 @@ const posterVersionSchema = new mongoose.Schema(
         default: [],
       },
       imageUrl: { type: String, default: '' },
+      hasTextOverlay: { type: Boolean, default: false },
       /* Words and photos filled into the template's own blanks, keyed by each blank's name.
          Which names exist and how long an answer may be is checked on every write against
          the poster's design snapshot, so this stays the plain store. */
@@ -91,6 +92,7 @@ const posterSchema = new mongoose.Schema(
         default: [],
       },
       imageUrl: { type: String, default: '' },
+      hasTextOverlay: { type: Boolean, default: false },
       /* Words and photos filled into the template's own blanks, keyed by each blank's name.
          Which names exist and how long an answer may be is checked on every write against
          the poster's design snapshot, so this stays the plain store. */

@@ -151,6 +151,7 @@ export function normalizePosterContent(raw, valuesContext = null) {
     venue: cleanText(raw.venue, 'Venue', CONTENT_LIMITS.venue),
     details: details.map((item, index) => cleanText(item, `Extra line ${index + 1}`, CONTENT_LIMITS.detail)),
     imageUrl: normalizeImageUrl(raw.imageUrl !== undefined ? raw.imageUrl : raw.image, 'imageUrl', context.clientId),
+    hasTextOverlay: Boolean(raw.hasTextOverlay),
   };
   if (values.extras) content.extras = values.extras;
   if (values.images) content.images = values.images;

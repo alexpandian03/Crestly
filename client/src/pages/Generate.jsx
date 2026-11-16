@@ -16,8 +16,10 @@ import {
   Lock,
   AlertTriangle,
   Save,
+  Type,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
 import { Skeleton } from "../components/ui/skeleton";
 import api from "../services/api";
@@ -30,6 +32,7 @@ import { clearDraft, readDraft } from "../config/draft";
 import { SAMPLE_PROMPTS } from "../data/demoPosters";
 import { useAuth } from "../context/AuthContext";
 import { useAutosave } from "../hooks/useAutosave";
+import { extractEventFacts } from "../../../shared/fallbackParser.js";
 
 const isRealId = (id) => typeof id === "string" && /^[0-9a-fA-F]{24}$/.test(id);
 
@@ -55,6 +58,7 @@ function buildContentPayload(content) {
           .slice(0, 4)
       : [],
     imageUrl: String(content.imageUrl || content.image || "").trim(),
+    hasTextOverlay: Boolean(content.hasTextOverlay),
   };
 }
 
@@ -175,6 +179,7 @@ export default function Generate() {
         imageUrl: "",
         image: "",
         isAiGenerated: true,
+        hasTextOverlay: false,
       };
     }
     if (!generatedContent) {
@@ -188,6 +193,7 @@ export default function Generate() {
         imageUrl: userImageUrl,
         image: userImageUrl,
         isAiGenerated: true,
+        hasTextOverlay: false,
       };
     }
     return {
@@ -195,6 +201,7 @@ export default function Generate() {
       imageUrl: chosenImageUrl,
       image: chosenImageUrl,
       isAiGenerated: true,
+      hasTextOverlay: Boolean(generatedContent.hasTextOverlay),
     };
   }, [generatedContent, userImageUrl, chosenImageUrl]);
 
@@ -483,6 +490,7 @@ export default function Generate() {
             {
               prompt: promptText,
               variation: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+              pureArtwork: true,
               ...(centerArea?.w && centerArea?.h
                 ? { contentWidth: centerArea.w, contentHeight: centerArea.h }
                 : {}),
@@ -536,23 +544,26 @@ export default function Generate() {
         finalImageUrl = cloudUrl || blobUrl;
       }
 
+      const facts = extractEventFacts(promptText);
       const firstSentence = promptText.split(/[.\n]/)[0].trim();
       const cleanTitle =
+        facts.title ||
         (firstSentence.length > 60
           ? firstSentence.slice(0, 60) + "..."
           : firstSentence) || "Generated poster";
 
       const contentToSave = {
         title: cleanTitle,
-        tagline: "",
-        subtitle: "",
-        date: "",
-        time: "",
-        venue: "",
-        details: [],
+        tagline: facts.subtitle || "",
+        subtitle: facts.subtitle || "",
+        date: facts.date || "",
+        time: facts.time || "",
+        venue: facts.venue || "",
+        details: Array.isArray(facts.details) ? facts.details : [],
         imageUrl: finalImageUrl,
         image: finalImageUrl,
         isAiGenerated: true,
+        hasTextOverlay: true,
       };
 
       setGeneratedContent(contentToSave);
@@ -747,6 +758,133 @@ export default function Generate() {
                 )}
               </Button>
             </form>
+
+            {hasPoster && (
+              <div className="mt-6 p-4 rounded-[8px] border border-[#E5E7EB] bg-[#F9FAFB] space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Type className="w-4 h-4 text-[#2563EB]" />
+                    <h2 className="text-sm font-semibold text-[#111827]">Words on poster</h2>
+                  </div>
+                  <span className="text-xs text-[#6B7280]">Live preview</span>
+                </div>
+                <p className="text-xs text-[#6B7280]">
+                  Edit words directly to fix any spelling. Changes appear on your poster instantly.
+                </p>
+
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <label htmlFor="poster-title" className="block text-xs font-medium text-[#374151]">
+                      Main headline
+                    </label>
+                    <Input
+                      id="poster-title"
+                      value={posterContent.title || ""}
+                      onChange={(e) =>
+                        setGeneratedContent((prev) => ({
+                          ...(prev || {}),
+                          title: e.target.value,
+                          hasTextOverlay: true,
+                        }))
+                      }
+                      maxLength={60}
+                      placeholder="e.g. Blood Donation Camp"
+                      className="h-8 rounded-[6px] border-[#E5E7EB] bg-white text-xs"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label htmlFor="poster-date" className="block text-xs font-medium text-[#374151]">
+                        Date
+                      </label>
+                      <Input
+                        id="poster-date"
+                        value={posterContent.date || ""}
+                        onChange={(e) =>
+                          setGeneratedContent((prev) => ({
+                            ...(prev || {}),
+                            date: e.target.value,
+                            hasTextOverlay: true,
+                          }))
+                        }
+                        maxLength={30}
+                        placeholder="e.g. 12 Nov"
+                        className="h-8 rounded-[6px] border-[#E5E7EB] bg-white text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label htmlFor="poster-time" className="block text-xs font-medium text-[#374151]">
+                        Time
+                      </label>
+                      <Input
+                        id="poster-time"
+                        value={posterContent.time || ""}
+                        onChange={(e) =>
+                          setGeneratedContent((prev) => ({
+                            ...(prev || {}),
+                            time: e.target.value,
+                            hasTextOverlay: true,
+                          }))
+                        }
+                        maxLength={20}
+                        placeholder="e.g. 9 AM"
+                        className="h-8 rounded-[6px] border-[#E5E7EB] bg-white text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label htmlFor="poster-venue" className="block text-xs font-medium text-[#374151]">
+                      Place / Venue
+                    </label>
+                    <Input
+                      id="poster-venue"
+                      value={posterContent.venue || ""}
+                      onChange={(e) =>
+                        setGeneratedContent((prev) => ({
+                          ...(prev || {}),
+                          venue: e.target.value,
+                          hasTextOverlay: true,
+                        }))
+                      }
+                      maxLength={80}
+                      placeholder="e.g. Community Hall"
+                      className="h-8 rounded-[6px] border-[#E5E7EB] bg-white text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label htmlFor="poster-detail-1" className="block text-xs font-medium text-[#374151]">
+                      Highlight / Note
+                    </label>
+                    <Input
+                      id="poster-detail-1"
+                      value={posterContent.details?.[0] || ""}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setGeneratedContent((prev) => {
+                          const currentDetails = Array.isArray(prev?.details) ? [...prev.details] : [];
+                          if (val) {
+                            currentDetails[0] = val;
+                          } else {
+                            currentDetails.splice(0, 1);
+                          }
+                          return {
+                            ...(prev || {}),
+                            details: currentDetails,
+                            hasTextOverlay: true,
+                          };
+                        });
+                      }}
+                      maxLength={90}
+                      placeholder="e.g. Certificates for donors"
+                      className="h-8 rounded-[6px] border-[#E5E7EB] bg-white text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Right Column: Preview & Actions */}

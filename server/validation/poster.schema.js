@@ -41,6 +41,7 @@ const contentSchema = z.object({
     .max(CONTENT_LIMITS.maxDetails, `A poster can have at most ${CONTENT_LIMITS.maxDetails} extra lines`)
     .optional(),
   imageUrl: z.string().trim().max(2000000, 'Image address is too long').optional(),
+  hasTextOverlay: z.boolean().optional(),
   extras: z
     .record(
       z

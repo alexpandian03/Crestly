@@ -238,6 +238,10 @@ export function formatFluxEnglishPrompt(userPrompt, options = {}) {
 
   const theme = resolvePosterTheme(raw);
 
+  if (options?.pureArtwork) {
+    return `Vibrant flat modern vector poster illustration for ${firstSentence}, ${theme.scene}, ${style.composition}, ${style.palette}, cheerful daylight colors, generous open space in center and top margins for typography, clean graphic design, advertising illustration, no text, no letters, no words, no watermark, no typography, blank background space, flat modern vector poster art, clean minimal advertising poster style.`;
+  }
+
   if (raw.toLowerCase().includes('poster of') || raw.toLowerCase().includes('poster for')) {
     return `${firstSentence}. ${style.composition}, featuring ${style.lettering} with ${textInstructions}, ${style.palette}, correct English spelling only, keep all text, emblems, and artwork comfortably inside clear top and bottom margins away from edges, balanced typographic poster layout, flat modern vector poster art, clean minimal advertising poster style.`;
   }
@@ -488,7 +492,8 @@ export async function generateHuggingFacePoster(req, res, next) {
     }
 
     const styleIndex = pickNextStyleIndex(req.body?.variation);
-    const enhancedPrompt = formatFluxEnglishPrompt(prompt, { styleIndex });
+    const pureArtwork = req.body?.pureArtwork === true || req.body?.pureArtwork === 'true';
+    const enhancedPrompt = formatFluxEnglishPrompt(prompt, { styleIndex, pureArtwork });
     const targetSize = resolveContentImageDimensions(req.body?.contentWidth, req.body?.contentHeight);
 
     switch (provider) {

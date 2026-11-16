@@ -96,4 +96,33 @@ describe('PosterCanvas AI poster and blank content area behavior', () => {
     expect(screen.queryByText(/School ground/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Medals for every winner/i)).not.toBeInTheDocument();
   });
+
+  it('renders crisp HTML typography overlay with perfect spelling when hasTextOverlay is true', () => {
+    const aiImageUrl = 'https://example.com/ai-flux-vector-artwork.png';
+    const content = {
+      title: 'Blood Donation Camp',
+      date: '12 Nov',
+      time: '9 AM',
+      venue: 'Community Hall',
+      details: ['Certificates for donors'],
+      imageUrl: aiImageUrl,
+      isAiGenerated: true,
+      hasTextOverlay: true,
+    };
+
+    render(
+      <PosterCanvas brandKit={brandKit} template={template} content={content} />
+    );
+
+    // Headline is rendered with exact spelling in HTML
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Blood Donation Camp');
+
+    // Date, time, and venue meta items are rendered
+    expect(screen.getByText(/12 Nov/)).toBeInTheDocument();
+    expect(screen.getByText(/9 AM/)).toBeInTheDocument();
+    expect(screen.getByText(/Community Hall/)).toBeInTheDocument();
+
+    // Highlights are rendered with exact spelling
+    expect(screen.getByText(/Certificates for donors/)).toBeInTheDocument();
+  });
 });

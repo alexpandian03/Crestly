@@ -164,6 +164,15 @@ describe('Poster Image Generation API (/api/posters/generate)', () => {
     }
   });
 
+  it('builds pure artwork prompt without baked-in pixel text when pureArtwork option is set', () => {
+    const prompt = formatFluxEnglishPrompt('Blood donation camp on 12 Nov, 9 AM, community hall. Certificates for donors.', {
+      pureArtwork: true,
+    });
+    expect(prompt).toContain('no text, no letters, no words');
+    expect(prompt).toContain('red heart emblem');
+    expect(prompt).not.toContain('"BLOOD DONATION CAMP"');
+  });
+
   it('rotates poster art direction across consecutive API requests without repeating default design', async () => {
     process.env.HF_API_KEY = 'hf_test_valid_token_key_12345';
     const capturedPrompts = [];

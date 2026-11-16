@@ -237,6 +237,164 @@ function FooterBand({ brand }) {
   );
 }
 
+function ContentTypographyOverlay({ content, brand }) {
+  if (!content?.hasTextOverlay) return null;
+  const { title, tagline, date, time, venue, details } = content;
+  if (!title && !date && !time && !venue && (!details || details.length === 0)) return null;
+
+  const hasTamilTitle = hasTamil(title);
+  const headingFont = fontStackFor(brand?.fonts?.heading || 'Outfit', hasTamilTitle);
+  const bodyFont = fontStackFor(brand?.fonts?.body || 'Inter', hasTamil(tagline));
+
+  const metaItems = [
+    date ? `📅 ${date}` : null,
+    time ? `⏰ ${time}` : null,
+    venue ? `📍 ${venue}` : null,
+  ].filter(Boolean);
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        zIndex: 5,
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+        padding: '36px 40px',
+        pointerEvents: 'none',
+        boxSizing: 'border-box',
+      }}
+    >
+      {/* Top: Headline & Tagline */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          textAlign: 'center',
+          gap: '8px',
+        }}
+      >
+        {title && (
+          <h1
+            style={{
+              fontFamily: headingFont,
+              fontSize: title.length > 32 ? '44px' : '56px',
+              fontWeight: 800,
+              lineHeight: 1.15,
+              textTransform: hasTamilTitle ? 'none' : 'uppercase',
+              color: '#0F172A',
+              margin: 0,
+              padding: '8px 24px',
+              borderRadius: '10px',
+              backgroundColor: 'rgba(255, 255, 255, 0.92)',
+              backdropFilter: 'blur(6px)',
+              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.08)',
+              border: '1px solid rgba(255, 255, 255, 0.8)',
+              maxWidth: '94%',
+              wordBreak: 'break-word',
+            }}
+          >
+            {title}
+          </h1>
+        )}
+        {tagline && (
+          <p
+            style={{
+              fontFamily: bodyFont,
+              fontSize: '22px',
+              fontWeight: 600,
+              color: '#334155',
+              margin: 0,
+              padding: '4px 16px',
+              borderRadius: '6px',
+              backgroundColor: 'rgba(255, 255, 255, 0.88)',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)',
+              maxWidth: '85%',
+            }}
+          >
+            {tagline}
+          </p>
+        )}
+      </div>
+
+      {/* Bottom: Date/Time/Venue Pill & Highlights */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '10px',
+        }}
+      >
+        {metaItems.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              justifyContent: 'center',
+              alignItems: 'center',
+              gap: '16px',
+              padding: '10px 24px',
+              borderRadius: '9999px',
+              backgroundColor: '#0F172A',
+              color: '#FFFFFF',
+              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.16)',
+              border: '1px solid rgba(255, 255, 255, 0.25)',
+            }}
+          >
+            {metaItems.map((item, idx) => (
+              <span
+                key={idx}
+                style={{
+                  fontFamily: bodyFont,
+                  fontSize: '19px',
+                  fontWeight: 600,
+                  letterSpacing: '0.01em',
+                }}
+              >
+                {item}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {Array.isArray(details) && details.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              justifyContent: 'center',
+              gap: '8px',
+              maxWidth: '92%',
+            }}
+          >
+            {details.map((detail, idx) => (
+              <span
+                key={idx}
+                style={{
+                  fontFamily: bodyFont,
+                  fontSize: '18px',
+                  fontWeight: 600,
+                  color: '#1E293B',
+                  backgroundColor: 'rgba(255, 255, 255, 0.94)',
+                  padding: '6px 18px',
+                  borderRadius: '9999px',
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+                  border: '1px solid rgba(226, 232, 240, 0.9)',
+                }}
+              >
+                🎖️ {detail}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function PosterCanvas({
   brandKit,
   template,
@@ -326,6 +484,10 @@ export default function PosterCanvas({
                 zIndex: 1,
               }}
             />
+          ) : null}
+
+          {content?.hasTextOverlay ? (
+            <ContentTypographyOverlay content={content} brand={brand} />
           ) : null}
         </div>
       </div>
