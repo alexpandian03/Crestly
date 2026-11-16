@@ -16,7 +16,6 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { user, activeClientId } = useAuth();
   const [posters, setPosters] = useState([]);
-  const [templates, setTemplates] = useState([]);
   const [brandKit, setBrandKit] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busyIds, setBusyIds] = useState(() => new Set());
@@ -28,9 +27,8 @@ export default function Dashboard() {
     async function loadData() {
       setLoading(true);
       try {
-        const [postersRes, templatesRes, brandKitRes, healthRes] = await Promise.all([
+        const [postersRes, brandKitRes, healthRes] = await Promise.all([
           api.get("/posters", { params: { page: 1, limit: 4 } }).catch(() => null),
-          api.get("/templates").catch(() => null),
           api.get("/brand-kit").catch(() => null),
           api.get("/health").catch(() => null),
         ]);
@@ -39,9 +37,6 @@ export default function Dashboard() {
 
         if (postersRes?.data?.success) {
           setPosters(postersRes.data.data?.items || []);
-        }
-        if (templatesRes?.data?.success) {
-          setTemplates(templatesRes.data.data?.templates || []);
         }
         if (brandKitRes?.data?.success && brandKitRes.data.data?.brandKit) {
           setBrandKit(brandKitRes.data.data.brandKit);
@@ -75,11 +70,9 @@ export default function Dashboard() {
     const id = idOf(poster);
     setBusy(id, true);
     try {
-      const template = templates.find((t) => String(t._id || t.id) === String(poster.templateId || "")) || null;
       const result = await downloadSavedPoster(id, {
         fallbackPoster: poster,
         fallbackBrandKit: brandKit,
-        fallbackTemplate: template,
         format: "png",
       });
       if (result.warnings?.length > 0) {
@@ -129,11 +122,7 @@ export default function Dashboard() {
     }
   };
 
-  const categoryOf = (templateId) => {
-    const template = templates.find((t) => String(t._id || t.id) === String(templateId || ""));
-    if (!template) return "";
-    return (template.category || "").trim() || template.name || "";
-  };
+  const categoryOf = (_templateId) => "";
 
   const userName = user?.name ? user.name.split(" ")[0] : "";
 

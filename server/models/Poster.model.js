@@ -69,7 +69,6 @@ const posterSchema = new mongoose.Schema(
     },
     templateId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Template',
       required: false,
     },
     /* Pinned at creation: later edits to the template must not restyle saved posters. */

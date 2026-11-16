@@ -5,7 +5,24 @@ import {
   IMAGE_FITS,
 } from '../services/brand/style.js';
 import { BAND_HEIGHTS, SECTION_LIMITS, defaultBrandBand } from '../../shared/templateElements.js';
-import { elementSchema } from './Template.model.js';
+export const elementSchema = new mongoose.Schema(
+  {
+    id: { type: String, trim: true },
+    kind: { type: String, trim: true },
+    x: { type: Number, default: 0 },
+    y: { type: Number, default: 0 },
+    w: { type: Number, default: 100 },
+    h: { type: Number, default: 100 },
+    z: { type: Number, default: 1 },
+    field: { type: String, trim: true },
+    text: { type: String, default: '' },
+    imageUrl: { type: String, default: '' },
+    src: { type: String, default: '' },
+    locked: { type: Boolean, default: false },
+    style: { type: mongoose.Schema.Types.Mixed, default: {} },
+  },
+  { _id: false, strict: false }
+);
 
 const { header: headerDefaults, content: contentDefaults, footer: footerDefaults } = BRAND_KIT_DEFAULTS;
 

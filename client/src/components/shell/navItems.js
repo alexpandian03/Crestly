@@ -3,7 +3,6 @@ import {
   CheckSquare,
   Images,
   LayoutDashboard,
-  LayoutTemplate,
   Palette,
   Sparkles,
   Users,

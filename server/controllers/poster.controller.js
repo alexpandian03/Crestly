@@ -1,8 +1,6 @@
-import Template from '../models/Template.model.js';
 import BrandKit from '../models/BrandKit.model.js';
 import Client from '../models/Client.model.js';
 import Poster, { POSTER_MAX_VERSIONS, normalizePosterRecord } from '../models/Poster.model.js';
-import { TEMPLATE_SIZE_DEFAULT } from '../services/template/zones.js';
 import { scopedFilter } from '../middleware/auth.middleware.js';
 import {
   sanitizeString,
@@ -17,9 +15,11 @@ import { consumeRateLimit } from '../services/rateLimit.js';
 import { isValidEventType } from '../../shared/eventTypes.js';
 import { audit } from '../services/audit.service.js';
 
+const STANDARD_POSTER_SIZE = { width: 1080, height: 1350 };
+
 const DEFAULT_CANVAS_TEMPLATE = {
   name: 'Standard poster',
-  size: TEMPLATE_SIZE_DEFAULT,
+  size: STANDARD_POSTER_SIZE,
   zones: [
     { id: 'zone-header', type: 'header', x: 0, y: 0, w: 1080, h: 140, locked: true },
     { id: 'zone-content', type: 'content', x: 0, y: 140, w: 1080, h: 1080, locked: false },
@@ -66,11 +66,8 @@ export async function createPosterController(req, res, next) {
       });
     }
 
-    const template = req.body.templateId
-      ? await Template.findOne(scopedFilter(req, { _id: req.body.templateId, isActive: true }))
-      : await Template.findOne(scopedFilter(req, { isActive: true })).sort({ isDefault: -1, createdAt: -1 });
-
-    const templateVersion = template?.version || 1;
+    const template = DEFAULT_CANVAS_TEMPLATE;
+    const templateVersion = 1;
     const design = await startingDesign(req, template);
     const content = normalizePosterContent(req.body.content, contentValuesContext(design, req.clientId));
     const prompt = sanitizeString(req.body.prompt).slice(0, 1000);
@@ -119,13 +116,7 @@ export async function listPostersController(req, res, next) {
       filter.$or = [{ title: pattern }, { prompt: pattern }];
     }
     if (category) {
-      const templates = await Template.find(
-        scopedFilter(req, { category: new RegExp(`^${escapeRegex(category)}$`, 'i') })
-      ).select('_id');
-      if (templates.length === 0) {
-        return res.status(200).json({ success: true, data: { items: [], total: 0, page, pages: 1 } });
-      }
-      filter.templateId = { $in: templates.map((item) => item._id) };
+      filter.eventType = new RegExp(`^${escapeRegex(category)}$`, 'i');
     }
     if (from || to) {
       filter.updatedAt = {};
@@ -156,25 +147,8 @@ export async function listPostersController(req, res, next) {
   }
 }
 
-async function templateForPoster(req, poster) {
-  if (!poster.templateId) return null;
-  const template = await Template.findOne(scopedFilter(req, { _id: poster.templateId })).lean();
-  if (!template) return null;
-
-  const pinned = poster.templateVersion;
-  if (!pinned || pinned === template.version) return template;
-
-  const snapshot = (template.versions || []).find((entry) => entry.version === pinned);
-  if (!snapshot) return template;
-
-  return {
-    ...template,
-    version: snapshot.version,
-    name: snapshot.name,
-    zones: snapshot.zones,
-    layout: snapshot.layout,
-    size: snapshot.size,
-  };
+async function templateForPoster(_req, poster) {
+  return plainDesign(poster?.design)?.template || DEFAULT_CANVAS_TEMPLATE;
 }
 
 export async function getPosterController(req, res, next) {
@@ -190,7 +164,7 @@ export async function getPosterController(req, res, next) {
     const stored = plainDesign(poster.design)?.template;
     const template = stored
       ? { ...stored, _id: stored.templateId }
-      : await templateForPoster(req, poster);
+      : DEFAULT_CANVAS_TEMPLATE;
 
     if (rawPoster.draft && String(rawPoster.draft.userId) === String(req.user._id)) {
       poster.draft = {
@@ -281,13 +255,11 @@ export async function addPosterVersionController(req, res, next) {
     const expected = req.body.expectedVersion ?? poster.currentVersion;
     if (expected !== poster.currentVersion) return conflictResponse(res);
 
-    const template = poster.templateId
-      ? await Template.findOne(scopedFilter(req, { _id: poster.templateId })).lean()
-      : null;
+    const template = plainDesign(poster.design)?.template || DEFAULT_CANVAS_TEMPLATE;
     const design = await designForPoster(req, poster, template);
     const content = normalizePosterContent(req.body.content, contentValuesContext(design, req.clientId));
     const updated = await appendVersion(req, poster, content, 'Regenerated', {
-      templateVersion: template?.version || poster.templateVersion,
+      templateVersion: poster.templateVersion || 1,
       design,
     });
     if (!updated) return conflictResponse(res);
@@ -349,10 +321,7 @@ export async function duplicatePosterController(req, res, next) {
     if (!poster) return posterNotFound(res);
 
     const content = normalizePosterContent(poster.content, contentValuesContext(poster.design, req.clientId));
-    const template = poster.templateId
-      ? await Template.findOne(scopedFilter(req, { _id: poster.templateId })).lean()
-      : null;
-    const design = plainDesign(poster.design) || (await designForPoster(req, poster, template));
+    const design = plainDesign(poster.design) || (await designForPoster(req, poster, DEFAULT_CANVAS_TEMPLATE));
     const versionDoc = { content, note: 'Created', versionNumber: 1, createdBy: req.user._id, createdAt: new Date() };
     if (poster.templateVersion) versionDoc.templateVersion = poster.templateVersion;
     versionDoc.design = design;
@@ -386,9 +355,7 @@ export async function applyLatestDesignController(req, res, next) {
     const expected = req.body.expectedVersion ?? poster.currentVersion;
     if (expected !== poster.currentVersion) return conflictResponse(res);
 
-    const template = poster.templateId
-      ? await Template.findOne(scopedFilter(req, { _id: poster.templateId })).lean()
-      : null;
+    const template = plainDesign(poster.design)?.template || DEFAULT_CANVAS_TEMPLATE;
     const design = await designForPoster(req, poster, template);
     const { content: remapped } = remapContentToDesign(
       poster.content,
@@ -397,7 +364,7 @@ export async function applyLatestDesignController(req, res, next) {
     );
     const content = normalizePosterContent(remapped, contentValuesContext(design, req.clientId));
     const updated = await appendVersion(req, poster, content, 'Updated to the latest brand design', {
-      templateVersion: template?.version || poster.templateVersion,
+      templateVersion: poster.templateVersion || 1,
       design,
     });
     if (!updated) return conflictResponse(res);

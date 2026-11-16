@@ -1,4 +1,16 @@
-import { badRequest, normalizeLayout, normalizeZones } from '../template/zones.js';
+function badRequest(message) {
+  const error = new Error(message);
+  error.status = 400;
+  return error;
+}
+
+function normalizeZones(zones) {
+  return Array.isArray(zones) ? zones.map((z) => ({ ...z })) : [];
+}
+
+function normalizeLayout(layout) {
+  return layout && typeof layout === 'object' ? { ...layout } : {};
+}
 import { withBrandKitDefaults } from '../brand/style.js';
 import {
   BRAND_BAND_KINDS,
